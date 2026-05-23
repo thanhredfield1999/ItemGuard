@@ -101,24 +101,12 @@ tracking:
 # ---------- UUID TAG DISPLAY ----------
 uuid-tag:
   # Show a visible code tag on tracked items (in lore)
-  # Format: #XXXX-XXXX (alphanumeric code)
-  show-on-item: true
+  # Set to false to disable lore tag completely
+  # Format: #XXXX-XXXX (alphanumeric code only)
+  show-on-item: false
 
   # Tag position in lore: 0 = first line, -1 = last line
   lore-position: -1
-
-  # Display name prefix shown on the item
-  # Example: "[#A3F2-K9P1]" will be added to item name
-  name-prefix: true
-
-  # Name prefix format
-  name-prefix-format: "[#%CODE%]"
-
-  # Lore tag color (use color codes like &a, &b, etc.)
-  lore-color: "&7&m"
-
-  # Name prefix color
-  name-color: "&e"
 
 # ---------- ANTI-DUPE ----------
 anti-dupe:

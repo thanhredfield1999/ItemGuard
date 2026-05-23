@@ -55,7 +55,7 @@ public class VaultHook {
     public boolean groupHasPermission(String group, String permission) {
         if (!hooked) return false;
         try {
-            return vaultPermission.groupHas(null, group, permission);
+            return vaultPermission.groupHas((String) null, group, permission);
         } catch (Exception e) {
             plugin.getLogger().log(Level.WARNING, "Vault group permission check failed: " + e.getMessage());
             return false;

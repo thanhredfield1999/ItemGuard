@@ -4,11 +4,13 @@ import com.itemguard.ItemGuard;
 import com.itemguard.data.ItemData;
 import com.itemguard.services.ItemTrackingService;
 import org.bukkit.Bukkit;
+import org.bukkit.Material;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -29,14 +31,56 @@ public class SearchCommand implements CommandExecutor, TabCompleter {
     }
 
     public void searchItems(CommandSender sender, String[] args) {
+        Player player = sender instanceof Player p ? p : null;
+
+        // Neu khong co args, lay code tu item tren tay
         if (args.length == 0) {
-            plugin.getMessages().sendRaw(sender, "invalid-args", Map.of("usage", "/itemguard search <player>"));
+            if (player == null) {
+                plugin.getMessages().sendRaw(sender, "invalid-args", Map.of("usage", "/itemguard search <player|code>"));
+                return;
+            }
+            ItemStack hand = player.getInventory().getItemInMainHand();
+            if (hand == null || hand.getType() == Material.AIR) {
+                plugin.getMessages().sendRaw(sender, "invalid-args", Map.of("usage", "/itemguard search <player|code>"));
+                return;
+            }
+            String code = plugin.getTrackingService().getCodeFromItem(hand);
+            if (code == null) {
+                plugin.getMessages().sendRaw(sender, "invalid-args", Map.of("usage", "/itemguard search <player|code>"));
+                return;
+            }
+            Optional<ItemData> itemData = plugin.getDB().getItem(code);
+            if (itemData.isPresent()) {
+                sender.sendMessage("§e§l=== Tim Kiem: #" + code + " ===");
+                sender.sendMessage("  §7- §f" + itemData.get().getDisplayName() + " §8| §7Chu: §f" +
+                    (itemData.get().getOwnerName() != null ? itemData.get().getOwnerName() : "Unknown") +
+                    " §8| §7Phat hien: §f" + itemData.get().getDetectionCount() + "§7 lan");
+            } else {
+                plugin.getMessages().sendRaw(sender, "search-empty");
+            }
             return;
         }
 
         String query = args[0];
-        Player target = Bukkit.getPlayer(query);
 
+        // Neu la code (bat dau bang #)
+        if (query.startsWith("#")) {
+            String code = query.substring(1);
+            Optional<ItemData> itemData = plugin.getDB().getItem(code);
+            if (itemData.isEmpty()) {
+                plugin.getMessages().sendRaw(sender, "search-empty");
+                return;
+            }
+            ItemData item = itemData.get();
+            sender.sendMessage("§e§l=== Tim Kiem: #" + code + " ===");
+                sender.sendMessage("  §7- §f" + item.getDisplayName() + " §8| §7Chu: §f" +
+                    (item.getOwnerName() != null ? item.getOwnerName() : "Unknown") +
+                    " §8| §7Phat hien: §f" + item.getDetectionCount() + "§7 lan");
+            return;
+        }
+
+        // Tim theo ten nguoi choi
+        Player target = Bukkit.getPlayer(query);
         if (target != null) {
             List<ItemData> items = plugin.getDB().getItemsByPlayer(target.getUniqueId());
             if (items.isEmpty()) {
@@ -47,6 +91,7 @@ public class SearchCommand implements CommandExecutor, TabCompleter {
             return;
         }
 
+        // Tim kiem text
         List<ItemData> results = plugin.getDB().searchItems(query);
         if (results.isEmpty()) {
             plugin.getMessages().sendRaw(sender, "search-empty");
@@ -68,7 +113,7 @@ public class SearchCommand implements CommandExecutor, TabCompleter {
             String itemName = item.getDisplayName();
             String material = item.getMaterial() != null ? item.getMaterial().name() : "Unknown";
             sender.sendMessage(plugin.getMessages().getRaw("search-result",
-                Map.of("item", itemName, "amount", String.valueOf(item.getCurrentCount()), "code", item.getCode())));
+                Map.of("item", itemName, "amount", String.valueOf(item.getDetectionCount()), "code", item.getCode())));
             count++;
         }
     }

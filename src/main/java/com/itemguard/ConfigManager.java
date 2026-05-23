@@ -82,27 +82,11 @@ public class ConfigManager {
 
     // ---------- UUID TAG ----------
     public boolean isShowUuidTag() {
-        return config.getBoolean("uuid-tag.show-on-item", true);
+        return config.getBoolean("uuid-tag.show-on-item", false);
     }
 
     public int getLorePosition() {
         return config.getInt("uuid-tag.lore-position", -1);
-    }
-
-    public boolean isNamePrefix() {
-        return config.getBoolean("uuid-tag.name-prefix", true);
-    }
-
-    public String getNamePrefixFormat() {
-        return config.getString("uuid-tag.name-prefix-format", "[#%CODE%]");
-    }
-
-    public String getLoreColor() {
-        return config.getString("uuid-tag.lore-color", "&7&m");
-    }
-
-    public String getNameColor() {
-        return config.getString("uuid-tag.name-color", "&e");
     }
 
     // ---------- ANTI-DUPE ----------

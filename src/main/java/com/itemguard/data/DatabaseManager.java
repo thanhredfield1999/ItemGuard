@@ -51,6 +51,7 @@ public class DatabaseManager {
             default:
                 initSQLite();
         }
+        createTables();
     }
 
     private void initSQLite() {
@@ -60,10 +61,10 @@ public class DatabaseManager {
             String url = "jdbc:sqlite:" + dbFile.getAbsolutePath();
             connection = DriverManager.getConnection(url);
             connection.setAutoCommit(false);
-            createTables();
             plugin.getLogger().info("SQLite database initialized: " + dbFile.getName());
         } catch (SQLException e) {
             plugin.getLogger().severe("Failed to initialize SQLite: " + e.getMessage());
+            throw new RuntimeException("ItemGuard failed to initialize SQLite database", e);
         }
     }
 
@@ -81,10 +82,10 @@ public class DatabaseManager {
                 host, port, db, ssl);
             connection = DriverManager.getConnection(url, user, pass);
             connection.setAutoCommit(false);
-            createTables();
             plugin.getLogger().info("MySQL database connected: " + host + ":" + port);
         } catch (SQLException e) {
             plugin.getLogger().severe("Failed to connect MySQL: " + e.getMessage());
+            throw new RuntimeException("ItemGuard failed to connect to MySQL database", e);
         }
     }
 
@@ -102,14 +103,18 @@ public class DatabaseManager {
                 host, port, db, ssl);
             connection = DriverManager.getConnection(url, user, pass);
             connection.setAutoCommit(false);
-            createTables();
             plugin.getLogger().info("PostgreSQL database connected: " + host + ":" + port);
         } catch (SQLException e) {
             plugin.getLogger().severe("Failed to connect PostgreSQL: " + e.getMessage());
+            throw new RuntimeException("ItemGuard failed to connect to PostgreSQL database", e);
         }
     }
 
     private void createTables() {
+        if (connection == null) {
+            plugin.getLogger().severe("Cannot create tables: database connection is null");
+            throw new RuntimeException("ItemGuard failed to establish database connection");
+        }
         String createItemsTable = """
             CREATE TABLE IF NOT EXISTS tracked_items (
                 code VARCHAR(16) PRIMARY KEY,
@@ -118,13 +123,12 @@ public class DatabaseManager {
                 owner_name VARCHAR(255),
                 material VARCHAR(64),
                 item_name VARCHAR(255),
+                item_lore TEXT,
                 created_at BIGINT NOT NULL,
                 last_seen_at BIGINT NOT NULL,
-                current_count INT DEFAULT 1,
-                last_location TEXT,
-                INDEX idx_item_uuid (item_uuid),
-                INDEX idx_owner_uuid (owner_uuid),
-                INDEX idx_last_seen (last_seen_at)
+                last_action VARCHAR(32),
+                detection_count INT DEFAULT 0,
+                last_location TEXT
             )
             """;
 
@@ -142,40 +146,65 @@ public class DatabaseManager {
                 y INT,
                 z INT,
                 timestamp BIGINT NOT NULL,
-                additional_data TEXT,
-                INDEX idx_code (code),
-                INDEX idx_item_uuid (item_uuid),
-                INDEX idx_player_uuid (player_uuid),
-                INDEX idx_timestamp (timestamp),
-                INDEX idx_action (action)
+                additional_data TEXT
             )
             """;
 
         String createStatsTable = """
             CREATE TABLE IF NOT EXISTS plugin_stats (
                 id INTEGER PRIMARY KEY,
+                schema_version INT DEFAULT 1,
                 duplicates_detected INT DEFAULT 0,
                 last_updated BIGINT
             )
+            """;
+
+        String createIndexes = """
+            CREATE INDEX IF NOT EXISTS idx_item_uuid ON tracked_items(item_uuid);
+            CREATE INDEX IF NOT EXISTS idx_owner_uuid ON tracked_items(owner_uuid);
+            CREATE INDEX IF NOT EXISTS idx_last_seen ON tracked_items(last_seen_at);
+            CREATE INDEX IF NOT EXISTS idx_material ON tracked_items(material);
+            CREATE INDEX IF NOT EXISTS idx_history_code ON item_history(code);
+            CREATE INDEX IF NOT EXISTS idx_history_item_uuid ON item_history(item_uuid);
+            CREATE INDEX IF NOT EXISTS idx_history_player_uuid ON item_history(player_uuid);
+            CREATE INDEX IF NOT EXISTS idx_history_timestamp ON item_history(timestamp);
+            CREATE INDEX IF NOT EXISTS idx_history_action ON item_history(action)
             """;
 
         try (Statement stmt = connection.createStatement()) {
             stmt.execute(createItemsTable);
             stmt.execute(createHistoryTable);
             stmt.execute(createStatsTable);
+            for (String idx : createIndexes.strip().split(";")) {
+                if (!idx.strip().isEmpty()) {
+                    stmt.execute(idx.strip());
+                }
+            }
+
+            // Migration: them column neu chua co
+            addColumnIfNotExists(stmt, "tracked_items", "last_action", "VARCHAR(32)");
+            addColumnIfNotExists(stmt, "tracked_items", "detection_count", "INT DEFAULT 0");
+            addColumnIfNotExists(stmt, "tracked_items", "item_lore", "TEXT");
+            addColumnIfNotExists(stmt, "plugin_stats", "schema_version", "INT DEFAULT 1");
+
             connection.commit();
 
-            Statement checkStats = connection.createStatement();
-            ResultSet rs = checkStats.executeQuery("SELECT COUNT(*) FROM plugin_stats");
+            ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM plugin_stats");
             rs.next();
             if (rs.getInt(1) == 0) {
-                stmt.execute("INSERT INTO plugin_stats (id, duplicates_detected, last_updated) VALUES (1, 0, " + System.currentTimeMillis() + ")");
+                stmt.execute("INSERT INTO plugin_stats (id, schema_version, duplicates_detected, last_updated) VALUES (1, 1, 0, " + System.currentTimeMillis() + ")");
                 connection.commit();
             }
         } catch (SQLException e) {
             plugin.getLogger().severe("Failed to create tables: " + e.getMessage());
             throw new RuntimeException("ItemGuard failed to initialize database tables", e);
         }
+    }
+
+    private void addColumnIfNotExists(Statement stmt, String table, String column, String type) {
+        try {
+            stmt.execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + type);
+        } catch (SQLException ignored) {}
     }
 
     private void ensureConnection() throws SQLException {
@@ -223,8 +252,8 @@ public class DatabaseManager {
             try (PreparedStatement ps = connection.prepareStatement(
                 """
                 INSERT OR REPLACE INTO tracked_items
-                (code, item_uuid, owner_uuid, owner_name, material, item_name, created_at, last_seen_at, current_count, last_location)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (code, item_uuid, owner_uuid, owner_name, material, item_name, item_lore, created_at, last_seen_at, last_action, detection_count, last_location)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
             )) {
                 ps.setString(1, item.getCode());
@@ -233,10 +262,12 @@ public class DatabaseManager {
                 ps.setString(4, item.getOwnerName());
                 ps.setString(5, item.getMaterial() != null ? item.getMaterial().name() : null);
                 ps.setString(6, item.getItemName());
-                ps.setLong(7, item.getCreatedAt());
-                ps.setLong(8, item.getLastSeenAt());
-                ps.setInt(9, item.getCurrentCount());
-                ps.setString(10, item.getLastLocation());
+                ps.setString(7, item.getItemLore());
+                ps.setLong(8, item.getCreatedAt());
+                ps.setLong(9, item.getLastSeenAt());
+                ps.setString(10, item.getLastAction());
+                ps.setInt(11, item.getDetectionCount());
+                ps.setString(12, item.getLastLocation());
                 ps.executeUpdate();
                 connection.commit();
             } catch (SQLException e) {
@@ -245,11 +276,33 @@ public class DatabaseManager {
         });
     }
 
-    public void updateItemLocation(String code, Location loc, String ownerName, UUID ownerUuid) {
+    public void updateItemLastAction(String code, String action, Location loc, String ownerName, UUID ownerUuid) {
         executeAsync(() -> {
             try (PreparedStatement ps = connection.prepareStatement(
                 """
-                UPDATE tracked_items SET last_seen_at = ?, last_location = ?, owner_name = ?, owner_uuid = ?, current_count = current_count + 1
+                UPDATE tracked_items SET last_seen_at = ?, last_action = ?, detection_count = detection_count + 1, last_location = ?, owner_name = ?, owner_uuid = ?
+                WHERE code = ?
+                """
+            )) {
+                ps.setLong(1, System.currentTimeMillis());
+                ps.setString(2, action);
+                ps.setString(3, formatLocation(loc));
+                ps.setString(4, ownerName);
+                ps.setString(5, ownerUuid != null ? ownerUuid.toString() : null);
+                ps.setString(6, code);
+                ps.executeUpdate();
+                connection.commit();
+            } catch (SQLException e) {
+                plugin.getLogger().log(Level.SEVERE, "Failed to update item: " + code, e);
+            }
+        });
+    }
+
+    public void updateItemLocationOnly(String code, Location loc, String ownerName, UUID ownerUuid) {
+        executeAsync(() -> {
+            try (PreparedStatement ps = connection.prepareStatement(
+                """
+                UPDATE tracked_items SET last_seen_at = ?, last_location = ?, owner_name = ?, owner_uuid = ?
                 WHERE code = ?
                 """
             )) {
@@ -586,12 +639,14 @@ public class DatabaseManager {
         item.setOwnerName(rs.getString("owner_name"));
         String mat = rs.getString("material");
         if (mat != null) {
-            try { item.setMaterial(Material.valueOf(mat)); } catch (Exception ignored) {}
+            try {         item.setMaterial(Material.valueOf(mat)); } catch (Exception ignored) {}
         }
         item.setItemName(rs.getString("item_name"));
+        item.setItemLore(rs.getString("item_lore"));
         item.setCreatedAt(rs.getLong("created_at"));
         item.setLastSeenAt(rs.getLong("last_seen_at"));
-        item.setCurrentCount(rs.getInt("current_count"));
+        try { item.setLastAction(rs.getString("last_action")); } catch (Exception ignored) {}
+        try { item.setDetectionCount(rs.getInt("detection_count")); } catch (Exception ignored) {}
         item.setLastLocation(rs.getString("last_location"));
         return item;
     }

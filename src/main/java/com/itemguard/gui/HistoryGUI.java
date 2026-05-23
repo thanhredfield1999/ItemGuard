@@ -288,7 +288,7 @@ public class HistoryGUI implements InventoryHolder {
         Player player = viewer;
 
         String title = "§8§lChi Tiet #" + (histories.indexOf(history) + 1);
-        Inventory detail = Bukkit.createInventory(null, 9, title);
+        Inventory detail = Bukkit.createInventory(new HistoryDetailHolder(null, this), 9, title);
 
         Material mat = getActionMaterial(history.getAction());
         ItemStack header = new ItemStack(mat);
@@ -298,11 +298,8 @@ public class HistoryGUI implements InventoryHolder {
         List<String> lore = new ArrayList<>();
         lore.add("§7§m------------------------");
         lore.add("§7Nguoi choi: §f" + (history.getPlayerName() != null ? history.getPlayerName() : "Unknown"));
-        if (history.getPlayerUuid() != null) {
-            lore.add("§7UUID: §f" + history.getPlayerUuid().toString());
-        }
         lore.add("§7§m------------------------");
-        lore.add("§7Hanh dong: §f" + history.getAction());
+        lore.add("§7Hanh dong: §f" + actionName);
         lore.add("§7§m------------------------");
         lore.add("§7Vi tri: §f" + (history.getLocation() != null ? history.getLocation() : "Unknown"));
         lore.add("§7The gioi: §f" + (history.getWorld() != null ? history.getWorld() : "Unknown"));
@@ -339,10 +336,34 @@ public class HistoryGUI implements InventoryHolder {
 
         if (clicked.getType() == Material.ARROW && event.getSlot() == 0) {
             event.setCancelled(true);
-            player.closeInventory();
-            player.performCommand("ighistory");
+            var holder = event.getInventory().getHolder();
+            if (holder instanceof HistoryDetailHolder detailHolder) {
+                detailHolder.getParentGui().openPage(detailHolder.getParentGui().getCurrentPage());
+            } else {
+                player.closeInventory();
+            }
         } else {
             event.setCancelled(true);
+        }
+    }
+
+    // Holder so back button can return to the parent HistoryGUI
+    public static class HistoryDetailHolder implements InventoryHolder {
+        private final Inventory inventory;
+        private final HistoryGUI parentGui;
+
+        public HistoryDetailHolder(Inventory inventory, HistoryGUI parentGui) {
+            this.inventory = inventory;
+            this.parentGui = parentGui;
+        }
+
+        @Override
+        public Inventory getInventory() {
+            return inventory;
+        }
+
+        public HistoryGUI getParentGui() {
+            return parentGui;
         }
     }
 

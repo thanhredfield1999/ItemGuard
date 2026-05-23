@@ -5,6 +5,9 @@ import org.bukkit.Material;
 import org.bukkit.inventory.ItemStack;
 
 import java.time.Instant;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
 
 public class ItemData {
@@ -15,9 +18,11 @@ public class ItemData {
     private String ownerName;
     private Material material;
     private String itemName;
+    private String itemLore;
     private long createdAt;
     private long lastSeenAt;
-    private int currentCount;
+    private String lastAction;
+    private int detectionCount;
     private String lastLocation;
 
     public ItemData(String code, UUID itemUuid) {
@@ -25,7 +30,7 @@ public class ItemData {
         this.itemUuid = itemUuid;
         this.createdAt = Instant.now().toEpochMilli();
         this.lastSeenAt = createdAt;
-        this.currentCount = 1;
+        this.detectionCount = 1;
     }
 
     public String getCode() {
@@ -68,6 +73,21 @@ public class ItemData {
         this.itemName = itemName;
     }
 
+    public String getItemLore() {
+        return itemLore;
+    }
+
+    public void setItemLore(String itemLore) {
+        this.itemLore = itemLore;
+    }
+
+    public List<String> getItemLoreLines() {
+        if (itemLore == null || itemLore.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return Arrays.asList(itemLore.split("\\|"));
+    }
+
     public long getCreatedAt() {
         return createdAt;
     }
@@ -84,16 +104,24 @@ public class ItemData {
         this.lastSeenAt = lastSeenAt;
     }
 
-    public int getCurrentCount() {
-        return currentCount;
+    public int getDetectionCount() {
+        return detectionCount;
     }
 
-    public void setCurrentCount(int currentCount) {
-        this.currentCount = currentCount;
+    public void setDetectionCount(int detectionCount) {
+        this.detectionCount = detectionCount;
     }
 
-    public void incrementCount() {
-        this.currentCount++;
+    public void incrementDetectionCount() {
+        this.detectionCount++;
+    }
+
+    public String getLastAction() {
+        return lastAction;
+    }
+
+    public void setLastAction(String lastAction) {
+        this.lastAction = lastAction;
     }
 
     public String getLastLocation() {
@@ -121,6 +149,13 @@ public class ItemData {
             return formatMaterialName(material.name());
         }
         return "Unknown Item";
+    }
+
+    public String getCustomName() {
+        if (itemName != null && !itemName.isEmpty()) {
+            return itemName;
+        }
+        return null;
     }
 
     private String formatMaterialName(String name) {
@@ -151,7 +186,7 @@ public class ItemData {
             ", itemUuid=" + itemUuid +
             ", ownerName='" + ownerName + '\'' +
             ", material=" + material +
-            ", currentCount=" + currentCount +
+            ", detectionCount=" + detectionCount +
             '}';
     }
 }

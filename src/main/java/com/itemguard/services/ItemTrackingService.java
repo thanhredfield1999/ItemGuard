@@ -89,65 +89,105 @@ public class ItemTrackingService {
     public ItemStack tagItem(ItemStack item, Player owner) {
         if (item == null) return null;
 
-        String code = generateCode();
-        UUID itemUuid = UUID.randomUUID();
-
         ItemMeta meta = item.getItemMeta();
         if (meta == null) return item;
 
+        // Kiem tra xem item da co tag chua ( PDC tag bi mat do du lieu cu )
         PersistentDataContainer pdc = meta.getPersistentDataContainer();
+        String existingCode = pdc.get(plugin.getNamespacedKey(KEY_CODE), PersistentDataType.STRING);
+        String existingUuid = pdc.get(plugin.getNamespacedKey(KEY_ITEM_UUID), PersistentDataType.STRING);
+
+        String code;
+        UUID itemUuid;
+
+        if (existingCode != null) {
+            // Item da co tag PDC - su dung lai
+            code = existingCode;
+            itemUuid = existingUuid != null ? UUID.fromString(existingUuid) : UUID.randomUUID();
+        } else {
+            // Item chua co tag - kiem tra DB de xem co the khoi phuc khong
+            Optional<ItemData> restored = tryRestoreFromDatabase(item, owner);
+            if (restored.isPresent()) {
+                code = restored.get().getCode();
+                itemUuid = restored.get().getItemUuid();
+            } else {
+                // Tao tag moi
+                code = generateCode();
+                itemUuid = UUID.randomUUID();
+            }
+        }
+
         pdc.set(plugin.getNamespacedKey(KEY_CODE), PersistentDataType.STRING, code);
         pdc.set(plugin.getNamespacedKey(KEY_ITEM_UUID), PersistentDataType.STRING, itemUuid.toString());
 
         applyVisualTag(meta, item, code);
         item.setItemMeta(meta);
 
-        ItemData data = new ItemData(code, itemUuid);
-        data.setMaterial(item.getType());
-        data.setItemName(getDisplayName(item));
-        if (owner != null) {
-            data.setOwnerUuid(owner.getUniqueId());
-            data.setOwnerName(owner.getName());
-            data.setLastLocation(owner.getLocation());
-        }
-        data.setCurrentCount(1);
+        // Neu item chua co trong DB thi luu
+        if (existingCode == null) {
+            Optional<ItemData> existingData = db.getItem(code);
+            if (existingData.isEmpty()) {
+                ItemData data = new ItemData(code, itemUuid);
+                data.setMaterial(item.getType());
+                data.setItemName(getDisplayName(item));
+                data.setItemLore(getLore(item));
+                if (owner != null) {
+                    data.setOwnerUuid(owner.getUniqueId());
+                    data.setOwnerName(owner.getName());
+                    data.setLastLocation(owner.getLocation());
+                    data.setLastAction("SPAWN");
+                }
+                data.setDetectionCount(1);
+                db.saveItem(data);
 
-        db.saveItem(data);
+                if (owner != null) {
+                    logHistory(code, itemUuid, "SPAWN", owner);
+                    trackPlayerItem(owner.getUniqueId(), code);
+                }
 
-        if (owner != null) {
-            logHistory(code, itemUuid, "SPAWN", owner);
-            trackPlayerItem(owner.getUniqueId(), code);
-        }
-
-        if (plugin.getConfigs().isDebug()) {
-            plugin.getLogger().info("[DEBUG] Tagged item: " + code + " for " + owner);
+                if (plugin.getConfigs().isDebug()) {
+                    plugin.getLogger().info("[DEBUG] Tagged item: " + code + " for " + (owner != null ? owner.getName() : "null"));
+                }
+            }
         }
 
         return item;
     }
 
-    private void applyVisualTag(ItemMeta meta, ItemStack item, String code) {
-        FileConfiguration config = plugin.getConfig();
+    private Optional<ItemData> tryRestoreFromDatabase(ItemStack item, Player owner) {
+        if (owner == null) return Optional.empty();
 
-        if (config.getBoolean("uuid-tag.name-prefix", true)) {
-            String format = config.getString("uuid-tag.name-prefix-format", "[#%CODE%]");
-            String prefix = format.replace("%CODE%", code);
-            String color = config.getString("uuid-tag.name-color", "&e");
-            String coloredPrefix = ChatColor.translateAlternateColorCodes('&', color + prefix + " ");
+        // Tim trong DB nhung item cung loai ma owner nay da so huu
+        List<ItemData> ownerItems = db.getItemsByPlayer(owner.getUniqueId());
+        Material itemMat = item.getType();
+        String itemName = getDisplayName(item);
 
-            if (meta.hasDisplayName()) {
-                String existing = meta.getDisplayName();
-                meta.setDisplayName(coloredPrefix + existing);
-            } else {
-                String baseName = formatMaterialName(item.getType().name());
-                meta.setDisplayName(coloredPrefix + baseName);
+        // Tim item cung loai
+        for (ItemData data : ownerItems) {
+            if (data.getMaterial() == itemMat) {
+                return Optional.of(data);
             }
         }
 
-        if (config.getBoolean("uuid-tag.show-on-item", true)) {
+        // Tim item cung ten (neu co)
+        if (itemName != null && !itemName.isEmpty()) {
+            for (ItemData data : ownerItems) {
+                String existingName = data.getItemName();
+                if (existingName != null && existingName.equalsIgnoreCase(itemName)) {
+                    return Optional.of(data);
+                }
+            }
+        }
+
+        return Optional.empty();
+    }
+
+    private void applyVisualTag(ItemMeta meta, ItemStack item, String code) {
+        FileConfiguration config = plugin.getConfig();
+
+        if (config.getBoolean("uuid-tag.show-on-item", false)) {
             List<String> lore = meta.hasLore() ? new ArrayList<>(meta.getLore()) : new ArrayList<>();
-            String loreColor = config.getString("uuid-tag.lore-color", "&7&m");
-            String tagLine = ChatColor.translateAlternateColorCodes('&', loreColor) + "ItemGuard: #" + code;
+            String tagLine = ChatColor.translateAlternateColorCodes('&', "&8#" + code);
 
             int position = config.getInt("uuid-tag.lore-position", -1);
             if (position == -1 || position >= lore.size()) {
@@ -183,7 +223,7 @@ public class ItemTrackingService {
         UUID itemUuid = getItemUuidFromItem(item);
 
         if (code != null && itemUuid != null) {
-            db.updateItemLocation(code, player.getLocation(), player.getName(), player.getUniqueId());
+            db.updateItemLastAction(code, "PICKUP", player.getLocation(), player.getName(), player.getUniqueId());
             logHistory(code, itemUuid, "PICKUP", player);
             trackPlayerItem(player.getUniqueId(), code);
             checkDuplicate(itemUuid, player);
@@ -199,7 +239,7 @@ public class ItemTrackingService {
         String code = getCodeFromItem(item);
         UUID itemUuid = getItemUuidFromItem(item);
         if (code != null && itemUuid != null) {
-            db.updateItemLocation(code, player.getLocation(), player.getName(), player.getUniqueId());
+            db.updateItemLastAction(code, "DROP", player.getLocation(), player.getName(), player.getUniqueId());
             logHistory(code, itemUuid, "DROP", player);
         }
     }
@@ -208,7 +248,7 @@ public class ItemTrackingService {
         String code = getCodeFromItem(item);
         UUID itemUuid = getItemUuidFromItem(item);
         if (code != null && itemUuid != null) {
-            db.updateItemLocation(code, player.getLocation(), player.getName(), player.getUniqueId());
+            db.updateItemLastAction(code, action, player.getLocation(), player.getName(), player.getUniqueId());
             logHistory(code, itemUuid, action, player);
             trackPlayerItem(player.getUniqueId(), code);
         }
@@ -218,6 +258,7 @@ public class ItemTrackingService {
         String code = getCodeFromItem(item);
         UUID itemUuid = getItemUuidFromItem(item);
         if (code != null && itemUuid != null) {
+            db.updateItemLastAction(code, "USE", player.getLocation(), player.getName(), player.getUniqueId());
             logHistory(code, itemUuid, "USE", player);
         }
     }
@@ -245,7 +286,7 @@ public class ItemTrackingService {
         String code = getCodeFromItem(item);
         UUID itemUuid = getItemUuidFromItem(item);
         if (code != null && itemUuid != null) {
-            db.updateItemLocation(code, player.getLocation(), player.getName(), player.getUniqueId());
+            db.updateItemLastAction(code, "CONTAINER_" + containerType, player.getLocation(), player.getName(), player.getUniqueId());
             logHistory(code, itemUuid, "CONTAINER_" + containerType, player);
         }
     }
@@ -271,7 +312,7 @@ public class ItemTrackingService {
         long gracePeriod = data.getCreatedAt() + plugin.getConfigs().getGracePeriod();
         if (System.currentTimeMillis() < gracePeriod) return;
 
-        int count = data.getCurrentCount();
+        int count = data.getDetectionCount();
 
         if (count > 1) {
             if (!db.canReportDuplicate(data.getCode())) return;
@@ -414,7 +455,7 @@ public class ItemTrackingService {
                     tracked.add(code);
                     UUID itemUuid = getItemUuidFromItem(item);
                     if (itemUuid != null) {
-                        db.updateItemLocation(code, player.getLocation(), player.getName(), player.getUniqueId());
+                        db.updateItemLocationOnly(code, player.getLocation(), player.getName(), player.getUniqueId());
                     }
                 }
             }
@@ -461,11 +502,11 @@ public class ItemTrackingService {
             data = UUID.randomUUID().toString().getBytes(StandardCharsets.UTF_8);
         }
         StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < 6; i++) {
             int val = Math.abs(data[i] & 0xFF);
             sb.append("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".charAt(val % 36));
         }
-        return sb.substring(0, 4) + "-" + sb.substring(4);
+        return sb.toString();
     }
 
     private String getDisplayName(ItemStack item) {
@@ -474,6 +515,17 @@ public class ItemTrackingService {
             return ChatColor.stripColor(name) != null ? name : name;
         }
         return formatMaterialName(item.getType().name());
+    }
+
+    private String getLore(ItemStack item) {
+        if (!item.hasItemMeta() || !item.getItemMeta().hasLore()) {
+            return null;
+        }
+        List<String> lore = item.getItemMeta().getLore();
+        if (lore == null || lore.isEmpty()) {
+            return null;
+        }
+        return String.join("|", lore);
     }
 
     private String formatMaterialName(String name) {

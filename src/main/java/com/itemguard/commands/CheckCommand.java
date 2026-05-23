@@ -83,8 +83,11 @@ public class CheckCommand implements CommandExecutor, TabCompleter {
         if (data.getLastLocation() != null) {
             player.sendMessage("  §7Vi tri cuoi: §f" + data.getLastLocation());
         }
-        if (data.getCurrentCount() > 1) {
-            player.sendMessage("  §cSo luong phat hien: §f" + data.getCurrentCount());
+        String lastActionName = plugin.getMessages().getRaw("action-" + (data.getLastAction() != null ? data.getLastAction().toLowerCase() : "unknown"),
+            data.getLastAction() != null ? data.getLastAction() : "Unknown");
+        player.sendMessage("  §7Hanh dong cuoi: §f" + lastActionName);
+        if (data.getDetectionCount() > 1) {
+            player.sendMessage("  §cSo lan phat hien: §f" + data.getDetectionCount());
         }
     }
 

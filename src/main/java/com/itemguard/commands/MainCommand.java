@@ -67,6 +67,17 @@ public class MainCommand implements CommandExecutor, TabCompleter {
                 }
                 new StatsCommand(plugin).showStats(sender);
             }
+            case "browser" -> {
+                if (!sender.hasPermission("itemguard.gui")) {
+                    plugin.getMessages().send(sender, "no-permission");
+                    return true;
+                }
+                if (!(sender instanceof Player player)) {
+                    plugin.getMessages().send(sender, "player-only");
+                    return true;
+                }
+                plugin.getGuiListener().openBrowserPendingFilter(player, args);
+            }
             case "reload" -> {
                 if (!sender.hasPermission("itemguard.reload")) {
                     plugin.getMessages().send(sender, "no-permission");
@@ -116,6 +127,7 @@ public class MainCommand implements CommandExecutor, TabCompleter {
             if (sender.hasPermission("itemguard.search")) subs.add("search");
             if (sender.hasPermission("itemguard.stats")) subs.add("stats");
             if (sender.hasPermission("itemguard.reload")) subs.add("reload");
+            if (sender.hasPermission("itemguard.gui")) subs.add("browser");
             subs.addAll(List.of("info", "help"));
             return filter(subs, args[0]);
         }

@@ -3,6 +3,7 @@ package com.itemguard;
 import com.itemguard.api.ItemGuardAPI;
 import com.itemguard.commands.*;
 import com.itemguard.data.DatabaseManager;
+import com.itemguard.gui.FilterChatListener;
 import com.itemguard.gui.GUIListener;
 import com.itemguard.integrations.DiscordWebhook;
 import com.itemguard.integrations.VaultHook;
@@ -23,6 +24,7 @@ public class ItemGuard extends JavaPlugin {
     private ConfigManager configManager;
     private MessageManager messageManager;
     private GUIListener guiListener;
+    private FilterChatListener filterChatListener;
     private InventoryScanTask inventoryScanTask;
     private CleanupTask cleanupTask;
     private VaultHook vaultHook;
@@ -87,8 +89,11 @@ public class ItemGuard extends JavaPlugin {
     }
 
     private void registerListeners() {
-        this.guiListener = new GUIListener();
+        this.guiListener = new GUIListener(this);
         getServer().getPluginManager().registerEvents(guiListener, this);
+        this.filterChatListener = new FilterChatListener(this);
+        getServer().getPluginManager().registerEvents(filterChatListener, this);
+        guiListener.setFilterChatListener(filterChatListener);
         getServer().getPluginManager().registerEvents(new PlayerListener(this), this);
         getServer().getPluginManager().registerEvents(new ContainerListener(this), this);
         getServer().getPluginManager().registerEvents(new ItemListener(this), this);
@@ -96,8 +101,11 @@ public class ItemGuard extends JavaPlugin {
     }
 
     private void registerCommands() {
-        getCommand("itemguard").setExecutor(new MainCommand(this));
-        getCommand("itemguard").setTabCompleter(new MainCommand(this));
+        MainCommand mainCmd = new MainCommand(this);
+        getCommand("itemguard").setExecutor(mainCmd);
+        getCommand("itemguard").setTabCompleter(mainCmd);
+        getCommand("ig").setExecutor(mainCmd);
+        getCommand("ig").setTabCompleter(mainCmd);
         getCommand("igcheck").setExecutor(new CheckCommand(this));
         getCommand("igcheck").setTabCompleter(new CheckCommand(this));
         getCommand("ighistory").setExecutor(new HistoryCommand(this));

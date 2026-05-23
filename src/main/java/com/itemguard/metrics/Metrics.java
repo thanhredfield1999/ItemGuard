@@ -5,11 +5,9 @@ import com.google.gson.JsonObject;
 import com.itemguard.ItemGuard;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.file.YamlConfiguration;
-import org.bukkit.plugin.Plugin;
 
 import javax.net.ssl.HttpsURLConnection;
 import java.io.*;
-import java.lang.reflect.Method;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -19,7 +17,7 @@ public class Metrics {
 
     private final ItemGuard plugin;
     private final Map<String, Chart> charts = new LinkedHashMap<>();
-    private final Thread scheduler;
+    private Thread scheduler;
     private volatile boolean shutdown = false;
 
     private static final String BSTATS_URL = "https://bStats.org/api/v2/plugins/%s/submit";
@@ -30,7 +28,7 @@ public class Metrics {
         startSubmitting();
     }
 
-    public void addCustomChart(CustomChart chart) {
+    public void addCustomChart(Chart chart) {
         if (chart == null) return;
         charts.put(chart.getKey(), chart);
     }

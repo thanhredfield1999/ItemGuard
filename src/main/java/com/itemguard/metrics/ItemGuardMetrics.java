@@ -1,6 +1,6 @@
-package com.itemguard;
+package com.itemguard.metrics;
 
-import com.itemguard.metrics.Metrics;
+import com.itemguard.ItemGuard;
 
 public class ItemGuardMetrics {
 
