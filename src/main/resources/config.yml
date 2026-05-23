@@ -1,0 +1,297 @@
+# ============================================
+#   ItemGuard Configuration
+#   Anti-Dupe Item Tracking Plugin
+#   Version: 1.0.0 | Minecraft 1.21.11
+# ============================================
+
+# ---------- GENERAL ----------
+general:
+  # Enable/disable the entire plugin
+  enabled: true
+
+  # Debug mode - prints verbose logging
+  debug: false
+
+  # Language: en, vi, zh, etc. (add to messages.yml)
+  language: vi
+
+# ---------- TRACKING ----------
+tracking:
+  # Enable/disable item tracking
+  enabled: true
+
+  # Track non-stackable items (swords, tools, armor, etc.)
+  # Recommended: true (prevents duping exploits)
+  track-non-stackable: true
+
+  # Track stackable items (blocks, food, etc.)
+  # Not recommended for performance on large servers
+  track-stackable: false
+
+  # Materials to ALWAYS track regardless of stackable setting
+  force-track-materials:
+    - DIAMOND_SWORD
+    - DIAMOND_PICKAXE
+    - DIAMOND_AXE
+    - DIAMOND_HOE
+    - DIAMOND_SHOVEL
+    - NETHERITE_SWORD
+    - NETHERITE_PICKAXE
+    - NETHERITE_AXE
+    - NETHERITE_HOE
+    - NETHERITE_SHOVEL
+    - BOW
+    - CROSSBOW
+    - TRIDENT
+    - SHIELD
+    - ELYTRA
+    - BOOKSHELF
+    - ANCIENT_DEBRIS
+    - NETHERITE_INGOT
+    - NETHERITE_HELMET
+    - NETHERITE_CHESTPLATE
+    - NETHERITE_LEGGINGS
+    - NETHERITE_BOOTS
+    - DIAMOND_HELMET
+    - DIAMOND_CHESTPLATE
+    - DIAMOND_LEGGINGS
+    - DIAMOND_BOOTS
+    - ENCHANTED_GOLDEN_APPLE
+    - GOLDEN_APPLE
+    - TOTEM_OF_UNDYING
+    - MUSIC_DISC_13
+    - MUSIC_DISC_CAT
+    - MUSIC_DISC_BLOCKS
+    - MUSIC_DISC_CHIRP
+    - MUSIC_DISC_FAR
+    - MUSIC_DISC_MALL
+    - MUSIC_DISC_MELLOHI
+    - MUSIC_DISC_STAL
+    - MUSIC_DISC_STRAD
+    - MUSIC_DISC_WARD
+    - MUSIC_DISC_11
+    - MUSIC_DISC_WAIT
+    - MUSIC_DISC_OTHERSIDE
+    - MUSIC_DISC_PIGSTEP
+    - COMPARATOR
+    - REPEATER
+    - DRAGON_HEAD
+    - DRAGON_EGG
+    - BEACON
+    - CONDUIT
+    - NETHER_STAR
+    - SHULKER_BOX
+    - SHULKER_BOX_WHITE
+    - SHULKER_BOX_ORANGE
+    - SHULKER_BOX_MAGENTA
+    - SHULKER_BOX_LIGHT_BLUE
+    - SHULKER_BOX_YELLOW
+    - SHULKER_BOX_LIME
+    - SHULKER_BOX_PINK
+    - SHULKER_BOX_GRAY
+    - SHULKER_BOX_LIGHT_GRAY
+    - SHULKER_BOX_CYAN
+    - SHULKER_BOX_PURPLE
+    - SHULKER_BOX_BLUE
+    - SHULKER_BOX_BROWN
+    - SHULKER_BOX_GREEN
+    - SHULKER_BOX_RED
+    - SHULKER_BOX_BLACK
+
+# ---------- UUID TAG DISPLAY ----------
+uuid-tag:
+  # Show a visible code tag on tracked items (in lore)
+  # Format: #XXXX-XXXX (alphanumeric code)
+  show-on-item: true
+
+  # Tag position in lore: 0 = first line, -1 = last line
+  lore-position: -1
+
+  # Display name prefix shown on the item
+  # Example: "[#A3F2-K9P1]" will be added to item name
+  name-prefix: true
+
+  # Name prefix format
+  name-prefix-format: "[#%CODE%]"
+
+  # Lore tag color (use color codes like &a, &b, etc.)
+  lore-color: "&7&m"
+
+  # Name prefix color
+  name-color: "&e"
+
+# ---------- ANTI-DUPE ----------
+anti-dupe:
+  # Enable automatic duplicate detection
+  enabled: true
+
+  # Action to take when duplicate is detected
+  # Options: NOTIFY (notify staff only), REMOVE_OLDER, REMOVE_NEWER, REMOVE_ALL
+  action: NOTIFY
+
+  # Notify online staff when duplicate is detected
+  notify-staff: true
+
+  # Notify the player holding the duplicated item
+  notify-player: false
+
+  # Cooldown (ms) between duplicate detections for same item
+  # Prevents spam when duplicate spreads across multiple players
+  detection-cooldown-ms: 5000
+
+  # Maximum history entries per item before pruning
+  max-history-per-item: 1000
+
+  # Grace period (ms) after item creation before detection is active
+  # Helps prevent false positives during item spawning
+  grace-period-ms: 3000
+
+# ---------- DATABASE ----------
+database:
+  # Database type: SQLITE, MYSQL, POSTGRESQL
+  type: SQLITE
+
+  # SQLite database file name
+  sqlite:
+    file-name: itemguard.db
+
+  # MySQL / PostgreSQL configuration
+  mysql:
+    host: localhost
+    port: 3306
+    database: itemguard
+    username: root
+    password: ""
+    use-ssl: false
+
+  postgres:
+    host: localhost
+    port: 5432
+    database: itemguard
+    username: postgres
+    password: ""
+    use-ssl: false
+
+  # Connection pool settings
+  pool:
+    maximum-pool-size: 10
+    minimum-idle: 2
+    connection-timeout-ms: 30000
+    idle-timeout-ms: 600000
+    max-lifetime-ms: 1800000
+
+# ---------- GUI SETTINGS ----------
+gui:
+  # GUI title
+  title: "&8&lItemGuard &7- &fLich Su Item"
+
+  # Number of rows in the history GUI (1-6, 6 = max)
+  history-rows: 5
+
+  # Number of history entries per page in GUI
+  entries-per-page: 45
+
+  # Item display settings in GUI
+  item-display:
+    # Show item in history entry
+    show-item: true
+
+    # Show timestamp
+    show-timestamp: true
+
+    # Show location (world, x, y, z)
+    show-location: true
+
+    # Show action type
+    show-action: true
+
+    # Show player name
+    show-player: true
+
+  # GUI colors (use Minecraft color codes)
+  colors:
+    background: BLACK
+    border: BLACK
+    filler-item: GRAY_STAINED_GLASS_PANE
+    next-page: ARROW
+    prev-page: ARROW
+    close-button: BARRIER
+
+# ---------- COMMANDS ----------
+commands:
+  # Command aliases
+  aliases:
+    main: [itemguard, ig]
+    check: [igcheck, igc]
+    history: [ighist, igh]
+    search: [igsearch, igs]
+    stats: [igstats]
+
+# ---------- LOGGING ----------
+logging:
+  # Log all item transfers to console
+  log-to-console: true
+
+  # Log level: ALL, INFO, WARNING, SEVERE, NONE
+  console-level: INFO
+
+  # Log duplicate detections
+  log-duplicates: true
+
+  # Log file settings
+  file:
+    enabled: true
+    file-name: itemguard.log
+    max-size-mb: 10
+    max-files: 5
+
+# ---------- PERFORMANCE ----------
+performance:
+  # Async database operations (recommended: true)
+  async-database: true
+
+  # Batch size for bulk database operations
+  batch-size: 100
+
+  # Enable periodic database cleanup
+  auto-cleanup:
+    enabled: true
+    # Run cleanup every X hours
+    interval-hours: 24
+    # Delete history entries older than X days
+    keep-days: 30
+
+  # Track items in container scans (chest, shulker, etc.)
+  container-scan-enabled: true
+
+  # Interval (ticks) between inventory scans for tracked items
+  inventory-scan-interval: 600  # 30 seconds at 20 TPS
+
+  # Maximum items to track per player inventory
+  max-track-per-player: 500
+
+# ---------- WORLD MANAGEMENT ----------
+worlds:
+  # List of worlds where tracking is disabled
+  # Items in these worlds will not be tagged or tracked
+  disabled-worlds: []
+
+  # Enable WorldGuard region integration
+  # Players with 'itemguard.track' permission in WorldGuard regions
+  # can opt-out of tracking
+  worldguard-support: true
+
+# ---------- DISCORD WEBHOOK ----------
+discord:
+  # Enable Discord webhook notifications
+  enabled: false
+
+  # Discord webhook URL
+  # Get this from Discord server settings > Integrations > Webhooks
+  webhook-url: ""
+
+  # Bot/Username shown in Discord
+  username: "ItemGuard Alerts"
+
+  # Bot avatar URL (optional)
+  avatar-url: ""

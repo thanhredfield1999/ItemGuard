@@ -1,0 +1,62 @@
+name: ItemGuard
+version: 1.0.0
+main: com.itemguard.ItemGuard
+api-version: '1.21.11'
+description: Anti-dupe item tracking with unique UUID, history, and GUI inspection
+author: AI.WORK
+website: https://github.com/aiwork-itemguard
+
+commands:
+  itemguard:
+    description: ItemGuard main command
+    usage: /<command> <check|history|search|stats|reload>
+    aliases: [ig]
+  ig:
+    description: ItemGuard alias command
+    usage: /<command>
+  igcheck:
+    description: Check item in hand
+    usage: /<command>
+  ighistory:
+    description: View item history
+    usage: /<command> [page]
+  igsearch:
+    description: Search player items
+    usage: /<command> <player>
+  igstats:
+    description: View plugin statistics
+    usage: /<command>
+
+permissions:
+  itemguard.*:
+    description: All ItemGuard permissions
+    default: op
+    children:
+      itemguard.check: true
+      itemguard.history: true
+      itemguard.search: true
+      itemguard.stats: true
+      itemguard.reload: true
+      itemguard.gui: true
+      itemguard.bypass: true
+  itemguard.check:
+    description: Check item UUID in hand
+    default: true
+  itemguard.history:
+    description: View item transfer history
+    default: true
+  itemguard.search:
+    description: Search items by player
+    default: op
+  itemguard.stats:
+    description: View plugin statistics
+    default: op
+  itemguard.reload:
+    description: Reload plugin configuration
+    default: op
+  itemguard.gui:
+    description: Open history GUI
+    default: true
+  itemguard.bypass:
+    description: Bypass anti-dupe checks (staff)
+    default: op
