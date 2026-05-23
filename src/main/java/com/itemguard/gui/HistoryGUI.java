@@ -37,16 +37,21 @@ public class HistoryGUI implements InventoryHolder {
     private final List<ItemHistory> histories;
     private final int totalPages;
     private int currentPage;
+    private final UUID parentPlayerUuid;
+    private final String parentPlayerName;
 
     private Inventory inventory;
 
-    public HistoryGUI(ItemGuard plugin, Player viewer, String code, List<ItemHistory> histories) {
+    public HistoryGUI(ItemGuard plugin, Player viewer, String code, List<ItemHistory> histories,
+                      UUID parentPlayerUuid, String parentPlayerName) {
         this.plugin = plugin;
         this.viewer = viewer;
         this.code = code;
         this.histories = histories;
-        this.totalPages = (int) Math.ceil((double) histories.size() / ITEM_END);
+        this.totalPages = Math.max(1, (int) Math.ceil((double) histories.size() / (float) ITEM_END));
         this.currentPage = 1;
+        this.parentPlayerUuid = parentPlayerUuid;
+        this.parentPlayerName = parentPlayerName;
     }
 
     public void open() {
@@ -200,12 +205,17 @@ public class HistoryGUI implements InventoryHolder {
     }
 
     private ItemStack makeCloseButton() {
-        ItemStack item = new ItemStack(Material.BARRIER);
+        ItemStack item = new ItemStack(Material.ARROW);
         ItemMeta meta = item.getItemMeta();
-        meta.setDisplayName("§cDong");
+        meta.setDisplayName("§cQuay Lai");
         List<String> lore = new ArrayList<>();
-        lore.add("§7Click de dong GUI");
+        lore.add("§7Click de quay lai danh sach item");
         meta.setLore(lore);
+
+        meta.getPersistentDataContainer().set(
+            new org.bukkit.NamespacedKey(plugin, "back_action"),
+            org.bukkit.persistence.PersistentDataType.STRING, "back");
+
         item.setItemMeta(meta);
         return item;
     }
@@ -271,6 +281,20 @@ public class HistoryGUI implements InventoryHolder {
         if (event.getSlot() == CLOSE_SLOT) {
             event.setCancelled(true);
             player.closeInventory();
+        }
+
+        var backAction = meta.getPersistentDataContainer().get(
+            new org.bukkit.NamespacedKey(gui.plugin, "back_action"),
+            org.bukkit.persistence.PersistentDataType.STRING);
+        if (backAction != null && "back".equals(backAction)) {
+            event.setCancelled(true);
+            // Quay lai man hinh browse item
+            List<com.itemguard.data.ItemData> parentItems = gui.plugin.getDB().getItemsByPlayer(gui.parentPlayerUuid);
+            PlayerBrowserGUI gui2 = PlayerBrowserGUI.createGui(gui.plugin, player,
+                gui.parentPlayerName, gui.parentPlayerUuid, parentItems, null);
+            gui.plugin.getGuiListener().registerOpenBrowser(player, gui2);
+            gui2.open();
+            return;
         }
 
         int slot = event.getSlot();

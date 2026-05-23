@@ -127,7 +127,7 @@ public class HistoryCommand implements CommandExecutor, TabCompleter {
             plugin.getMessages().send(player, "history-empty");
             return;
         }
-        HistoryGUI gui = new HistoryGUI(plugin, player, code, histories);
+        HistoryGUI gui = new HistoryGUI(plugin, player, code, histories, null, null);
         plugin.getGuiListener().registerOpenGUI(player, gui);
         gui.open();
     }
@@ -151,7 +151,7 @@ public class HistoryCommand implements CommandExecutor, TabCompleter {
             return;
         }
 
-        HistoryGUI gui = new HistoryGUI(plugin, player, target.getName(), histories);
+        HistoryGUI gui = new HistoryGUI(plugin, player, target.getName(), histories, target.getUniqueId(), target.getName());
         plugin.getGuiListener().registerOpenGUI(player, gui);
         gui.open();
     }

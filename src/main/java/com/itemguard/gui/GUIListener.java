@@ -112,7 +112,9 @@ public class GUIListener implements Listener {
         if (idxVal != null && codeVal != null) {
             List<com.itemguard.data.ItemHistory> histories = browser.getPlugin().getDB().getHistory(codeVal, 100);
             if (!histories.isEmpty()) {
-                HistoryGUI gui = new HistoryGUI(browser.getPlugin(), player, codeVal, histories);
+                HistoryGUI gui = new HistoryGUI(
+                    browser.getPlugin(), player, codeVal, histories,
+                    browser.getTargetPlayerUuid(), browser.getTargetPlayerName());
                 openGUIs.put(player.getUniqueId(), gui);
                 gui.open();
             } else {

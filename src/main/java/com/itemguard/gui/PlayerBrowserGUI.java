@@ -186,13 +186,18 @@ public class PlayerBrowserGUI implements InventoryHolder {
         lore.add("§7§m------------------------");
         lore.add("§7Ma: §e#" + item.getCode());
         lore.add("§7Loai: §f" + (item.getMaterial() != null ? formatMaterial(item.getMaterial().name()) : "Unknown"));
+
+        // Hien thi lore cua item neu co
         List<String> itemLoreLines = item.getItemLoreLines();
-        if (!itemLoreLines.isEmpty()) {
+        if (itemLoreLines != null && !itemLoreLines.isEmpty()) {
             lore.add("§7Lore:");
             for (String loreLine : itemLoreLines) {
-                lore.add("§d  " + loreLine);
+                if (loreLine != null && !loreLine.trim().isEmpty()) {
+                    lore.add("§d  " + loreLine);
+                }
             }
         }
+
         String lastAction = item.getLastAction();
         String actionName = lastAction != null
             ? plugin.getMessages().getRaw("action-" + lastAction.toLowerCase(), lastAction)

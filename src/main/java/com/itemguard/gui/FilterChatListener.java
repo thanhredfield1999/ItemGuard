@@ -46,9 +46,12 @@ public class FilterChatListener implements Listener {
         String filter = input.equals("*") ? null : input;
         java.util.List<com.itemguard.data.ItemData> allItems = plugin.getDB().getItemsByPlayer(req.uuid);
 
-        // InventoryOpenEvent must be triggered synchronously, so schedule on main thread
-        Bukkit.getScheduler().runTask(plugin, () ->
-            PlayerBrowserGUI.openPlayerItemsFiltered(player, req.name, req.uuid, allItems, filter));
+        // InventoryOpenEvent must be triggered on main thread, so schedule synchronously
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            PlayerBrowserGUI gui = PlayerBrowserGUI.createGui(plugin, player, req.name, req.uuid, allItems, filter);
+            plugin.getGuiListener().registerOpenBrowser(player, gui);
+            gui.open();
+        });
     }
 
     private record FilterRequest(UUID uuid, String name) {}
