@@ -174,14 +174,33 @@ public class DatabaseManager {
             }
         } catch (SQLException e) {
             plugin.getLogger().severe("Failed to create tables: " + e.getMessage());
+            throw new RuntimeException("ItemGuard failed to initialize database tables", e);
+        }
+    }
+
+    private void ensureConnection() throws SQLException {
+        if (connection == null || connection.isClosed()) {
+            plugin.getLogger().warning("Database connection is null or closed, reinitializing...");
+            initDatabase();
+            if (connection == null || connection.isClosed()) {
+                throw new SQLException("Failed to re-establish database connection");
+            }
         }
     }
 
     public void executeAsync(Runnable task) {
+        Runnable wrapped = () -> {
+            try {
+                ensureConnection();
+                task.run();
+            } catch (SQLException e) {
+                plugin.getLogger().log(Level.SEVERE, "Database connection error: " + e.getMessage(), e);
+            }
+        };
         if (plugin.getConfigs().isAsyncDatabase()) {
-            executor.execute(task);
+            executor.execute(wrapped);
         } else {
-            task.run();
+            wrapped.run();
         }
     }
 
@@ -306,6 +325,12 @@ public class DatabaseManager {
     }
 
     public Optional<ItemData> getItem(String code) {
+        try {
+            ensureConnection();
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to get item (connection): " + code, e);
+            return Optional.empty();
+        }
         try (PreparedStatement ps = connection.prepareStatement(
             "SELECT * FROM tracked_items WHERE code = ?"
         )) {
@@ -321,6 +346,12 @@ public class DatabaseManager {
     }
 
     public Optional<ItemData> getItemByUuid(UUID itemUuid) {
+        try {
+            ensureConnection();
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to get item by UUID (connection): " + itemUuid, e);
+            return Optional.empty();
+        }
         try (PreparedStatement ps = connection.prepareStatement(
             "SELECT * FROM tracked_items WHERE item_uuid = ? ORDER BY last_seen_at DESC LIMIT 1"
         )) {
@@ -336,6 +367,12 @@ public class DatabaseManager {
     }
 
     public List<ItemHistory> getHistory(String code, int limit) {
+        try {
+            ensureConnection();
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to get history (connection): " + code, e);
+            return Collections.emptyList();
+        }
         List<ItemHistory> histories = new ArrayList<>();
         try (PreparedStatement ps = connection.prepareStatement(
             "SELECT * FROM item_history WHERE code = ? ORDER BY timestamp DESC LIMIT ?"
@@ -353,6 +390,12 @@ public class DatabaseManager {
     }
 
     public List<ItemData> getItemsByPlayer(UUID playerUuid) {
+        try {
+            ensureConnection();
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to get items by player (connection): " + playerUuid, e);
+            return Collections.emptyList();
+        }
         List<ItemData> items = new ArrayList<>();
         try (PreparedStatement ps = connection.prepareStatement(
             "SELECT * FROM tracked_items WHERE owner_uuid = ? ORDER BY last_seen_at DESC LIMIT 200"
@@ -369,6 +412,12 @@ public class DatabaseManager {
     }
 
     public List<ItemData> searchItems(String query) {
+        try {
+            ensureConnection();
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to search items (connection): " + query, e);
+            return Collections.emptyList();
+        }
         List<ItemData> items = new ArrayList<>();
         try (PreparedStatement ps = connection.prepareStatement(
             """
@@ -392,6 +441,12 @@ public class DatabaseManager {
     }
 
     public int getHistoryCount(String code) {
+        try {
+            ensureConnection();
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to get history count (connection): " + code, e);
+            return 0;
+        }
         try (PreparedStatement ps = connection.prepareStatement(
             "SELECT COUNT(*) FROM item_history WHERE code = ?"
         )) {
@@ -408,6 +463,13 @@ public class DatabaseManager {
 
     public PluginStats getStats() {
         PluginStats stats = new PluginStats();
+        try {
+            ensureConnection();
+        } catch (SQLException e) {
+            stats.setDatabaseStatus("ERROR: " + e.getMessage());
+            plugin.getLogger().log(Level.SEVERE, "Failed to get stats (connection)", e);
+            return stats;
+        }
         try (Statement stmt = connection.createStatement()) {
             ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM tracked_items");
             if (rs.next()) stats.setTotalItems(rs.getInt(1));
@@ -441,6 +503,12 @@ public class DatabaseManager {
     }
 
     public void deleteOldHistory(int keepDays) {
+        try {
+            ensureConnection();
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to delete old history (connection)", e);
+            return;
+        }
         long cutoff = System.currentTimeMillis() - (keepDays * 86400000L);
         try (PreparedStatement ps = connection.prepareStatement(
             "DELETE FROM item_history WHERE timestamp < ?"
@@ -455,6 +523,12 @@ public class DatabaseManager {
     }
 
     public boolean isDuplicate(String code) {
+        try {
+            ensureConnection();
+        } catch (SQLException e) {
+            plugin.getLogger().log(Level.SEVERE, "Failed to check duplicate (connection): " + code, e);
+            return false;
+        }
         try (PreparedStatement ps = connection.prepareStatement(
             "SELECT current_count FROM tracked_items WHERE code = ?"
         )) {
@@ -481,6 +555,7 @@ public class DatabaseManager {
 
     public void flush() {
         try {
+            ensureConnection();
             connection.commit();
         } catch (SQLException e) {
             plugin.getLogger().log(Level.SEVERE, "Failed to flush database", e);
