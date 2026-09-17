@@ -15,7 +15,7 @@ import java.util.List;
  *
  * <p>Not a test class itself (the name does not match surefire's includes on purpose).
  */
-final class MySqlTestSupport {
+public final class MySqlTestSupport {
 
     static final String IDENTITY_CODE = "AB12CD";
     static final String IDENTITY_UUID = "00000000-0000-0000-0000-000000000001";
@@ -32,7 +32,7 @@ final class MySqlTestSupport {
         return value == null || value.isBlank() ? fallback : value;
     }
 
-    static Connection connect() throws SQLException {
+    public static Connection connect() throws SQLException {
         return DriverManager.getConnection(
             setting("IG_MYSQL_TEST_URL", DEFAULT_URL),
             setting("IG_MYSQL_TEST_USER", "itemguard"),
@@ -41,7 +41,7 @@ final class MySqlTestSupport {
     }
 
     /** Connects, drops every table of a previous run, and initializes the schema. */
-    static Connection freshSchema() throws SQLException {
+    public static Connection freshSchema() throws SQLException {
         Connection connection = connect();
         connection.setAutoCommit(false);
         dropAllTables(connection);

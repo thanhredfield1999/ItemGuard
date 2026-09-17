@@ -1,6 +1,6 @@
 # ItemGuard — Current State
 
-## Branch `premium-mysql` — 2026-09-18 — M1 of the MySQL backend landed
+## CURRENT — Branch `premium-mysql` — 2026-09-18 — M4 catalog search landed
 
 This branch exists so that the release candidate keeps a tree it can be rebuilt from: `main` is
 the release commit `6292638`, and this branch holds the Premium work on top of it.
@@ -51,7 +51,17 @@ cannot tell a move from a copy. The rule has its own vocabulary (`CrossServerSig
 than widening `ItemObservation`, so a change here cannot reach the epoch rule that has runtime
 evidence. Config `multi-server` is inert on SQLite. Detail: §10.
 
-Not done, explicitly: M4 (catalog search), M5 (`/ig migrate`), M6 (two-server runtime fixture).
+M4 is implemented on this branch: `MySqlCatalogRepository` uses an InnoDB `FULLTEXT` index with
+the MySQL `ngram` parser for non-empty catalog searches and keyset pagination for empty searches.
+`MySqlSchemaManager` creates `idx_tracked_items_catalog_fulltext`; the test proves a real MySQL
+8.4.6 fixture returns the expected catalog row. This is intentionally not claimed equivalent to
+SQLite FTS5/trigram; the Premium listing must state backend-specific search semantics.
+
+Fresh M4 evidence: `mvnw.cmd -o -Pmysql -Dtest=MySqlCatalogRepositoryTest test` = 1/1 PASS,
+then `mvnw.cmd -o test` = 884/884 PASS, and `scripts/run_mysql_schema_gate.py` = 30/30,
+`PASS_MYSQL_SCHEMA_INVARIANTS`; fixture stopped, port closed, process gone.
+
+Not done, explicitly: M5 (`/ig migrate`), M6 (two-server runtime fixture).
 M2's and M3's evidence is one server with several connections. The D4 shape (fail closed, no
 buffer) is implemented but D4 itself is still formally "proposed" in the contract until Thanh
 confirms it. **Open decision for Thanh**: where a generated/remembered `server-id` is stored —

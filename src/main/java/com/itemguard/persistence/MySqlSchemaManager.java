@@ -112,6 +112,7 @@ public final class MySqlSchemaManager {
                     detection_count INT DEFAULT 0,
                     last_location TEXT,
                     UNIQUE KEY idx_item_uuid_unique (item_uuid)
+                    ,FULLTEXT KEY idx_tracked_items_catalog_fulltext (code, item_name, material) WITH PARSER ngram
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=%s
                 """.formatted(COLLATION));
             statement.execute("""
