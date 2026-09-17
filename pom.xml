@@ -18,6 +18,13 @@
         <junit.version>5.11.4</junit.version>
         <sqlite.version>3.53.2.1</sqlite.version>
         <bstats.version>3.2.1</bstats.version>
+        <!--
+          Test-scope only for now: the MySQL schema work (M1) drives the server through JDBC
+          directly. When a MySQL connection owner exists (M2) this becomes a runtime dependency
+          and has to be shaded, which also means LITE's packaging gate needs a decision about it.
+          The version is already in the local repository, because the LITE build runs offline.
+        -->
+        <mysql.connector.version>9.2.0</mysql.connector.version>
 
 
     </properties>
@@ -84,6 +91,12 @@
             <version>5.14.2</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <version>${mysql.connector.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -114,6 +127,13 @@
                 <version>3.5.2</version>
                 <configuration>
                     <argLine>-javaagent:"${settings.localRepository}/org/mockito/mockito-core/5.14.2/mockito-core-5.14.2.jar"</argLine>
+                    <!--
+                      Tests tagged `mysql` need the controlled MySQL fixture running, so they are
+                      excluded from the default build (which must stay runnable offline, and is the
+                      gate the LITE candidate is packaged with). They are not skipped silently:
+                      `-Pmysql` selects exactly them and fails when none ran.
+                    -->
+                    <groups>!mysql</groups>
                 </configuration>
             </plugin>
             <plugin>
@@ -187,4 +207,28 @@
             </resource>
         </resources>
     </build>
+
+    <profiles>
+        <!--
+          The M1 gate: the same invariants, proven on a real MySQL server. Run it with the
+          fixture up (`python tools/mysql-runtime/mysql_fixture.py start`) and stop the fixture
+          afterwards. failIfNoTests is the point of the profile: a tag filter that matches
+          nothing must not look like a passing gate.
+        -->
+        <profile>
+            <id>mysql</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <groups>mysql</groups>
+                            <failIfNoTests>true</failIfNoTests>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

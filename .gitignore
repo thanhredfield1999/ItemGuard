@@ -88,3 +88,10 @@ __pycache__/
 # Build and test transcripts that docs/ cites as its evidence are kept,
 # unlike the dev-server logs above.
 !docs/reviews/*.log
+
+# The controlled MySQL fixture: the script and its README are source, the
+# 250 MB archive, the binaries, the datadir and the run state are not.
+tools/mysql-runtime/download/
+tools/mysql-runtime/server/
+tools/mysql-runtime/data/
+tools/mysql-runtime/run/

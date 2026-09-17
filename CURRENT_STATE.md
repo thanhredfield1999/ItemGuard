@@ -1,5 +1,40 @@
 # ItemGuard — Current State
 
+## Branch `premium-mysql` — 2026-09-18 — M1 of the MySQL backend landed
+
+This branch exists so that the release candidate keeps a tree it can be rebuilt from: `main` is
+the release commit `6292638`, and this branch holds the Premium work on top of it.
+
+**The release binding below is unchanged, and nothing here is reachable by a server.**
+`requireImplemented(DatabaseBackend.MYSQL)` still refuses MySQL by name, so no admin can select
+the new backend yet; the three copies of the candidate jar still hash `8c0e540e…` after every
+build and test run in this session (checked, not assumed).
+
+M1 is the portable schema: `MySqlSchemaManager` creates the same nine tables at the same schema
+version, with SQLite's two partial unique indexes re-expressed as `STORED` generated columns
+behind plain unique keys, byte-wise (`utf8mb4_0900_bin`) comparison, and `MEDIUMBLOB` payloads
+because MySQL's `BLOB` stops at 65,535 bytes while the snapshot codec accepts 1 MiB. Session
+durability and strictness are read from the server and refused by name when they are not what the
+plugin requires — `innodb_flush_log_at_trx_commit` is global-only in 8.4, so it cannot be set
+per session. Full detail, including the four traps that were not in the original port estimate:
+`docs/design/2026-09-16-premium-mysql-contract.md` §8.
+
+Evidence, all run on 2026-09-18 against a controlled MySQL 8.4.6 fixture
+(`tools/mysql-runtime/`, port 33316, started and stopped by the gate itself):
+
+    run/mysql-schema-gate-20260918-030349.json   PASS_MYSQL_SCHEMA_INVARIANTS
+                                                 10/10 tests, fixture stopped, port closed,
+                                                 process gone
+    mvnw.cmd -o test                             868/868, 0 failures/errors/skipped
+                                                 (the mysql tag is excluded; parity and session
+                                                 guard tests are in this count)
+    mvnw.cmd -o -Pmysql test                     only the tagged class; the profile fails when
+                                                 nothing ran
+
+Not done, explicitly: M2 (per-identity `SELECT … FOR UPDATE`, connection-loss fail-closed), M3
+(`server_id`, cross-server finding), M4 (catalog search), M5 (`/ig migrate`), M6 (two-server
+runtime fixture). No claim in this section is Paper or two-server evidence.
+
 ## CURRENT — 2026-09-17 — a third review of this candidate's own code, adjudicated and answered
 
 ### 2026-09-18 — the public repository now mirrors this candidate; nothing was rebuilt

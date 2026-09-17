@@ -231,3 +231,70 @@ reason for choosing migration at all — "a Premium upgrade that silently starts
 a refund" — only holds if it is available on day one.
 
 No open questions remain in this document. Implementation may start at M0.
+
+---
+
+## 8. M1 landed 2026-09-18 — and four traps the estimate did not have
+
+`MySqlSchemaManager` (`src/main/java/com/itemguard/persistence/`) creates the same nine tables at
+the same schema version, with the two partial unique indexes re-expressed as `STORED` generated
+columns behind plain unique keys:
+
+| SQLite | MySQL | Why it is equivalent |
+|---|---|---|
+| `UNIQUE INDEX idx_reclaim_identity_lock ON reclaim_claims(player_uuid, code) WHERE state IN ('PENDING','PREPARED','COMMITTED')` | `active_identity_lock` = `CASE WHEN state IN (…) THEN CONCAT(player_uuid, ':', code) END`, `STORED`, `UNIQUE KEY` | MySQL does not constrain `NULL`, so only blocking states occupy the key — the same selectivity as the partial index |
+| `UNIQUE INDEX idx_tag_publication_source_lock ON tag_publications(source_key) WHERE state = 'PREPARED'` | `prepared_source_lock` = `CASE WHEN state = 'PREPARED' THEN source_key END`, `STORED`, `UNIQUE KEY` | same |
+
+**Four behaviours were found that section 2.2 did not list, and each one would have been a
+runtime defect rather than a compile error:**
+
+1. **Collation is an identity rule, not decoration.** MySQL's default `utf8mb4` collation is
+   case- and accent-insensitive, so on the default the codes `AB12CD` and `ab12cd` are *one*
+   identity, and `utf8mb4_bin` (PAD SPACE) would still make `'AB12CD '` equal `'AB12CD'`. Every
+   table is created `COLLATE utf8mb4_0900_bin` — byte-wise and NO PAD, the comparison SQLite's
+   `BINARY` performs. Pinned by a test that inserts three such identities and by a parity test
+   that counts the collation declarations in the DDL.
+2. **`BLOB` caps at 65,535 bytes; the snapshot codec accepts 1 MiB.** A snapshot between the two
+   is stored by SQLite and rejected — or truncated under a relaxed `sql_mode` — by MySQL.
+   Payload columns are `MEDIUMBLOB`; a test stores a 100 KB payload and reads its length back.
+3. **`CREATE INDEX IF NOT EXISTS` is MariaDB syntax.** MySQL rejects it, so the history index is
+   looked up in `information_schema.statistics` first. (The parity test asserts the SQLite-only
+   syntax is absent — against source with comments stripped, because a comment mentioning a
+   forbidden construct is not the construct.)
+4. **Durability and strictness are the server's, and both are now read.** `PRAGMA synchronous =
+   FULL` becomes a read of `innodb_flush_log_at_trx_commit`, which is **global-only** in 8.4 —
+   `SET SESSION` is rejected, measured. The plugin therefore cannot make the read
+   self-fulfilling; it refuses to start when the value is not `1`. `sql_mode` is checked for
+   strictness (`STRICT_ALL_TABLES` or `STRICT_TRANS_TABLES`; MySQL 8.4 ships the latter) and for
+   `NO_ENGINE_SUBSTITUTION`, because a non-strict mode truncates instead of rejecting. A server
+   that reports itself as MariaDB, or a major version below 8, is refused by name.
+
+**Two guarantees deliberately do not carry over**, and are stated in the class javadoc rather
+than implied: the history-index build budget (SQLite's `ProgressHandler` has no MySQL analogue —
+a client cannot interrupt its own DDL) and rollback of a failed initialization (MySQL DDL commits
+implicitly, so re-running must be, and is, safe instead).
+
+**Not covered by M1 — unchanged and still open:** M2 (`SELECT … FOR UPDATE` per identity,
+connection-loss fail-closed), M3 (`server_id` and the cross-server finding), M4 (catalog search),
+M5 (`/ig migrate`), M6 (two-server runtime fixture). `requireImplemented(MYSQL)` still refuses the
+backend, so none of this is reachable by an admin yet — the M0 seam working exactly as intended.
+
+### Evidence
+
+    python scripts/run_mysql_schema_gate.py
+        -> run/mysql-schema-gate-20260918-030349.json
+           PASS_MYSQL_SCHEMA_INVARIANTS · MySQL 8.4.6 · 10/10 tests · fixture stopped,
+           port closed, process gone
+
+    mvnw.cmd -o test              -> 868/868, 0 failures/errors/skipped   (mysql tag excluded)
+    mvnw.cmd -o -Pmysql test      -> only the tagged class, and the profile fails when none ran
+
+The MySQL tests need the fixture, so they are excluded from the default build by tag and selected
+by `-Pmysql`; the profile sets `failIfNoTests`, because a tag filter that matches nothing must not
+look like a passing gate. `MySqlSchemaParityTest` (6 tests, no server needed) and
+`MySqlSchemaSessionGuardTest` (7 tests, stubbed connection) keep the invariants and the refusal
+paths covered in the default build.
+
+**No LITE change.** The three copies of the 1.0.0 candidate still hash `8c0e540e…` after every
+run in this session; the MySQL code is additive, `mysql-connector-j` is `test` scope, and the
+work is on the `premium-mysql` branch so `main` remains the release commit.

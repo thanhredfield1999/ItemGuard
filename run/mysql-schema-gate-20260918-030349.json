@@ -1,0 +1,21 @@
+{
+  "gate": "mysql-schema-invariants",
+  "started_at": "2026-09-18T03:03:15+07:00",
+  "port": 33316,
+  "maven_exit": 0,
+  "totals": {
+    "tests": 10,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "report": "target\\surefire-reports\\TEST-com.itemguard.persistence.MySqlSchemaInvariantTest.xml"
+  },
+  "fixture_stopped": {
+    "exit": 0,
+    "port_closed": true,
+    "process_gone": true
+  },
+  "fixture_start_exit": 0,
+  "server": "8.4.6",
+  "verdict": "PASS_MYSQL_SCHEMA_INVARIANTS"
+}
