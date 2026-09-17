@@ -477,3 +477,20 @@ reach any of this; that flips only when the whole feature is verified, per §5. 
 being SQLite-only) remains satisfied by construction, because MySQL does not reuse
 `SqliteConnectionOwner` and now has an owner of its own. `M4` and `M5` both need this class, which
 is why it came before them.
+
+### Prerequisite found while building M2b: IG-R026 applies to MySQL too
+
+`MySqlConnectionOwner.driverManager(...)` — added in M2b — goes through the global
+`DriverManager`, which is the same defect `RISK_REGISTER.md` already records for SQLite as
+**IG-R026 (High, Open)**: another plugin can win the driver lookup, and then the durability the
+plugin believes it negotiated is not the durability it gets. For SQLite that invalidates the
+`synchronous = FULL` evidence; for MySQL it would invalidate the `innodb_flush_log_at_trx_commit`
+check that §2.2d and §11 both rest on — a check that is only worth anything if the connection it
+was made on is the connection the writes go through.
+
+`IG-R026` already says "prerequisite before MySQL", so this is not a new defect, it is confirmation
+that the existing row is load-bearing. Before the backend is enabled: instantiate the driver
+directly instead of via the global registry, relocate it during shading, and prove the relocation
+survives the LITE packaging gate (which rejects any non-class entry outside the three shipped
+resources and the shaded library prefixes). The factory carries that note in its javadoc so the
+next person to wire this cannot miss it.

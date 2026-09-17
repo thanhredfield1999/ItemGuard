@@ -314,7 +314,17 @@ public final class MySqlConnectionOwner implements AutoCloseable {
         }
     }
 
-    /** The production factory: DriverManager with the settings a shared database needs. */
+    /**
+     * The development and test factory: DriverManager with the settings a shared database needs.
+     *
+     * <p><strong>Not the shipping path yet.</strong> It goes through the global
+     * {@code DriverManager}, which is exactly the hazard `IG-R026` records for SQLite — another
+     * plugin's driver can win the lookup, and the durability the plugin believes it has is then
+     * not the durability it gets. The MySQL equivalent has the same shape, and `IG-R026` is
+     * already declared a prerequisite before the MySQL backend is enabled. Before that happens
+     * this factory must become a non-global one (instantiate the driver directly, relocated
+     * during shading) and the relocation has to survive the LITE packaging gate.
+     */
     public static ConnectionFactory driverManager(String url, String user, String password) {
         return () -> {
             Properties properties = new Properties();
