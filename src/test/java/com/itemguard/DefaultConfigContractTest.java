@@ -25,6 +25,11 @@ class DefaultConfigContractTest {
             assertEquals(20, config.getInt("reclaim.history-days"));
             assertFalse(config.getBoolean("worlds.worldguard-support"));
             assertFalse(config.getBoolean("tracking.track-stackable"));
+            // Multi-server keys ship with a blank name (nothing configured) and a 30 minute window.
+            // A blank name must stay blank rather than `null`, or the identity resolver would see
+            // "not configured" as a name.
+            assertEquals("", config.getString("multi-server.server-id"));
+            assertEquals(30, config.getInt("multi-server.cross-server-window-minutes"));
         } catch (java.io.IOException impossible) {
             throw new IllegalStateException(impossible);
         }

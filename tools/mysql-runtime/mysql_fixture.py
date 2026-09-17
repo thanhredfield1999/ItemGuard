@@ -230,7 +230,16 @@ def stop() -> int:
     deadline = time.time() + 120
     while time.time() < deadline and port_open():
         time.sleep(1)
-    gone = process_command_line(pid) is None if pid else True
+    # The process, too, is polled rather than sampled once: on Windows a process object can still
+    # answer a query for a moment after the server has exited, and reporting that as "not stopped"
+    # would make the gate fail for a reason unrelated to what it measures.
+    gone = True
+    while time.time() < deadline:
+        if pid is None or process_command_line(pid) is None:
+            gone = True
+            break
+        gone = False
+        time.sleep(1)
     print(f'EVIDENCE port_open={port_open()} process_gone={gone}')
     if port_open() or not gone:
         raise SystemExit('shutdown did not complete; the fixture is still running')

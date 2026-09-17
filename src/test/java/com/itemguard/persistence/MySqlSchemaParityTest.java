@@ -62,12 +62,14 @@ class MySqlSchemaParityTest {
     }
 
     @Test
-    @DisplayName("both backends report the same schema version")
-    void bothBackendsReportTheSameSchemaVersion() {
-        assertEquals(SqliteSchemaManager.CURRENT_SCHEMA_VERSION,
+    @DisplayName("the MySQL schema is exactly one migration ahead, and the extra is server_id")
+    void mysqlSchemaIsOneMigrationAhead() throws Exception {
+        assertEquals(SqliteSchemaManager.CURRENT_SCHEMA_VERSION + 1,
             MySqlSchemaManager.CURRENT_SCHEMA_VERSION,
-            "two backends disagreeing about the schema version would make /ig migrate "
-                + "unverifiable");
+            "MySQL carries server_id, which a single-server SQLite install has nothing to record "
+                + "in; moving one ladder without the other is a decision, not a detail");
+        assertTrue(code().contains("server_id"),
+            "the migration the MySQL ladder is ahead by is the server column");
     }
 
     @Test

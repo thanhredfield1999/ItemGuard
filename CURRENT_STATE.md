@@ -22,13 +22,13 @@ per session. Full detail, including the four traps that were not in the original
 Evidence, all run on 2026-09-18 against a controlled MySQL 8.4.6 fixture
 (`tools/mysql-runtime/`, port 33316, started and stopped by the gate itself):
 
-    run/mysql-schema-gate-20260918-031728.json   PASS_MYSQL_SCHEMA_INVARIANTS
-                                                 18/18 tests (10 schema invariants + 8 lock
-                                                 tests), fixture stopped, port closed,
-                                                 process gone
-    mvnw.cmd -o test                             869/869, 0 failures/errors/skipped
-                                                 (the mysql tag is excluded; parity and session
-                                                 guard tests are in this count)
+    run/mysql-schema-gate-20260918-032634.json   PASS_MYSQL_SCHEMA_INVARIANTS
+                                                 22/22 tests across three classes (10 schema
+                                                 invariants + 8 lock + 4 cross-server), fixture
+                                                 stopped, port closed, process gone
+    mvnw.cmd -o test                             884/884, 0 failures/errors/skipped
+                                                 (the mysql tag is excluded; the parity, session
+                                                 guard and multiserver tests are in this count)
     mvnw.cmd -o -Pmysql test                     only the tagged classes; the profile fails when
                                                  nothing ran
 
@@ -41,10 +41,22 @@ a pair of tests — the same two-writer read-modify-write loses an update *witho
 different-identities-don't-block, rollback-releases, and an aborted connection leaving nothing
 visible. Detail: `docs/design/2026-09-16-premium-mysql-contract.md` §9.
 
-Not done, explicitly: M3 (`server_id`, cross-server finding), M4 (catalog search), M5
-(`/ig migrate`), M6 (two-server runtime fixture). M2's evidence is two connections on one server;
-it is not two servers, and not a Paper server. The D4 shape (fail closed, no buffer) is
-implemented but D4 itself is still formally "proposed" in the contract until Thanh confirms it.
+M3 is server identity and the cross-server rule. The MySQL schema is now **version 9** — the
+ladder moved, SQLite stayed at 8, and the parity test asserts the one-migration difference with
+the reason, because adding the column to the shipped LITE schema would change a candidate whose
+evidence is bound to its jar. `server_id` is on observations, history and publications, indexed
+with the observation time. `CrossServerFindingPolicy` answers only "seen on N servers, named",
+with a test that fails if any status or message says duplicate/dupe/copy/cloned — observations
+cannot tell a move from a copy. The rule has its own vocabulary (`CrossServerSighting`) rather
+than widening `ItemObservation`, so a change here cannot reach the epoch rule that has runtime
+evidence. Config `multi-server` is inert on SQLite. Detail: §10.
+
+Not done, explicitly: M4 (catalog search), M5 (`/ig migrate`), M6 (two-server runtime fixture).
+M2's and M3's evidence is one server with several connections. The D4 shape (fail closed, no
+buffer) is implemented but D4 itself is still formally "proposed" in the contract until Thanh
+confirms it. **Open decision for Thanh**: where a generated/remembered `server-id` is stored —
+D1 says "no servers table", so a metadata row, a value written back into config.yml, or a small
+file in the plugin folder; nothing is implemented and no call site exists yet.
 
 ## CURRENT — 2026-09-17 — a third review of this candidate's own code, adjudicated and answered
 

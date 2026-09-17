@@ -48,15 +48,15 @@ class MySqlSchemaInvariantTest {
             INSERT INTO tag_publications
             (publication_id, source_key, source_digest, code, item_uuid, created_item_at,
              last_seen_at, detection_count, snapshot_version, payload, sha256, captured_at,
-             state, created_at, updated_at)
-            VALUES ('%s', '%s', X'00', '%s', '%s', 1, 1, 0, 1, X'00', X'00', 1, '%s', 1, 1)
+             state, created_at, updated_at, server_id)
+            VALUES ('%s', '%s', X'00', '%s', '%s', 1, 1, 0, 1, X'00', X'00', 1, '%s', 1, 1, 'test-server')
             """.formatted(publicationId, sourceKey, code, "00000000-0000-0000-0000-%012d".formatted(
                 Math.abs(publicationId.hashCode())), state));
     }
 
 
     @Test
-    @DisplayName("the fresh schema is the same schema, at the same version, with the lock columns")
+    @DisplayName("the fresh schema has the same tables, the MySQL version, and the lock columns")
     void freshSchemaCarriesTheSameTablesAndVersion() throws Exception {
         try (Connection connection = MySqlTestSupport.freshSchema()) {
             for (String table : new String[] {"tracked_items", "item_history", "item_observations",
@@ -76,7 +76,8 @@ class MySqlSchemaInvariantTest {
                  ResultSet rows = statement.executeQuery(
                      "SELECT schema_version FROM plugin_stats WHERE id = 1")) {
                 rows.next();
-                assertEquals(SqliteSchemaManager.CURRENT_SCHEMA_VERSION, rows.getInt(1));
+                assertEquals(MySqlSchemaManager.CURRENT_SCHEMA_VERSION, rows.getInt(1),
+                    "the MySQL ladder is one migration ahead of SQLite because of server_id");
             }
             for (String column : new String[] {"active_identity_lock", "prepared_source_lock"}) {
                 try (var statement = connection.prepareStatement("""

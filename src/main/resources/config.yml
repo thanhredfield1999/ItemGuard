@@ -186,6 +186,25 @@ database:
     idle-timeout-ms: 600000
     max-lifetime-ms: 1800000
 
+# ---------- MULTI-SERVER (MySQL backend only) ----------
+# Everything here is inert on SQLite: a single-server install has no second server to compare
+# against, and the MySQL backend is the only one that can be shared. Nothing below changes the
+# duplicate rule that LITE ships.
+multi-server:
+  # Name of THIS server, exactly as it appears in a cross-server finding. Readable names are the
+  # point ("survival-1"): an operator reads it and knows where to look.
+  # Letters, digits, dot, underscore and hyphen only, up to 64 characters; other values fail
+  # startup rather than being printed into a finding. Blank means: use the name stored from an
+  # earlier start, or generate one and store it.
+  server-id: ""
+
+  # Two sightings of one identity on two different servers within this many minutes are reported
+  # as "seen on N servers". It is never reported as a duplicate: a legitimate move between servers
+  # and a copy are indistinguishable from observation records alone, and the message says only
+  # where the item was seen. Must be positive - a window of 0 is refused at startup instead of
+  # being configured into silence.
+  cross-server-window-minutes: 30
+
 # ---------- GUI SETTINGS ----------
 gui:
   # GUI title

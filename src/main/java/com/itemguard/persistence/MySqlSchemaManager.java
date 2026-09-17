@@ -58,12 +58,17 @@ import java.util.Locale;
 public final class MySqlSchemaManager {
 
     /**
-     * The schema version this manager produces. Kept equal to
-     * {@link SqliteSchemaManager#CURRENT_SCHEMA_VERSION} by
-     * {@code MySqlSchemaParityTest}, because a client that migrated between backends must not
-     * see two different opinions about what version its rows are.
+     * The schema version this manager produces.
+     *
+     * <p>Deliberately <strong>one ahead</strong> of {@link SqliteSchemaManager#CURRENT_SCHEMA_VERSION}
+     * (8): the {@code server_id} columns exist only where several servers share one database, and
+     * a single-server SQLite install has nothing to record in them. Adding the column to the
+     * shipped LITE schema instead would change a candidate that is already built and verified, so
+     * the ladder is expressed as "MySQL is one migration ahead, and the parity test says why"
+     * rather than as two schemas claiming one version. {@code /ig migrate} therefore reads a
+     * version-8 SQLite file and writes version-9 rows, stamping {@code server_id} from config.
      */
-    public static final int CURRENT_SCHEMA_VERSION = 8;
+    public static final int CURRENT_SCHEMA_VERSION = 9;
 
     /** MySQL 8.0 is the floor: {@code utf8mb4_0900_bin} and real descending indexes are 8.0 features. */
     public static final int MINIMUM_SERVER_MAJOR_VERSION = 8;
@@ -123,7 +128,8 @@ public final class MySqlSchemaManager {
                     y INT,
                     z INT,
                     timestamp BIGINT NOT NULL,
-                    additional_data TEXT
+                    additional_data TEXT,
+                    server_id VARCHAR(64) NOT NULL
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=%s
                 """.formatted(COLLATION));
             statement.execute("""
@@ -137,9 +143,13 @@ public final class MySqlSchemaManager {
                     holder_id VARCHAR(255) NOT NULL,
                     slot INT NOT NULL,
                     observed_at BIGINT NOT NULL,
+                    server_id VARCHAR(64) NOT NULL,
                     UNIQUE KEY idx_observation_slot_unique
                         (scan_epoch, holder_type, holder_id, slot, item_uuid),
-                    KEY idx_observation_identity_epoch (item_uuid, scan_epoch)
+                    KEY idx_observation_identity_epoch (item_uuid, scan_epoch),
+                    -- The cross-server question is "which servers has this identity been seen on
+                    -- inside a window", so the index carries the server and the time.
+                    KEY idx_observation_identity_server (item_uuid, server_id, observed_at)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=%s
                 """.formatted(COLLATION));
             statement.execute("""
@@ -227,6 +237,7 @@ public final class MySqlSchemaManager {
                     created_at BIGINT NOT NULL,
                     updated_at BIGINT NOT NULL,
                     detail TEXT,
+                    server_id VARCHAR(64) NOT NULL,
                     prepared_source_lock VARCHAR(255) COLLATE utf8mb4_0900_bin
                         GENERATED ALWAYS AS (
                             CASE WHEN state = 'PREPARED' THEN source_key END

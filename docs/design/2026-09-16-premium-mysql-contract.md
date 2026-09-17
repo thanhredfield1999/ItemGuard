@@ -361,3 +361,67 @@ green file to a verdict nobody re-derived.
 **Still open, unchanged:** M3 (`server_id`, the cross-server finding), M4 (catalog search), M5
 (`/ig migrate`), M6 (the two-server runtime fixture). M2's evidence is two connections on one
 server; it is not two servers, and it is not a Paper server.
+
+---
+
+## 10. M3 landed 2026-09-18 — server identity, and a rule that is not allowed to say "duplicate"
+
+Three columns and one rule, and the rule's vocabulary is the interesting part.
+
+**Schema, now version 9.** `server_id VARCHAR(64) NOT NULL` on `item_observations`,
+`item_history` and `tag_publications` (D1), plus `KEY idx_observation_identity_server
+(item_uuid, server_id, observed_at)` — the cross-server question is "which servers has this
+identity been seen on inside a window", and without that index it reads every observation ever
+taken.
+
+**The ladder moved, and LITE did not.** MySQL is now one migration ahead of SQLite (8), and the
+parity test asserts exactly that difference rather than equality — with the reason in the failure
+message. The alternative was adding `server_id` to the shipped SQLite schema, which would change a
+candidate that is built and verified and whose whole evidence chain is bound to its jar; a
+single-server install also has nothing to record in that column. Consequence for M5: `/ig migrate`
+reads a **version-8** SQLite file and writes **version-9** rows, stamping `server_id` from config.
+
+**The rule is a separate class with a separate vocabulary.** `CrossServerFindingPolicy` takes
+`CrossServerSighting` — not a widened `ItemObservation`. Observations are the single-server
+vocabulary and the shipped epoch rule is written against their shape; widening that record so a
+Premium-only column could travel in it would change the type underneath verified behaviour. The
+rule reports `SEEN_ON_MULTIPLE_SERVERS`, names the servers, and stops there. A test enumerates
+every status and every statement and fails if any of them contains "duplicate", "dupe", "copy",
+"copied" or "cloned": a legitimate move and a copy are indistinguishable from observations alone,
+so a word like that in a message a staff member reads is a claim the data cannot support.
+
+**Server identity** (`ServerIdentityPolicy`): configured beats remembered beats generated, and a
+generated name is flagged as new so the caller knows it must store it — otherwise the next start
+invents a different name and the two runs' findings cannot be told apart. Names are validated
+(letters, digits, dot, underscore, hyphen; ≤ 64) because the value ends up in a finding and in a
+`WHERE` clause, and a generator producing junk is refused rather than stored.
+
+**Config** (`multi-server`, inert on SQLite): `server-id: ""` and
+`cross-server-window-minutes: 30`. The window reaches the rule as milliseconds and a non-positive
+window is refused there — one place, so a setting that reports nothing while looking configured
+cannot exist.
+
+### Open, and it needs Thanh: where a generated or remembered name lives
+
+D1 says "no `servers` table", and that is the whole reason this is not yet decided. A generated
+name must survive a restart or it is noise; a remembered one has to be remembered *somewhere*. The
+options are a single-row metadata table, a value written back into `config.yml`, or a small file in
+the plugin folder. Nothing is implemented, and no call site exists yet — this is a decision to make
+before M6 wires a connection owner, not after.
+
+### Evidence
+
+    python scripts/run_mysql_schema_gate.py
+        -> run/mysql-schema-gate-20260918-032634.json
+           PASS_MYSQL_SCHEMA_INVARIANTS · MySQL 8.4.6 · 22/22 tests across three classes ·
+           fixture stopped, port closed, process gone
+
+    mvnw.cmd -o test    -> 884/884, 0 failures/errors/skipped   (mysql tag excluded)
+
+The triangle that makes M3's claim a measurement rather than an assertion, all against a real
+server: the cross-server rule fires on two servers where the epoch rule provably says `CLEAN`;
+the epoch rule still confirms a same-epoch same-server pair while the cross-server rule says
+`NONE`; and an observation row without a server name is refused by the schema.
+
+**Still open:** M4 (catalog search), M5 (`/ig migrate`), M6 (the two-server fixture), and the
+storage decision above. `requireImplemented(MYSQL)` still refuses the backend.

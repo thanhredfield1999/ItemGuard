@@ -34,6 +34,7 @@ REPORTS = ROOT / 'target/surefire-reports'
 EXPECTED_CLASSES = (
     'com.itemguard.persistence.MySqlSchemaInvariantTest',
     'com.itemguard.persistence.MySqlIdentityLockTest',
+    'com.itemguard.persistence.MySqlCrossServerFindingTest',
 )
 VERDICT_DIR = ROOT / 'run'
 LOG = ROOT / 'run/mysql-schema-gate.log'

@@ -179,6 +179,28 @@ public class ConfigManager {
         return config.getLong("database.pool.connection-timeout-ms", 30000);
     }
 
+    // ---------- MULTI-SERVER (MySQL backend only) ----------
+
+    /**
+     * This server's name as it appears in a cross-server finding; blank means "not configured",
+     * which {@code ServerIdentityPolicy} resolves from a stored or generated name.
+     */
+    public String getServerId() {
+        return config.getString("multi-server.server-id", "");
+    }
+
+    /**
+     * How far back a sighting still counts for the cross-server rule, in milliseconds.
+     *
+     * <p>Returned as a duration rather than the configured minutes so that the refusal for a
+     * non-positive window lives in one place — {@code CrossServerFindingPolicy} — instead of
+     * being re-derived by each caller. A window of 0 reports nothing while looking configured,
+     * which is the exact failure a settings-reading codebase keeps making here.
+     */
+    public long getCrossServerWindowMillis() {
+        return config.getLong("multi-server.cross-server-window-minutes", 30L) * 60_000L;
+    }
+
     // ---------- GUI ----------
     public String getGuiTitle() {
         return colorize(config.getString("gui.title", "&8&lItemGuard &7- &fLich Su Item"));
