@@ -1,0 +1,26 @@
+{
+  "gate": "mysql-schema-invariants",
+  "started_at": "2026-09-18T03:34:23+07:00",
+  "port": 33316,
+  "maven_exit": 1,
+  "totals": {
+    "tests": 29,
+    "failures": 3,
+    "errors": 1,
+    "skipped": 0,
+    "classes": [
+      "com.itemguard.persistence.MySqlConnectionOwnerTest",
+      "com.itemguard.persistence.MySqlCrossServerFindingTest",
+      "com.itemguard.persistence.MySqlIdentityLockTest",
+      "com.itemguard.persistence.MySqlSchemaInvariantTest"
+    ]
+  },
+  "fixture_stopped": {
+    "exit": 0,
+    "port_closed": true,
+    "process_gone": true
+  },
+  "fixture_start_exit": 0,
+  "server": "8.4.6",
+  "verdict": "FAILED_TESTS"
+}

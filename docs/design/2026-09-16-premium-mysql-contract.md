@@ -425,3 +425,55 @@ the epoch rule still confirms a same-epoch same-server pair while the cross-serv
 
 **Still open:** M4 (catalog search), M5 (`/ig migrate`), M6 (the two-server fixture), and the
 storage decision above. `requireImplemented(MYSQL)` still refuses the backend.
+
+---
+
+## 11. M2b landed 2026-09-18 — the connection owner, where D4 actually happens
+
+M1–M3 were a schema, a lock and a rule; nothing yet could *run* against MySQL. `MySqlConnectionOwner`
+is that layer, and it is the only place where "connection loss fails closed" is a real behaviour
+rather than a promise.
+
+**What it owns.** A bounded pool (max size from config), the session guard and schema installation
+at construction, and the close path. Work arrives in two shapes on purpose: `call` / `callAsync`
+run inside a transaction the owner commits or rolls back, while `callLocked` /
+`callLockedAsync` hand the connection to `MySqlIdentityLock`, which owns the transaction because the
+row lock must be held for exactly its duration. Wrapping the second shape in the first would take
+the lock inside a transaction the caller does not control — the mistake §9 is built to make
+impossible, one level up.
+
+**D4, made concrete.** No retry, no replay, no local buffer: a failed write is a denied operation.
+`submit` after close returns a failed future while `call` throws, and that difference is deliberate
+— an async caller is usually chaining and would otherwise have to guard every call site, while a
+synchronous caller is already in a position to handle it. A pooled connection that no longer
+answers `isValid` is discarded rather than reused with a warning; half-dead connections are how
+"it worked yesterday" reports start.
+
+**Construction fails closed.** The first connection verifies `innodb_flush_log_at_trx_commit` and
+`sql_mode` and installs the schema; if any of that cannot be shown, the owner refuses to exist
+rather than serving players on a server whose guarantees are unknown. An unreachable host produces
+that refusal with the JDBC cause preserved.
+
+### Evidence
+
+    7 new tests (MySqlConnectionOwnerTest), on the fixture, all measured rather than asserted:
+      reuse               15 calls -> one pooled connection, counted by the factory
+      cleanup             every connection the owner opened is closed after close()
+      no retry            a failed write leaves the row untouched and opens no extra connection
+      composition         two writers through callLocked both land (2 increments, not 1)
+      refusal             an absent identity stays identifiable through the owner
+      unreachable         refused at construction, JDBC cause preserved
+      after close         call throws, callAsync returns a failed future
+
+    python scripts/run_mysql_schema_gate.py
+        -> run/mysql-schema-gate-20260918-033653.json
+           PASS_MYSQL_SCHEMA_INVARIANTS · MySQL 8.4.6 · 29/29 tests across four classes ·
+           fixture stopped, port closed, process gone
+
+    mvnw.cmd -o test    -> 884/884, 0 failures/errors/skipped   (mysql tag excluded)
+
+**Nothing wires it yet.** `requireImplemented(MYSQL)` still refuses the backend, so no admin can
+reach any of this; that flips only when the whole feature is verified, per §5. D5 (the sidecar lock
+being SQLite-only) remains satisfied by construction, because MySQL does not reuse
+`SqliteConnectionOwner` and now has an owner of its own. `M4` and `M5` both need this class, which
+is why it came before them.

@@ -22,10 +22,10 @@ per session. Full detail, including the four traps that were not in the original
 Evidence, all run on 2026-09-18 against a controlled MySQL 8.4.6 fixture
 (`tools/mysql-runtime/`, port 33316, started and stopped by the gate itself):
 
-    run/mysql-schema-gate-20260918-032634.json   PASS_MYSQL_SCHEMA_INVARIANTS
-                                                 22/22 tests across three classes (10 schema
-                                                 invariants + 8 lock + 4 cross-server), fixture
-                                                 stopped, port closed, process gone
+    run/mysql-schema-gate-20260918-033653.json   PASS_MYSQL_SCHEMA_INVARIANTS
+                                                 29/29 tests across four classes (10 schema
+                                                 invariants + 8 lock + 4 cross-server + 7 owner),
+                                                 fixture stopped, port closed, process gone
     mvnw.cmd -o test                             884/884, 0 failures/errors/skipped
                                                  (the mysql tag is excluded; the parity, session
                                                  guard and multiserver tests are in this count)
@@ -57,6 +57,16 @@ buffer) is implemented but D4 itself is still formally "proposed" in the contrac
 confirms it. **Open decision for Thanh**: where a generated/remembered `server-id` is stored —
 D1 says "no servers table", so a metadata row, a value written back into config.yml, or a small
 file in the plugin folder; nothing is implemented and no call site exists yet.
+
+M2b is `MySqlConnectionOwner`: the bounded pool, the session guard and schema install at
+construction, `call`/`callAsync` (owner commits or rolls back) and `callLocked`/`callLockedAsync`
+(the identity lock owns the transaction), and a close that drains and closes every connection it
+opened. This is where D4 is a behaviour rather than a promise — no retry, no replay, no buffer;
+a dead pooled connection is discarded rather than reused. Seven tests measure it (15 calls reuse
+one connection; a failed write leaves the row and opens none; two writers through the owner still
+serialise; an unreachable host is refused with the JDBC cause). Detail: §11. Nothing wires it yet:
+`requireImplemented(MYSQL)` still refuses the backend, and M4/M5 both need this class, which is why
+it came first.
 
 ## CURRENT — 2026-09-17 — a third review of this candidate's own code, adjudicated and answered
 

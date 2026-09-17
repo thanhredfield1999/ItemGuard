@@ -35,6 +35,7 @@ EXPECTED_CLASSES = (
     'com.itemguard.persistence.MySqlSchemaInvariantTest',
     'com.itemguard.persistence.MySqlIdentityLockTest',
     'com.itemguard.persistence.MySqlCrossServerFindingTest',
+    'com.itemguard.persistence.MySqlConnectionOwnerTest',
 )
 VERDICT_DIR = ROOT / 'run'
 LOG = ROOT / 'run/mysql-schema-gate.log'
