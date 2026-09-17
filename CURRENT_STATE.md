@@ -22,18 +22,29 @@ per session. Full detail, including the four traps that were not in the original
 Evidence, all run on 2026-09-18 against a controlled MySQL 8.4.6 fixture
 (`tools/mysql-runtime/`, port 33316, started and stopped by the gate itself):
 
-    run/mysql-schema-gate-20260918-030349.json   PASS_MYSQL_SCHEMA_INVARIANTS
-                                                 10/10 tests, fixture stopped, port closed,
+    run/mysql-schema-gate-20260918-031728.json   PASS_MYSQL_SCHEMA_INVARIANTS
+                                                 18/18 tests (10 schema invariants + 8 lock
+                                                 tests), fixture stopped, port closed,
                                                  process gone
-    mvnw.cmd -o test                             868/868, 0 failures/errors/skipped
+    mvnw.cmd -o test                             869/869, 0 failures/errors/skipped
                                                  (the mysql tag is excluded; parity and session
                                                  guard tests are in this count)
-    mvnw.cmd -o -Pmysql test                     only the tagged class; the profile fails when
+    mvnw.cmd -o -Pmysql test                     only the tagged classes; the profile fails when
                                                  nothing ran
 
-Not done, explicitly: M2 (per-identity `SELECT … FOR UPDATE`, connection-loss fail-closed), M3
-(`server_id`, cross-server finding), M4 (catalog search), M5 (`/ig migrate`), M6 (two-server
-runtime fixture). No claim in this section is Paper or two-server evidence.
+M2 is the concurrency primitive, `MySqlIdentityLock`: `SELECT … FOR UPDATE` on the identity row,
+inside the caller's transaction, with the class itself owning the transaction so a caller cannot
+take the lock and then write outside it. An identity that does not exist is refused; the wait is
+bounded so a blocked writer fails visibly; there is no retry and no local write buffer. Proven by
+a pair of tests — the same two-writer read-modify-write loses an update *without* the lock
+(`detection_count = 1`) and keeps both updates *with* it (`= 2`) — plus lock-until-commit,
+different-identities-don't-block, rollback-releases, and an aborted connection leaving nothing
+visible. Detail: `docs/design/2026-09-16-premium-mysql-contract.md` §9.
+
+Not done, explicitly: M3 (`server_id`, cross-server finding), M4 (catalog search), M5
+(`/ig migrate`), M6 (two-server runtime fixture). M2's evidence is two connections on one server;
+it is not two servers, and not a Paper server. The D4 shape (fail closed, no buffer) is
+implemented but D4 itself is still formally "proposed" in the contract until Thanh confirms it.
 
 ## CURRENT — 2026-09-17 — a third review of this candidate's own code, adjudicated and answered
 

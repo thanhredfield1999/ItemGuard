@@ -32,7 +32,11 @@ class MySqlSchemaParityTest {
 
     /** Java comments removed: prose about SQL is not SQL. */
     private static String code() throws Exception {
-        String source = source();
+        return stripped(SOURCE);
+    }
+
+    private static String stripped(Path path) throws Exception {
+        String source = Files.readString(path);
         StringBuilder stripped = new StringBuilder();
         boolean block = false;
         for (int index = 0; index < source.length(); index++) {
@@ -118,6 +122,25 @@ class MySqlSchemaParityTest {
         assertFalse(code.contains("INSERT OR IGNORE"), "use INSERT IGNORE on MySQL");
         assertTrue(code.contains("MEDIUMBLOB") && code.contains("ENGINE=InnoDB"),
             "the DDL must be an InnoDB schema");
+    }
+
+    @Test
+    @DisplayName("the identity lock is SELECT ... FOR UPDATE, and nothing else in that path")
+    void identityLockUsesRowLockingAndNoReplay() throws Exception {
+        String lock = stripped(Path.of(
+            "src/main/java/com/itemguard/persistence/MySqlIdentityLock.java"));
+        assertTrue(lock.contains("SELECT code FROM tracked_items WHERE code = ? FOR UPDATE"),
+            "the whole guarantee is this row lock; without FOR UPDATE the lock takes nothing");
+        assertTrue(lock.contains("connection.commit()") && lock.contains("connection.rollback()"),
+            "the helper must own the transaction, because a lock taken outside it protects "
+                + "nothing");
+        assertTrue(lock.contains("innodb_lock_wait_timeout"),
+            "the wait must be bounded, so a blocked writer fails visibly instead of hanging");
+        for (String forbidden : new String[] {"retry", "replay", "buffer", "queue"}) {
+            assertFalse(lock.toLowerCase().contains(forbidden),
+                "the lock path must not contain " + forbidden + ": a local write buffer or a "
+                    + "retry is a new duplication source");
+        }
     }
 
     @Test

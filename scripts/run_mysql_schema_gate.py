@@ -30,7 +30,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / 'tools/mysql-runtime/mysql_fixture.py'
 HOST, PORT = '127.0.0.1', 33316
-REPORT = ROOT / 'target/surefire-reports/TEST-com.itemguard.persistence.MySqlSchemaInvariantTest.xml'
+REPORTS = ROOT / 'target/surefire-reports'
+EXPECTED_CLASSES = (
+    'com.itemguard.persistence.MySqlSchemaInvariantTest',
+    'com.itemguard.persistence.MySqlIdentityLockTest',
+)
 VERDICT_DIR = ROOT / 'run'
 LOG = ROOT / 'run/mysql-schema-gate.log'
 
@@ -62,6 +66,12 @@ def run_tests() -> int:
                '--no-transfer-progress'] if os.name == 'nt' else \
               ['sh', str(ROOT / 'mvnw'), '-o', '-Pmysql', 'test', '--no-transfer-progress']
     VERDICT_DIR.mkdir(parents=True, exist_ok=True)
+    # Reports from an earlier run are removed first: surefire does not clean this directory, and a
+    # class that was deleted or renamed would otherwise keep contributing its old green file to a
+    # verdict nobody re-derived.
+    if REPORTS.exists():
+        for stale in REPORTS.glob('TEST-*.xml'):
+            stale.unlink()
     with LOG.open('w', encoding='utf-8') as output:
         completed = subprocess.run(command, cwd=ROOT, env=environment, stdout=output,
                                    stderr=subprocess.STDOUT)
@@ -69,16 +79,19 @@ def run_tests() -> int:
 
 
 def test_totals() -> dict:
-    if not REPORT.exists():
-        return {'tests': 0, 'failures': 0, 'errors': 0, 'skipped': 0, 'report': None}
-    root = ET.parse(REPORT).getroot()
-    return {
-        'tests': int(root.get('tests', 0)),
-        'failures': int(root.get('failures', 0)),
-        'errors': int(root.get('errors', 0)),
-        'skipped': int(root.get('skipped', 0)),
-        'report': str(REPORT.relative_to(ROOT)),
-    }
+    totals = {'tests': 0, 'failures': 0, 'errors': 0, 'skipped': 0, 'classes': []}
+    if not REPORTS.exists():
+        return totals
+    for path in sorted(REPORTS.glob('TEST-*.xml')):
+        root = ET.parse(path).getroot()
+        for key in ('tests', 'failures', 'errors', 'skipped'):
+            totals[key] += int(root.get(key, 0))
+        totals['classes'].append(root.get('name', path.stem))
+    return totals
+
+
+def missing_classes(totals: dict) -> list:
+    return [name for name in EXPECTED_CLASSES if name not in totals['classes']]
 
 
 def server_version() -> str:
@@ -112,7 +125,11 @@ def main() -> int:
             receipt['maven_exit'] = run_tests()
             receipt['totals'] = test_totals()
             totals = receipt['totals']
-            if totals['tests'] < 1:
+            absent = missing_classes(totals)
+            if absent:
+                receipt['verdict'] = 'FAILED_EXPECTED_CLASS_MISSING'
+                receipt['missing_classes'] = absent
+            elif totals['tests'] < 1:
                 receipt['verdict'] = 'FAILED_NO_TESTS_RAN'
             elif receipt['maven_exit'] != 0 or totals['failures'] or totals['errors'] \
                     or totals['skipped']:

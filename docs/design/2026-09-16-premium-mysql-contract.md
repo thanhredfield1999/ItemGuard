@@ -298,3 +298,66 @@ paths covered in the default build.
 **No LITE change.** The three copies of the 1.0.0 candidate still hash `8c0e540e…` after every
 run in this session; the MySQL code is additive, `mysql-connector-j` is `test` scope, and the
 work is on the `premium-mysql` branch so `main` remains the release commit.
+
+---
+
+## 9. M2 landed 2026-09-18 — the lock, and the probe that can fail
+
+`MySqlIdentityLock` implements D2: `SELECT code FROM tracked_items WHERE code = ? FOR UPDATE`
+inside the caller's transaction, so every other writer of that identity blocks until the
+transaction ends. There is no separate unlock and nothing to leak — the lock is released by
+`commit` or `rollback`.
+
+**The class owns the transaction on purpose.** §3 calls transaction scope a correctness concern,
+and the mistake it invites is invisible in review: take the lock, then write in a *different*
+transaction, and you hold a lock that protects nothing. So `withLockedIdentity` takes the lock,
+runs the work, commits and rolls back itself; a caller cannot express the wrong shape.
+
+**Fail-closed choices, all with a test:**
+
+- an identity that does not exist is refused (`NoSuchIdentityException`) rather than created — a
+  lock on a row that is not there is not a lock. The mint path stays protected by the unique keys
+  on `code` and `item_uuid`, which is fail-closed on its own;
+- the wait is bounded (`innodb_lock_wait_timeout`, 5 s by default, previous value restored after),
+  so a blocked writer denies the action instead of holding a server thread;
+- **no retry and no local write buffer** — a replay buffer is a new duplication source, which is
+  the one thing this product may not create, and a retry is unsafe anyway because the caller
+  cannot distinguish a rollback from a commit whose acknowledgement was lost.
+
+That last bullet is D4, which this document still lists under "defaults proposed, not yet
+approved". It is implemented in the shape above; if Thanh wants the opposite (a buffered mode),
+that is a decision to make before M5 ships, not a detail to drift into. D5 (sidecar lock
+backend-conditional) remains satisfied by construction while MySQL does not reuse
+`SqliteConnectionOwner`, and no MySQL connection owner exists yet.
+
+### The evidence is a pair, and the first half is the falsifiable one
+
+    withoutTheLockAnUpdateIsLost        raw read-modify-write, two connections, a barrier between
+                                        the read and the write  -> detection_count = 1
+    theLockPreventsTheLostUpdate        the same workload inside withLockedIdentity -> 2
+
+Without the first test the second proves nothing: it would pass on a workload that never
+interleaved. The pair is what makes "the lock works" a measurement rather than an assertion.
+
+Plus: the lock is held until commit, not until the read (a second writer times out after ~1 s
+while the holder sleeps, and succeeds immediately after the commit); two different identities do
+not block each other; failed work rolls back and releases the lock; a connection aborted
+mid-transaction leaves nothing visible and the server releases the lock; and a connection with
+`autoCommit` on is refused, because it would hold nothing.
+
+### Evidence
+
+    python scripts/run_mysql_schema_gate.py
+        -> run/mysql-schema-gate-20260918-031728.json
+           PASS_MYSQL_SCHEMA_INVARIANTS · MySQL 8.4.6 · 18/18 tests · fixture stopped,
+           port closed, process gone
+
+    mvnw.cmd -o test              -> 869/869, 0 failures/errors/skipped   (mysql tag excluded)
+
+The gate now aggregates **every** surefire report and requires both tagged classes to be present,
+and it deletes stale reports before the run: a renamed class must not keep contributing its old
+green file to a verdict nobody re-derived.
+
+**Still open, unchanged:** M3 (`server_id`, the cross-server finding), M4 (catalog search), M5
+(`/ig migrate`), M6 (the two-server runtime fixture). M2's evidence is two connections on one
+server; it is not two servers, and it is not a Paper server.
