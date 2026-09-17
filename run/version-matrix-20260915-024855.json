@@ -1,0 +1,8 @@
+[
+  {
+    "version": "--help",
+    "started": "2026-09-14T19:48:55.336982+00:00",
+    "status": "DOWNLOAD_FAILED",
+    "detail": "<HTTPError 404: 'Not Found'>"
+  }
+]

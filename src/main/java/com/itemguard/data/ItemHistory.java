@@ -2,8 +2,13 @@ package com.itemguard.data;
 
 import java.time.Instant;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class ItemHistory {
+
+    private static final Pattern LOCATION_PATTERN = Pattern.compile(
+        "^(.+) \\((-?\\d+), (-?\\d+), (-?\\d+)\\)$");
 
     private long id;
     private String code;
@@ -31,27 +36,28 @@ public class ItemHistory {
     }
 
     private void parseLocation(String loc) {
+        this.world = "unknown";
+        this.x = 0;
+        this.y = 0;
+        this.z = 0;
+
         if (loc == null || loc.isEmpty()) {
+            return;
+        }
+
+        try {
+            Matcher matcher = LOCATION_PATTERN.matcher(loc);
+            if (matcher.matches()) {
+                this.world = matcher.group(1);
+                this.x = Integer.parseInt(matcher.group(2));
+                this.y = Integer.parseInt(matcher.group(3));
+                this.z = Integer.parseInt(matcher.group(4));
+            }
+        } catch (NumberFormatException ignored) {
             this.world = "unknown";
             this.x = 0;
             this.y = 0;
             this.z = 0;
-            return;
-        }
-        try {
-            String[] parts = loc.split(" ");
-            if (parts.length >= 4) {
-                this.world = parts[0].replace("(", "");
-                String coords = parts[1].replace("(", "").replace(",", "");
-                this.x = Integer.parseInt(coords);
-                String[] yz = parts[2].replace(",", "").split(",");
-                if (yz.length >= 2) {
-                    this.y = Integer.parseInt(yz[0]);
-                    this.z = Integer.parseInt(yz[1].replace(")", ""));
-                }
-            }
-        } catch (Exception ignored) {
-            this.world = "unknown";
         }
     }
 

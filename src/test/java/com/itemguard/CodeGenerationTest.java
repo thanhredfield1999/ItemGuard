@@ -8,14 +8,14 @@ class CodeGenerationTest {
 
     @Test
     void testCodeFormat() {
-        String code = "TEST-1234";
-        assertEquals(9, code.length());
-        assertTrue(code.matches("[A-Z0-9]{4}-[A-Z0-9]{4}"));
+        String code = new com.itemguard.identity.PublicItemCodeGenerator(new java.util.Random(42)).generate();
+        assertEquals(6, code.length());
+        assertTrue(code.matches("[A-Z0-9]{6}"));
     }
 
     @Test
     void testCodeCharacters() {
-        String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        String chars = new com.itemguard.identity.PublicItemCodeGenerator(new java.security.SecureRandom()).generate();
         for (char c : chars.toCharArray()) {
             assertTrue(Character.isUpperCase(c) || Character.isDigit(c));
         }

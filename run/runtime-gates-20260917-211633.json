@@ -1,0 +1,19 @@
+{
+  "candidate_sha256": "80fc610b1e1f3be4c3abb7a163d899fce5d285c23578449dff6b27e08cd167ab",
+  "elapsed_s": 37.3,
+  "passed": 1,
+  "total": 1,
+  "results": [
+    {
+      "gate": "multi",
+      "fixture": "itemguard-lite-isolated-4038c31c1425",
+      "exit_code": 0,
+      "verdict": "PASS_MULTI",
+      "status": "PASS",
+      "independent_verifier": true,
+      "verifier": "  \"root\": \"E:\\\\AI.WORK\\\\30_KET_QUA_THU_NGHIEM\\\\itemguard-lite-isolated-4038c31c1425\",\n  \"candidate_sha256\": \"80fc610b1e1f3be4c3abb7a163d899fce5d285c23578449dff6b27e08cd167ab\",\n  \"privacy\": {\n    \"member_answer_lines\": 7,\n    \"staff_answer_lines\": 7,\n    \"member_foreign_rows\": 3,\n    \"member_kept_foreign_location\": false,\n    \"member_saw_redaction\": true,\n    \"member_leaked_actor\": false,\n    \"staff_saw_actor\": true\n  }\n}",
+      "tail": "PASS_MULTI",
+      "candidate_sha256": "80fc610b1e1f3be4c3abb7a163d899fce5d285c23578449dff6b27e08cd167ab"
+    }
+  ]
+}

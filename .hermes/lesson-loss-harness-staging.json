@@ -1,0 +1,36 @@
+{
+  "project": "ItemGuard",
+  "key": "loss-only-harness-staging-must-be-player-driven",
+  "lesson": "Bai hoc tu lan noi loss-only driver (14/09/2026). Ba loi lam test loss PASS gia hoac FAIL oan, deu do HARNESS chu khong do plugin: (1) Staging bang API - probe lay item khoi inventory bang Inventory.setItem(slot,null) roi World.dropItem. Khong co PlayerDropItemEvent nen khong co row DROP; UnexplainedRemovalPolicy coi la unexplained va ItemLossListener.scanOnlinePlayers ghi CLEARED cho item dang nam duoi dat. Row rac do roi vao cua so cua case survive lam no FAIL oan (log: 'loss code=... reason=CLEARED' + rowsAfter=1). Cach dung: bot nem that ({'toss':true}) roi probe NHAN NUOI entity tim duoc quanh player. (2) Hazard dat sai luc - dat FIRE ngay sau khi drop o y+1: item con dang roi nen o lua khong co de, lua tat truoc khi item toi (healthBefore=5 healthAfter=5 fireTicks=0 - PASS rong). Cach dung: doi entity.isOnGround() roi moi dat FIRE vao chinh o cua no, poll health thay vi dem tick. Khong dung LAVA cho case survive - lava giet item, do la burn path. (3) Chunk.unload() im lang khong lam gi khi con player giu ticket - lan chay that cho loaded=true, case 'khong ghi loss khi unload' khong test gi ca. Cach dung: teleport ca hai player di xa truoc, luu toa do cu vao config, retry unload va CHECK !chunk.isLoaded(). Phep kiem chong vacuous: verifier phai assert healthAfter<healthBefore, unload loaded=='false', burn gone=true va reason=='BURNED'; moi rang buoc do co mot negative-control test rieng trong test_contracts.py. Sau unload phai co buoc lossrehome (reload dung chunk cu + nhat lai) truoc khi burn, vi entity nam trong chunk da bi evict.",
+  "evidence": [
+    {
+      "document": "E:/AI.WORK/30_KET_QUA_THU_NGHIEM/itemguard-lite-isolated-24a959d65f62/server-1.log",
+      "start_line": 88,
+      "end_line": 91,
+      "quote": "[LiteProbe] LITE_LOSS survive-staged block=FIRE onGround=true healthBefore=5 / [ItemGuard] loss code=QBJ78D reason=CLEARED actor=LiteStaff / [LiteProbe] LITE_LOSS survive alive=true healthBefore=5 healthAfter=4 rowsBefore=0 rowsAfter=1 / [LiteProbe] LITE_PROBE_FAIL loss-damaged-but-survives"
+    },
+    {
+      "document": "E:/AI.WORK/30_KET_QUA_THU_NGHIEM/itemguard-lite-isolated-c9910a0704ad/server-1.log",
+      "start_line": 88,
+      "end_line": 89,
+      "quote": "[LiteProbe] LITE_LOSS survive alive=true healthBefore=5 healthAfter=5 rowsBefore=0 rowsAfter=0 fireTicks=0 / [LiteProbe] LITE_PROBE_FAIL loss-damaged-but-survives"
+    },
+    {
+      "document": "E:/AI.WORK/30_KET_QUA_THU_NGHIEM/itemguard-lite-isolated-4e03381c181c/server-1.log",
+      "start_line": 95,
+      "end_line": 95,
+      "quote": "[LiteProbe] LITE_LOSS unload loaded=true rowsBefore=0 rowsAfter=0"
+    },
+    {
+      "document": "E:/AI.WORK/30_KET_QUA_THU_NGHIEM/itemguard-lite-isolated-dcf23acbe980/server-1.log",
+      "start_line": 86,
+      "end_line": 102,
+      "quote": "LITE_LOSS drop-adopted lastAction=DROP / LITE_LOSS survive alive=true healthBefore=5 healthAfter=4 rowsBefore=0 rowsAfter=0 / LITE_LOSS pickup held=true rowsBefore=0 rowsAfter=0 / LITE_LOSS unload loaded=false rowsBefore=0 rowsAfter=0 unloadCall=true / LITE_LOSS burn gone=true rowsBefore=0 rowsAfter=1 reason=BURNED"
+    }
+  ],
+  "verification": {
+    "command": "python -B tools/lite-runtime/smoke.py loss E:/AI.WORK/30_KET_QUA_THU_NGHIEM/itemguard-lite-isolated-dcf23acbe980 && python -B tools/lite-runtime/verify.py loss <same root>",
+    "result": "PASS_LOSS_ONLY_SMOKE, candidate_sha256=dda0a0f606a9de79b71a5761daf8324a3c9c1f8b479ad49fee22a0b10dca5035",
+    "offline": "python -B -m unittest discover -s tools/lite-runtime -p 'test_*.py' -> Ran 44 tests, OK"
+  }
+}

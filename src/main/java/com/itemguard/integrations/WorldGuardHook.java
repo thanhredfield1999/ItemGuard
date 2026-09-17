@@ -9,12 +9,15 @@ import java.util.logging.Level;
 public class WorldGuardHook {
 
     private final ItemGuard plugin;
+    private final WorldGuardAccessPolicy accessPolicy = new WorldGuardAccessPolicy();
+    private final boolean integrationEnabled;
     private boolean hooked = false;
-    private Object regionContainer;
+    private WorldGuardPermissionQuery permissionQuery;
 
     public WorldGuardHook(ItemGuard plugin) {
         this.plugin = plugin;
-        if (plugin.getConfigs().isWorldGuardEnabled()) {
+        this.integrationEnabled = plugin.getConfigs().isWorldGuardEnabled();
+        if (integrationEnabled) {
             tryHook();
         }
     }
@@ -25,16 +28,17 @@ public class WorldGuardHook {
         }
 
         try {
-            Class<?> wgPluginClass = Bukkit.getPluginManager().getPlugin("WorldGuard").getClass();
-            java.lang.reflect.Method getServerMethod = wgPluginClass.getMethod("getServer");
-            Object server = getServerMethod.invoke(Bukkit.getPluginManager().getPlugin("WorldGuard"));
-            Class<?> serverClass = server.getClass();
-            regionContainer = serverClass.getMethod("getRegionContainer").invoke(server);
-
+            permissionQuery = new WorldGuard7PermissionQuery();
             hooked = true;
-            plugin.getLogger().info("WorldGuard hook enabled.");
-        } catch (Exception e) {
-            plugin.getLogger().log(Level.WARNING, "WorldGuard hook failed: " + e.getMessage());
+            plugin.getLogger().info("WorldGuard 7 permission hook enabled.");
+        } catch (RuntimeException | LinkageError failure) {
+            hooked = false;
+            permissionQuery = null;
+            plugin.getLogger().log(
+                Level.WARNING,
+                "WorldGuard 7 hook failed; tracking remains fail-closed",
+                failure
+            );
         }
     }
 
@@ -43,25 +47,14 @@ public class WorldGuardHook {
     }
 
     public boolean canTrack(Player player) {
-        if (!hooked) return true;
-        if (regionContainer == null) return true;
+        if (!integrationEnabled) return true;
+        if (!hooked || permissionQuery == null || player == null) return false;
 
         try {
-            Class<?> regionContainerClass = regionContainer.getClass();
-            Object wgWorld = regionContainerClass.getMethod("get", String.class)
-                    .invoke(regionContainer, player.getWorld().getName());
-
-            if (wgWorld == null) return true;
-
-            Object wgPlayer = wgWorld.getClass().getMethod("createPlayer", String.class)
-                    .invoke(wgWorld, player.getName());
-
-            Class<?> wgPlayerClass = wgPlayer.getClass();
-            Boolean allowed = (Boolean) wgPlayerClass.getMethod("hasPermission", String.class)
-                    .invoke(wgPlayer, "itemguard.track");
-            return allowed != null && allowed;
-        } catch (Exception e) {
-            return true;
+            boolean allowed = permissionQuery.hasTrackPermission(player);
+            return accessPolicy.canTrack(true, true, true, allowed);
+        } catch (RuntimeException | LinkageError failure) {
+            return false;
         }
     }
 }

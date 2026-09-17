@@ -51,6 +51,23 @@ class ItemHistoryTest {
     }
 
     @Test
+    void testParseLocationSupportsWorldNamesWithSpacesAndNegativeCoordinates() {
+        ItemHistory history = new ItemHistory(
+            "TEST-0007",
+            UUID.randomUUID(),
+            "DROP",
+            "Player7",
+            UUID.randomUUID(),
+            "event world (-12, 70, -345)"
+        );
+
+        assertEquals("event world", history.getWorld());
+        assertEquals(-12, history.getX());
+        assertEquals(70, history.getY());
+        assertEquals(-345, history.getZ());
+    }
+
+    @Test
     void testRelativeTime() {
         UUID itemUuid = UUID.randomUUID();
         UUID playerUuid = UUID.randomUUID();

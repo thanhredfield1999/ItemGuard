@@ -1,0 +1,66 @@
+[
+  {
+    "version": "1.21.11",
+    "started": "2026-09-14T19:30:48.385021+00:00",
+    "build": "132",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-85deb37b67fc",
+    "smoke_exit": 1,
+    "smoke_tail": "",
+    "verdict": {
+      "status": "REJECTED",
+      "reason": "[Errno 2] No such file or directory: 'E:\\\\AI.WORK\\\\30_KET_QUA_THU_NGHIEM\\\\itemguard-lite-isolated-85deb37b67fc\\\\attempt.json'"
+    },
+    "status": "REJECTED",
+    "finished": "2026-09-14T19:30:53.968645+00:00"
+  },
+  {
+    "version": "26.1.1",
+    "started": "2026-09-14T19:30:53.969359+00:00",
+    "build": "29",
+    "java_minimum": 25,
+    "jdk": "jdk-25",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-8c5c4b9e0e5c",
+    "smoke_exit": 1,
+    "smoke_tail": "",
+    "verdict": {
+      "status": "REJECTED",
+      "reason": "[Errno 2] No such file or directory: 'E:\\\\AI.WORK\\\\30_KET_QUA_THU_NGHIEM\\\\itemguard-lite-isolated-8c5c4b9e0e5c\\\\attempt.json'"
+    },
+    "status": "REJECTED",
+    "finished": "2026-09-14T19:30:59.388704+00:00"
+  },
+  {
+    "version": "26.1.2",
+    "started": "2026-09-14T19:30:59.389324+00:00",
+    "build": "74",
+    "java_minimum": 25,
+    "jdk": "jdk-25",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-2fdeb5802035",
+    "smoke_exit": 1,
+    "smoke_tail": "",
+    "verdict": {
+      "status": "REJECTED",
+      "reason": "[Errno 2] No such file or directory: 'E:\\\\AI.WORK\\\\30_KET_QUA_THU_NGHIEM\\\\itemguard-lite-isolated-2fdeb5802035\\\\attempt.json'"
+    },
+    "status": "REJECTED",
+    "finished": "2026-09-14T19:31:05.894458+00:00"
+  },
+  {
+    "version": "26.2",
+    "started": "2026-09-14T19:31:05.895195+00:00",
+    "build": "123",
+    "java_minimum": 25,
+    "jdk": "jdk-25",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-6de809c32d1c",
+    "smoke_exit": 1,
+    "smoke_tail": "",
+    "verdict": {
+      "status": "REJECTED",
+      "reason": "[Errno 2] No such file or directory: 'E:\\\\AI.WORK\\\\30_KET_QUA_THU_NGHIEM\\\\itemguard-lite-isolated-6de809c32d1c\\\\attempt.json'"
+    },
+    "status": "REJECTED",
+    "finished": "2026-09-14T19:31:12.010289+00:00"
+  }
+]

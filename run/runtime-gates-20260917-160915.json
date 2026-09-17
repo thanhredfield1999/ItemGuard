@@ -1,0 +1,57 @@
+{
+  "candidate_sha256": "28aed104cf9a01bae98373016bafe5033a398533447a56868381433c66b14a30",
+  "elapsed_s": 533.7,
+  "passed": 5,
+  "total": 7,
+  "results": [
+    {
+      "gate": "separate",
+      "fixture": "itemguard-lite-isolated-ef79c4e1bbc2",
+      "status": "REJECTED",
+      "verifier": "{\"status\": \"REJECTED\", \"reason\": \"craft denial receipts missing/repeated\"}",
+      "candidate_sha256": "28aed104cf9a01bae98373016bafe5033a398533447a56868381433c66b14a30"
+    },
+    {
+      "gate": "loss",
+      "fixture": "itemguard-lite-isolated-378971d9dbf2",
+      "status": "PASS",
+      "verifier": "{\n  \"status\": \"PASS_LOSS_ONLY_SMOKE\",\n  \"root\": \"E:\\\\AI.WORK\\\\30_KET_QUA_THU_NGHIEM\\\\itemguard-lite-isolated-378971d9dbf2\",\n  \"candidate_sha256\": \"28aed104cf9a01bae98373016bafe5033a398533447a56868381433c66b14a30\",\n  \"limitations\": [\n    \"Terminal loss boundary only\",\n    \"Cursor/crafting presence proven for one identity and one clear control\",\n    \"Crafting close proven for one spare-inventory and one full-inventory close; no claim about other window types\",\n    \"No crash/power-loss, scale, concurrency or visual acceptance claims\"\n  ]\n}",
+      "candidate_sha256": "28aed104cf9a01bae98373016bafe5033a398533447a56868381433c66b14a30"
+    },
+    {
+      "gate": "sweep",
+      "fixture": "itemguard-lite-isolated-422bf10e78b0",
+      "status": "PASS",
+      "verifier": "{\n  \"status\": \"PASS_SWEEP_SMOKE\",\n  \"root\": \"E:\\\\AI.WORK\\\\30_KET_QUA_THU_NGHIEM\\\\itemguard-lite-isolated-422bf10e78b0\",\n  \"candidate_sha256\": \"28aed104cf9a01bae98373016bafe5033a398533447a56868381433c66b14a30\"\n}",
+      "candidate_sha256": "28aed104cf9a01bae98373016bafe5033a398533447a56868381433c66b14a30"
+    },
+    {
+      "gate": "reload",
+      "fixture": "itemguard-lite-isolated-454637d20087",
+      "status": "REJECTED",
+      "tail": "API.\nNote: Recompile with -Xlint:deprecation for details.\n1 warning\nTraceback (most recent call last):\n  File \"E:\\AI.WORK\\ItemGuard\\tools\\lite-runtime\\reload.py\", line 170, in <module>\n    main()\n    ~~~~^^\n  File \"E:\\AI.WORK\\ItemGuard\\tools\\lite-runtime\\reload.py\", line 88, in main\n    server.has_more('ItemGuard da tat!', disables, 90)\n    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"E:\\AI.WORK\\ItemGuard\\tools\\lite-runtime\\smoke.py\", line 316, in has_more\n    self.wait(lambda ls:sum(1 for l in ls if value in l) > previous, seconds)\n    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"E:\\AI.WORK\\ItemGuard\\tools\\lite-runtime\\smoke.py\", line 311, in wait\n    raise TimeoutError('Expected evidence timeout')\nTimeoutError: Expected evidence timeout\n",
+      "candidate_sha256": "28aed104cf9a01bae98373016bafe5033a398533447a56868381433c66b14a30"
+    },
+    {
+      "gate": "multi",
+      "fixture": "itemguard-lite-isolated-b2e3cdc2cdda",
+      "status": "PASS",
+      "tail": "1 warning",
+      "candidate_sha256": "28aed104cf9a01bae98373016bafe5033a398533447a56868381433c66b14a30"
+    },
+    {
+      "gate": "two-plugin",
+      "fixture": "itemguard-lite-isolated-d8c4f2cdf02b",
+      "status": "PASS",
+      "tail": "1 warning",
+      "candidate_sha256": "28aed104cf9a01bae98373016bafe5033a398533447a56868381433c66b14a30"
+    },
+    {
+      "gate": "power-cut",
+      "fixture": "itemguard-lite-isolated-8d77eb9f6a6a",
+      "status": "PASS",
+      "tail": "1 warning",
+      "candidate_sha256": "28aed104cf9a01bae98373016bafe5033a398533447a56868381433c66b14a30"
+    }
+  ]
+}

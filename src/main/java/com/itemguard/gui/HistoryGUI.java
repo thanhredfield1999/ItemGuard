@@ -39,6 +39,7 @@ public class HistoryGUI implements InventoryHolder {
     private int currentPage;
     private final UUID parentPlayerUuid;
     private final String parentPlayerName;
+    private final HistoryNavigationPolicy navigationPolicy = new HistoryNavigationPolicy();
 
     private Inventory inventory;
 
@@ -48,7 +49,7 @@ public class HistoryGUI implements InventoryHolder {
         this.viewer = viewer;
         this.code = code;
         this.histories = histories;
-        this.totalPages = Math.max(1, (int) Math.ceil((double) histories.size() / (float) ITEM_END));
+        this.totalPages = GuiPageLayout.totalPages(histories.size());
         this.currentPage = 1;
         this.parentPlayerUuid = parentPlayerUuid;
         this.parentPlayerName = parentPlayerName;
@@ -63,6 +64,7 @@ public class HistoryGUI implements InventoryHolder {
         this.currentPage = Math.max(1, Math.min(page, totalPages));
         buildInventory();
         viewer.openInventory(inventory);
+        plugin.getGuiListener().registerOpenGUI(viewer, this);
     }
 
     private void buildInventory() {
@@ -103,12 +105,12 @@ public class HistoryGUI implements InventoryHolder {
     }
 
     private void fillItems() {
-        int start = (currentPage - 1) * ITEM_END;
-        int end = Math.min(start + ITEM_END, histories.size());
+        int start = GuiPageLayout.startIndex(currentPage);
+        int end = GuiPageLayout.endIndex(currentPage, histories.size());
 
         for (int i = start; i < end; i++) {
             ItemHistory history = histories.get(i);
-            int slot = ITEM_START + (i - start);
+            int slot = GuiPageLayout.inventorySlot(i - start);
             inventory.setItem(slot, makeHistoryItem(history, i + 1));
         }
     }
@@ -205,16 +207,23 @@ public class HistoryGUI implements InventoryHolder {
     }
 
     private ItemStack makeCloseButton() {
-        ItemStack item = new ItemStack(Material.ARROW);
+        HistoryNavigationAction action = navigationPolicy.exitAction(parentPlayerUuid);
+        ItemStack item = new ItemStack(action == HistoryNavigationAction.CLOSE
+            ? Material.BARRIER
+            : Material.ARROW);
         ItemMeta meta = item.getItemMeta();
-        meta.setDisplayName("§cQuay Lai");
+        meta.setDisplayName(action == HistoryNavigationAction.CLOSE
+            ? "§cĐóng"
+            : "§eQuay lại");
         List<String> lore = new ArrayList<>();
-        lore.add("§7Click de quay lai danh sach item");
+        lore.add(action == HistoryNavigationAction.CLOSE
+            ? "§7Đóng lịch sử vật phẩm"
+            : "§7Quay lại danh sách vật phẩm của " + parentPlayerName);
         meta.setLore(lore);
 
         meta.getPersistentDataContainer().set(
             new org.bukkit.NamespacedKey(plugin, "back_action"),
-            org.bukkit.persistence.PersistentDataType.STRING, "back");
+            org.bukkit.persistence.PersistentDataType.STRING, action.name());
 
         item.setItemMeta(meta);
         return item;
@@ -241,7 +250,6 @@ public class HistoryGUI implements InventoryHolder {
     }
 
     public static void handleClick(InventoryClickEvent event, HistoryGUI gui) {
-        if (event.isCancelled()) return;
         if (event.getSlot() == -999) return;
 
         ItemStack clicked = event.getCurrentItem();
@@ -278,22 +286,40 @@ public class HistoryGUI implements InventoryHolder {
             return;
         }
 
-        if (event.getSlot() == CLOSE_SLOT) {
-            event.setCancelled(true);
-            player.closeInventory();
-        }
-
         var backAction = meta.getPersistentDataContainer().get(
             new org.bukkit.NamespacedKey(gui.plugin, "back_action"),
             org.bukkit.persistence.PersistentDataType.STRING);
-        if (backAction != null && "back".equals(backAction)) {
+        if (HistoryNavigationAction.CLOSE.name().equals(backAction)) {
             event.setCancelled(true);
-            // Quay lai man hinh browse item
-            List<com.itemguard.data.ItemData> parentItems = gui.plugin.getDB().getItemsByPlayer(gui.parentPlayerUuid);
-            PlayerBrowserGUI gui2 = PlayerBrowserGUI.createGui(gui.plugin, player,
-                gui.parentPlayerName, gui.parentPlayerUuid, parentItems, null);
-            gui.plugin.getGuiListener().registerOpenBrowser(player, gui2);
-            gui2.open();
+            player.closeInventory();
+            return;
+        }
+        if (HistoryNavigationAction.BACK_TO_PLAYER.name().equals(backAction)) {
+            event.setCancelled(true);
+            gui.plugin.getDB().getItemsByPlayerAsync(gui.parentPlayerUuid)
+                .whenComplete((parentItems, failure) -> UiMainThreadHandoff.dispatch(
+                    gui.plugin,
+                    () -> {
+                        if (!player.isOnline()) {
+                            return;
+                        }
+                        if (failure != null) {
+                            gui.plugin.getLogger().log(
+                                java.util.logging.Level.SEVERE,
+                                "Failed to return to ItemGuard player browser",
+                                failure
+                            );
+                            player.sendMessage("§e§l[ItemGuard] §cKhông thể tải danh sách vật phẩm lúc này.");
+                            return;
+                        }
+                        PlayerBrowserGUI.openPlayerItems(
+                            player,
+                            gui.parentPlayerName,
+                            gui.parentPlayerUuid,
+                            parentItems
+                        );
+                    }
+                ));
             return;
         }
 
@@ -350,7 +376,6 @@ public class HistoryGUI implements InventoryHolder {
     }
 
     public static void handleDetailClick(InventoryClickEvent event) {
-        if (event.isCancelled()) return;
         if (event.getSlot() == -999) return;
 
         ItemStack clicked = event.getCurrentItem();
@@ -393,7 +418,7 @@ public class HistoryGUI implements InventoryHolder {
 
     public static void handleDrag(InventoryDragEvent event, HistoryGUI gui) {
         for (int slot : event.getRawSlots()) {
-            if (slot >= ITEM_START && slot < ITEM_END) {
+            if (slot >= 0 && slot < event.getInventory().getSize()) {
                 event.setCancelled(true);
                 return;
             }

@@ -6,6 +6,7 @@ public class PluginStats {
     private int totalHistory;
     private int onlineTracked;
     private int duplicatesDetected;
+    private int distinctDuplicateItems;
     private String databaseType;
     private String databaseStatus;
 
@@ -43,6 +44,19 @@ public class PluginStats {
 
     public void setDuplicatesDetected(int duplicatesDetected) {
         this.duplicatesDetected = duplicatesDetected;
+    }
+
+    /**
+     * Number of distinct item identities behind {@link #getDuplicatesDetected()}. The same duplicated
+     * item is re-detected on every scan epoch, so the raw detection count alone reads as that many
+     * duplicated items.
+     */
+    public int getDistinctDuplicateItems() {
+        return distinctDuplicateItems;
+    }
+
+    public void setDistinctDuplicateItems(int distinctDuplicateItems) {
+        this.distinctDuplicateItems = distinctDuplicateItems;
     }
 
     public String getDatabaseType() {

@@ -1,10 +1,8 @@
 package com.itemguard;
 
 import com.itemguard.data.ItemData;
-import com.itemguard.data.ItemHistory;
 import org.junit.jupiter.api.Test;
 
-import java.time.Instant;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -19,17 +17,17 @@ class ItemDataTest {
 
         assertEquals(code, data.getCode());
         assertEquals(itemUuid, data.getItemUuid());
-        assertEquals(1, data.getCurrentCount());
-        assertNotNull(data.getCreatedAt());
-        assertNotNull(data.getLastSeenAt());
+        assertEquals(1, data.getDetectionCount());
+        assertTrue(data.getCreatedAt() > 0);
+        assertTrue(data.getLastSeenAt() > 0);
     }
 
     @Test
-    void testItemDataCountIncrement() {
+    void testDetectionCountIsMutableMetadata() {
         ItemData data = new ItemData("TEST-0001", UUID.randomUUID());
-        int initial = data.getCurrentCount();
-        data.incrementCount();
-        assertEquals(initial + 1, data.getCurrentCount());
+        data.setDetectionCount(7);
+
+        assertEquals(7, data.getDetectionCount());
     }
 
     @Test

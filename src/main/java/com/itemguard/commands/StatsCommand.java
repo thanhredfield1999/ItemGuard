@@ -2,6 +2,8 @@ package com.itemguard.commands;
 
 import com.itemguard.ItemGuard;
 import com.itemguard.data.PluginStats;
+import com.itemguard.gui.UiMainThreadHandoff;
+import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -21,14 +23,34 @@ public class StatsCommand implements CommandExecutor, TabCompleter {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (!sender.hasPermission("itemguard.stats")) {
+            plugin.getMessages().send(sender, "no-permission");
+            return true;
+        }
         showStats(sender);
         return true;
     }
 
     public void showStats(CommandSender sender) {
-        PluginStats stats = plugin.getDB().getStats();
-        stats.setOnlineTracked(plugin.getDB().getOnlineTrackedCount());
+        int onlineTracked = plugin.getDB().getOnlineTrackedCount();
+        plugin.getDB().getStatsAsync().whenComplete((stats, failure) ->
+            UiMainThreadHandoff.dispatch(plugin, () -> {
+                if (failure != null) {
+                    plugin.getLogger().log(
+                        java.util.logging.Level.SEVERE,
+                        "Failed to load ItemGuard stats",
+                        failure
+                    );
+                    sender.sendMessage("§e§l[ItemGuard] §cKhông thể tải thống kê lúc này.");
+                    return;
+                }
+                stats.setOnlineTracked(onlineTracked);
+                renderStats(sender, stats);
+            })
+        );
+    }
 
+    private void renderStats(CommandSender sender, PluginStats stats) {
         sender.sendMessage(plugin.getMessages().getRaw("stats-header"));
         sender.sendMessage(plugin.getMessages().getRaw("stats-total-items", Map.of("total", String.valueOf(stats.getTotalItems()))));
         sender.sendMessage(plugin.getMessages().getRaw("stats-total-history", Map.of("history", String.valueOf(stats.getTotalHistory()))));
@@ -43,6 +65,9 @@ public class StatsCommand implements CommandExecutor, TabCompleter {
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        if (!sender.hasPermission("itemguard.stats")) {
+            return List.of();
+        }
         return new ArrayList<>();
     }
 }

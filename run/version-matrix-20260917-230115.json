@@ -1,0 +1,200 @@
+[
+  {
+    "version": "1.21.4",
+    "started": "2026-09-17T16:01:15.518989+00:00",
+    "build": "232",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-2f0a58160a4d",
+    "smoke_exit": 0,
+    "smoke_tail": "{\n  \"status\": \"CAPTURED\",\n  \"cleanup\": [\n    {\n      \"child\": \"bots-1\",\n      \"pid\": 36088,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    },\n    {\n      \"child\": \"server-1\",\n      \"pid\": 40544,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "PASS_SWEEP_SMOKE",
+      "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-2f0a58160a4d",
+      "candidate_sha256": "8c0e540ec646ffec38cd1409cb69b8c339d1d83f7ba499841bbe6866d624ce4a"
+    },
+    "status": "PASS_SWEEP_SMOKE",
+    "duplicate_confirmed": true,
+    "confirmed_code": "8KP5VI",
+    "confirmed_locations": 2,
+    "plugin_enabled": true,
+    "unsupported_api": false,
+    "finished": "2026-09-17T16:03:10.551344+00:00"
+  },
+  {
+    "version": "1.21.5",
+    "started": "2026-09-17T16:03:10.552168+00:00",
+    "build": "114",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-eae00caa3651",
+    "smoke_exit": 0,
+    "smoke_tail": "{\n  \"status\": \"CAPTURED\",\n  \"cleanup\": [\n    {\n      \"child\": \"bots-1\",\n      \"pid\": 40856,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    },\n    {\n      \"child\": \"server-1\",\n      \"pid\": 37604,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "PASS_SWEEP_SMOKE",
+      "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-eae00caa3651",
+      "candidate_sha256": "8c0e540ec646ffec38cd1409cb69b8c339d1d83f7ba499841bbe6866d624ce4a"
+    },
+    "status": "PASS_SWEEP_SMOKE",
+    "duplicate_confirmed": true,
+    "confirmed_code": "0EBNFC",
+    "confirmed_locations": 2,
+    "plugin_enabled": true,
+    "unsupported_api": false,
+    "finished": "2026-09-17T16:04:48.438583+00:00"
+  },
+  {
+    "version": "1.21.6",
+    "started": "2026-09-17T16:04:48.439340+00:00",
+    "build": "48",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-92effc5c378b",
+    "smoke_exit": 0,
+    "smoke_tail": "{\n  \"status\": \"CAPTURED\",\n  \"cleanup\": [\n    {\n      \"child\": \"bots-1\",\n      \"pid\": 29100,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    },\n    {\n      \"child\": \"server-1\",\n      \"pid\": 34272,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "PASS_SWEEP_SMOKE",
+      "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-92effc5c378b",
+      "candidate_sha256": "8c0e540ec646ffec38cd1409cb69b8c339d1d83f7ba499841bbe6866d624ce4a"
+    },
+    "status": "PASS_SWEEP_SMOKE",
+    "duplicate_confirmed": true,
+    "confirmed_code": "0HJ5IH",
+    "confirmed_locations": 2,
+    "plugin_enabled": true,
+    "unsupported_api": false,
+    "finished": "2026-09-17T16:06:30.675738+00:00"
+  },
+  {
+    "version": "1.21.8",
+    "started": "2026-09-17T16:06:30.676607+00:00",
+    "build": "60",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-10e5ac8ddee1",
+    "smoke_exit": 0,
+    "smoke_tail": "{\n  \"status\": \"CAPTURED\",\n  \"cleanup\": [\n    {\n      \"child\": \"bots-1\",\n      \"pid\": 39008,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    },\n    {\n      \"child\": \"server-1\",\n      \"pid\": 39476,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "PASS_SWEEP_SMOKE",
+      "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-10e5ac8ddee1",
+      "candidate_sha256": "8c0e540ec646ffec38cd1409cb69b8c339d1d83f7ba499841bbe6866d624ce4a"
+    },
+    "status": "PASS_SWEEP_SMOKE",
+    "duplicate_confirmed": true,
+    "confirmed_code": "BPFHQ7",
+    "confirmed_locations": 2,
+    "plugin_enabled": true,
+    "unsupported_api": false,
+    "finished": "2026-09-17T16:08:16.785345+00:00"
+  },
+  {
+    "version": "1.21.9",
+    "started": "2026-09-17T16:08:16.785969+00:00",
+    "build": "59",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-cbd06d7146aa",
+    "smoke_exit": 0,
+    "smoke_tail": "{\n  \"status\": \"CAPTURED\",\n  \"cleanup\": [\n    {\n      \"child\": \"bots-1\",\n      \"pid\": 41068,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    },\n    {\n      \"child\": \"server-1\",\n      \"pid\": 39432,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "PASS_SWEEP_SMOKE",
+      "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-cbd06d7146aa",
+      "candidate_sha256": "8c0e540ec646ffec38cd1409cb69b8c339d1d83f7ba499841bbe6866d624ce4a"
+    },
+    "status": "PASS_SWEEP_SMOKE",
+    "duplicate_confirmed": true,
+    "confirmed_code": "TNYLEY",
+    "confirmed_locations": 2,
+    "plugin_enabled": true,
+    "unsupported_api": false,
+    "finished": "2026-09-17T16:10:01.843980+00:00"
+  },
+  {
+    "version": "1.21.10",
+    "started": "2026-09-17T16:10:01.844575+00:00",
+    "build": "130",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-5e1b10451580",
+    "smoke_exit": 0,
+    "smoke_tail": "{\n  \"status\": \"CAPTURED\",\n  \"cleanup\": [\n    {\n      \"child\": \"bots-1\",\n      \"pid\": 16512,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    },\n    {\n      \"child\": \"server-1\",\n      \"pid\": 41776,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "PASS_SWEEP_SMOKE",
+      "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-5e1b10451580",
+      "candidate_sha256": "8c0e540ec646ffec38cd1409cb69b8c339d1d83f7ba499841bbe6866d624ce4a"
+    },
+    "status": "PASS_SWEEP_SMOKE",
+    "duplicate_confirmed": true,
+    "confirmed_code": "G8QJPH",
+    "confirmed_locations": 2,
+    "plugin_enabled": true,
+    "unsupported_api": false,
+    "finished": "2026-09-17T16:11:37.295981+00:00"
+  },
+  {
+    "version": "1.21.11",
+    "started": "2026-09-17T16:11:37.296687+00:00",
+    "build": "132",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-3324eff27f6c",
+    "smoke_exit": 0,
+    "smoke_tail": "{\n  \"status\": \"CAPTURED\",\n  \"cleanup\": [\n    {\n      \"child\": \"bots-1\",\n      \"pid\": 38224,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    },\n    {\n      \"child\": \"server-1\",\n      \"pid\": 21968,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "PASS_SWEEP_SMOKE",
+      "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-3324eff27f6c",
+      "candidate_sha256": "8c0e540ec646ffec38cd1409cb69b8c339d1d83f7ba499841bbe6866d624ce4a"
+    },
+    "status": "PASS_SWEEP_SMOKE",
+    "duplicate_confirmed": true,
+    "confirmed_code": "T8YIXD",
+    "confirmed_locations": 2,
+    "plugin_enabled": true,
+    "unsupported_api": false,
+    "finished": "2026-09-17T16:13:13.844226+00:00"
+  },
+  {
+    "version": "purpur:1.21.4",
+    "started": "2026-09-17T16:13:13.844877+00:00",
+    "build": "2416",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-02ec2d334647",
+    "smoke_exit": 0,
+    "smoke_tail": "{\n  \"status\": \"CAPTURED\",\n  \"cleanup\": [\n    {\n      \"child\": \"bots-1\",\n      \"pid\": 40704,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    },\n    {\n      \"child\": \"server-1\",\n      \"pid\": 8180,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "PASS_SWEEP_SMOKE",
+      "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-02ec2d334647",
+      "candidate_sha256": "8c0e540ec646ffec38cd1409cb69b8c339d1d83f7ba499841bbe6866d624ce4a"
+    },
+    "status": "PASS_SWEEP_SMOKE",
+    "duplicate_confirmed": true,
+    "confirmed_code": "A0VGDM",
+    "confirmed_locations": 2,
+    "plugin_enabled": true,
+    "unsupported_api": false,
+    "finished": "2026-09-17T16:14:57.632446+00:00"
+  },
+  {
+    "version": "purpur:1.21.11",
+    "started": "2026-09-17T16:14:57.633116+00:00",
+    "build": "2568",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-623393a2a015",
+    "smoke_exit": 0,
+    "smoke_tail": "{\n  \"status\": \"CAPTURED\",\n  \"cleanup\": [\n    {\n      \"child\": \"bots-1\",\n      \"pid\": 10600,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    },\n    {\n      \"child\": \"server-1\",\n      \"pid\": 37912,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "PASS_SWEEP_SMOKE",
+      "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-623393a2a015",
+      "candidate_sha256": "8c0e540ec646ffec38cd1409cb69b8c339d1d83f7ba499841bbe6866d624ce4a"
+    },
+    "status": "PASS_SWEEP_SMOKE",
+    "duplicate_confirmed": true,
+    "confirmed_code": "QOOPSS",
+    "confirmed_locations": 2,
+    "plugin_enabled": true,
+    "unsupported_api": false,
+    "finished": "2026-09-17T16:16:37.828038+00:00"
+  }
+]

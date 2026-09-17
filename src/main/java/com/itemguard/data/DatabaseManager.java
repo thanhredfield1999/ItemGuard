@@ -1,551 +1,345 @@
 package com.itemguard.data;
 
 import com.itemguard.ItemGuard;
+import com.itemguard.catalog.CatalogRepository;
+import com.itemguard.persistence.DatabaseBackend;
+import com.itemguard.persistence.DatabaseBackendPolicy;
+import com.itemguard.persistence.ItemSqliteRepository;
+import com.itemguard.persistence.SqliteConnectionOwner;
+import com.itemguard.dupe.ItemObservation;
+import com.itemguard.dupe.DuplicateAction;
+import com.itemguard.dupe.DuplicateFinding;
+import com.itemguard.search.ItemSearchRequest;
+import com.itemguard.search.SearchRequestStore;
+import com.itemguard.snapshot.ItemSnapshot;
+import com.itemguard.reclaim.ReclaimClaim;
+import com.itemguard.reclaim.ReclaimClaimState;
+import com.itemguard.reclaim.ReclaimClaimStore;
+import com.itemguard.tracking.TagPublication;
+import com.itemguard.tracking.TagReconciliationReceipt;
+import com.itemguard.tracking.TagPublicationStore;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.ItemStack;
 
 import java.io.File;
-import java.sql.*;
-import java.util.*;
-import java.util.concurrent.*;
+import java.time.Duration;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.logging.Level;
 
-public class DatabaseManager {
-
-    private final ItemGuard plugin;
-    private final String dbType;
-    private Connection connection;
-    private final ExecutorService executor;
+public final class DatabaseManager implements
+    SearchRequestStore,
+    ReclaimClaimStore,
+    TagPublicationStore {
 
     private static final String KEY_NAMESPACE = "itemguard";
     private static final String KEY_ITEM_CODE = "item_code";
+    private static final Duration CLOSE_TIMEOUT = Duration.ofSeconds(10);
 
-    private final Map<String, Long> dupeCooldownCache = new ConcurrentHashMap<>();
+    private final ItemGuard plugin;
+    private final SqliteConnectionOwner connectionOwner;
+    private final ItemSqliteRepository repository;
+    private final CatalogRepository catalog;
 
     public DatabaseManager(ItemGuard plugin) {
         this.plugin = plugin;
-        this.dbType = plugin.getConfigs().getDatabaseType();
-        this.executor = Executors.newFixedThreadPool(
-            Runtime.getRuntime().availableProcessors(),
-            r -> {
-                Thread t = new Thread(r, "ItemGuard-DB");
-                t.setDaemon(true);
-                return t;
-            }
+        DatabaseBackendPolicy backendPolicy = new DatabaseBackendPolicy();
+        DatabaseBackend backend = backendPolicy.requireSupported(plugin.getConfigs().getDatabaseType());
+        backendPolicy.requireImplemented(backend);
+
+        plugin.getDataFolder().mkdirs();
+        File databaseFile = new File(
+            plugin.getDataFolder(),
+            plugin.getConfigs().getSqliteFileName()
         );
-        initDatabase();
-    }
-
-    private void initDatabase() {
-        switch (dbType) {
-            case "MYSQL":
-                initMySQL();
-                break;
-            case "POSTGRESQL":
-                initPostgreSQL();
-                break;
-            default:
-                initSQLite();
-        }
-        createTables();
-    }
-
-    private void initSQLite() {
-        try {
-            plugin.getDataFolder().mkdirs();
-            File dbFile = new File(plugin.getDataFolder(), plugin.getConfigs().getSqliteFileName());
-            String url = "jdbc:sqlite:" + dbFile.getAbsolutePath();
-            connection = DriverManager.getConnection(url);
-            connection.setAutoCommit(false);
-            plugin.getLogger().info("SQLite database initialized: " + dbFile.getName());
-        } catch (SQLException e) {
-            plugin.getLogger().severe("Failed to initialize SQLite: " + e.getMessage());
-            throw new RuntimeException("ItemGuard failed to initialize SQLite database", e);
-        }
-    }
-
-    private void initMySQL() {
-        try {
-            String host = plugin.getConfigs().getMySQLHost();
-            int port = plugin.getConfigs().getMySQLPort();
-            String db = plugin.getConfigs().getMySQLDatabase();
-            String user = plugin.getConfigs().getMySQLUsername();
-            String pass = plugin.getConfigs().getMySQLPassword();
-            boolean ssl = plugin.getConfigs().getMySQLSSL();
-
-            String url = String.format(
-                "jdbc:mysql://%s:%d/%s?useSSL=%s&allowPublicKeyRetrieval=true&serverTimezone=UTC",
-                host, port, db, ssl);
-            connection = DriverManager.getConnection(url, user, pass);
-            connection.setAutoCommit(false);
-            plugin.getLogger().info("MySQL database connected: " + host + ":" + port);
-        } catch (SQLException e) {
-            plugin.getLogger().severe("Failed to connect MySQL: " + e.getMessage());
-            throw new RuntimeException("ItemGuard failed to connect to MySQL database", e);
-        }
-    }
-
-    private void initPostgreSQL() {
-        try {
-            String host = plugin.getConfigs().getPostgresHost();
-            int port = plugin.getConfigs().getPostgresPort();
-            String db = plugin.getConfigs().getPostgresDatabase();
-            String user = plugin.getConfigs().getPostgresUsername();
-            String pass = plugin.getConfigs().getPostgresPassword();
-            boolean ssl = plugin.getConfigs().getPostgresSSL();
-
-            String url = String.format(
-                "jdbc:postgresql://%s:%d/%s?ssl=%s",
-                host, port, db, ssl);
-            connection = DriverManager.getConnection(url, user, pass);
-            connection.setAutoCommit(false);
-            plugin.getLogger().info("PostgreSQL database connected: " + host + ":" + port);
-        } catch (SQLException e) {
-            plugin.getLogger().severe("Failed to connect PostgreSQL: " + e.getMessage());
-            throw new RuntimeException("ItemGuard failed to connect to PostgreSQL database", e);
-        }
-    }
-
-    private void createTables() {
-        if (connection == null) {
-            plugin.getLogger().severe("Cannot create tables: database connection is null");
-            throw new RuntimeException("ItemGuard failed to establish database connection");
-        }
-        String createItemsTable = """
-            CREATE TABLE IF NOT EXISTS tracked_items (
-                code VARCHAR(16) PRIMARY KEY,
-                item_uuid VARCHAR(36) NOT NULL,
-                owner_uuid VARCHAR(36),
-                owner_name VARCHAR(255),
-                material VARCHAR(64),
-                item_name VARCHAR(255),
-                item_lore TEXT,
-                created_at BIGINT NOT NULL,
-                last_seen_at BIGINT NOT NULL,
-                last_action VARCHAR(32),
-                detection_count INT DEFAULT 0,
-                last_location TEXT
+        this.connectionOwner = new SqliteConnectionOwner(
+            databaseFile.toPath(),
+            failure -> plugin.getLogger().log(
+                Level.SEVERE,
+                "ItemGuard database operation failed",
+                failure
             )
-            """;
-
-        String createHistoryTable = """
-            CREATE TABLE IF NOT EXISTS item_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                code VARCHAR(16) NOT NULL,
-                item_uuid VARCHAR(36) NOT NULL,
-                action VARCHAR(32) NOT NULL,
-                player_name VARCHAR(255),
-                player_uuid VARCHAR(36),
-                location TEXT,
-                world VARCHAR(64),
-                x INT,
-                y INT,
-                z INT,
-                timestamp BIGINT NOT NULL,
-                additional_data TEXT
-            )
-            """;
-
-        String createStatsTable = """
-            CREATE TABLE IF NOT EXISTS plugin_stats (
-                id INTEGER PRIMARY KEY,
-                schema_version INT DEFAULT 1,
-                duplicates_detected INT DEFAULT 0,
-                last_updated BIGINT
-            )
-            """;
-
-        String createIndexes = """
-            CREATE INDEX IF NOT EXISTS idx_item_uuid ON tracked_items(item_uuid);
-            CREATE INDEX IF NOT EXISTS idx_owner_uuid ON tracked_items(owner_uuid);
-            CREATE INDEX IF NOT EXISTS idx_last_seen ON tracked_items(last_seen_at);
-            CREATE INDEX IF NOT EXISTS idx_material ON tracked_items(material);
-            CREATE INDEX IF NOT EXISTS idx_history_code ON item_history(code);
-            CREATE INDEX IF NOT EXISTS idx_history_item_uuid ON item_history(item_uuid);
-            CREATE INDEX IF NOT EXISTS idx_history_player_uuid ON item_history(player_uuid);
-            CREATE INDEX IF NOT EXISTS idx_history_timestamp ON item_history(timestamp);
-            CREATE INDEX IF NOT EXISTS idx_history_action ON item_history(action)
-            """;
-
-        try (Statement stmt = connection.createStatement()) {
-            stmt.execute(createItemsTable);
-            stmt.execute(createHistoryTable);
-            stmt.execute(createStatsTable);
-            for (String idx : createIndexes.strip().split(";")) {
-                if (!idx.strip().isEmpty()) {
-                    stmt.execute(idx.strip());
-                }
-            }
-
-            // Migration: them column neu chua co
-            addColumnIfNotExists(stmt, "tracked_items", "last_action", "VARCHAR(32)");
-            addColumnIfNotExists(stmt, "tracked_items", "detection_count", "INT DEFAULT 0");
-            addColumnIfNotExists(stmt, "tracked_items", "item_lore", "TEXT");
-            addColumnIfNotExists(stmt, "plugin_stats", "schema_version", "INT DEFAULT 1");
-
-            connection.commit();
-
-            ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM plugin_stats");
-            rs.next();
-            if (rs.getInt(1) == 0) {
-                stmt.execute("INSERT INTO plugin_stats (id, schema_version, duplicates_detected, last_updated) VALUES (1, 1, 0, " + System.currentTimeMillis() + ")");
-                connection.commit();
-            }
-        } catch (SQLException e) {
-            plugin.getLogger().severe("Failed to create tables: " + e.getMessage());
-            throw new RuntimeException("ItemGuard failed to initialize database tables", e);
+        );
+        this.repository = new ItemSqliteRepository(connectionOwner);
+        this.catalog = new CatalogRepository(connectionOwner);
+        int recoveredClaims = repository.recoverPendingReclaimClaims(
+            System.currentTimeMillis(),
+            "STARTUP_RECOVERY"
+        );
+        plugin.getLogger().info("SQLite database initialized: " + databaseFile.getName());
+        if (recoveredClaims > 0) {
+            plugin.getLogger().warning(
+                "Denied " + recoveredClaims
+                    + " pending reclaim claim(s) left by an earlier shutdown"
+            );
         }
     }
 
-    private void addColumnIfNotExists(Statement stmt, String table, String column, String type) {
-        try {
-            stmt.execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + type);
-        } catch (SQLException ignored) {}
-    }
+    public CatalogRepository getCatalog() { return catalog; }
 
-    private void ensureConnection() throws SQLException {
-        if (connection == null || connection.isClosed()) {
-            plugin.getLogger().warning("Database connection is null or closed, reinitializing...");
-            initDatabase();
-            if (connection == null || connection.isClosed()) {
-                throw new SQLException("Failed to re-establish database connection");
-            }
-        }
-    }
-
-    public void executeAsync(Runnable task) {
-        Runnable wrapped = () -> {
-            try {
-                ensureConnection();
-                task.run();
-            } catch (SQLException e) {
-                plugin.getLogger().log(Level.SEVERE, "Database connection error: " + e.getMessage(), e);
-            }
-        };
-        if (plugin.getConfigs().isAsyncDatabase()) {
-            executor.execute(wrapped);
-        } else {
-            wrapped.run();
-        }
-    }
-
-    public <T> Future<T> submitAsync(Callable<T> task) {
-        if (plugin.getConfigs().isAsyncDatabase()) {
-            return executor.submit(task);
-        } else {
-            T result;
-            try {
-                result = task.call();
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-            return CompletableFuture.completedFuture(result);
-        }
-    }
+    /**
+     * The connection and the thread that owns it.
+     *
+     * <p>Exposed so a collaborator can run its own statements on the executor this manager already
+     * owns, rather than opening a second connection to a file SQLite locks per process.
+     */
+    public SqliteConnectionOwner getConnectionOwner() { return connectionOwner; }
 
     public void saveItem(ItemData item) {
-        executeAsync(() -> {
-            try (PreparedStatement ps = connection.prepareStatement(
-                """
-                INSERT OR REPLACE INTO tracked_items
-                (code, item_uuid, owner_uuid, owner_name, material, item_name, item_lore, created_at, last_seen_at, last_action, detection_count, last_location)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """
-            )) {
-                ps.setString(1, item.getCode());
-                ps.setString(2, item.getItemUuid().toString());
-                ps.setString(3, item.getOwnerUuid() != null ? item.getOwnerUuid().toString() : null);
-                ps.setString(4, item.getOwnerName());
-                ps.setString(5, item.getMaterial() != null ? item.getMaterial().name() : null);
-                ps.setString(6, item.getItemName());
-                ps.setString(7, item.getItemLore());
-                ps.setLong(8, item.getCreatedAt());
-                ps.setLong(9, item.getLastSeenAt());
-                ps.setString(10, item.getLastAction());
-                ps.setInt(11, item.getDetectionCount());
-                ps.setString(12, item.getLastLocation());
-                ps.executeUpdate();
-                connection.commit();
-            } catch (SQLException e) {
-                plugin.getLogger().log(Level.SEVERE, "Failed to save item: " + item.getCode(), e);
-            }
-        });
+        repository.saveItem(item);
     }
 
-    public void updateItemLastAction(String code, String action, Location loc, String ownerName, UUID ownerUuid) {
-        executeAsync(() -> {
-            try (PreparedStatement ps = connection.prepareStatement(
-                """
-                UPDATE tracked_items SET last_seen_at = ?, last_action = ?, detection_count = detection_count + 1, last_location = ?, owner_name = ?, owner_uuid = ?
-                WHERE code = ?
-                """
-            )) {
-                ps.setLong(1, System.currentTimeMillis());
-                ps.setString(2, action);
-                ps.setString(3, formatLocation(loc));
-                ps.setString(4, ownerName);
-                ps.setString(5, ownerUuid != null ? ownerUuid.toString() : null);
-                ps.setString(6, code);
-                ps.executeUpdate();
-                connection.commit();
-            } catch (SQLException e) {
-                plugin.getLogger().log(Level.SEVERE, "Failed to update item: " + code, e);
-            }
-        });
+    public void saveItemWithSnapshot(
+        ItemData item,
+        ItemSnapshot snapshot,
+        long capturedAt
+    ) {
+        repository.saveItemWithSnapshot(item, snapshot, capturedAt);
     }
 
-    public void updateItemLocationOnly(String code, Location loc, String ownerName, UUID ownerUuid) {
-        executeAsync(() -> {
-            try (PreparedStatement ps = connection.prepareStatement(
-                """
-                UPDATE tracked_items SET last_seen_at = ?, last_location = ?, owner_name = ?, owner_uuid = ?
-                WHERE code = ?
-                """
-            )) {
-                ps.setLong(1, System.currentTimeMillis());
-                ps.setString(2, formatLocation(loc));
-                ps.setString(3, ownerName);
-                ps.setString(4, ownerUuid != null ? ownerUuid.toString() : null);
-                ps.setString(5, code);
-                ps.executeUpdate();
-                connection.commit();
-            } catch (SQLException e) {
-                plugin.getLogger().log(Level.SEVERE, "Failed to update item: " + code, e);
-            }
-        });
+    public Optional<ItemSnapshot> getSnapshot(String code) {
+        return repository.getSnapshot(code);
     }
 
-    public void updateItemCount(String code, int count) {
-        executeAsync(() -> {
-            try (PreparedStatement ps = connection.prepareStatement(
-                "UPDATE tracked_items SET current_count = ?, last_seen_at = ? WHERE code = ?"
-            )) {
-                ps.setInt(1, count);
-                ps.setLong(2, System.currentTimeMillis());
-                ps.setString(3, code);
-                ps.executeUpdate();
-                connection.commit();
-            } catch (SQLException e) {
-                plugin.getLogger().log(Level.SEVERE, "Failed to update item count: " + code, e);
-            }
-        });
+    @Override
+    public CompletableFuture<TagPublication> reserve(TagPublication proposed) {
+        return repository.reserve(proposed);
+    }
+
+    @Override
+    public CompletableFuture<Boolean> publish(UUID publicationId, long updatedAt) {
+        return repository.publish(publicationId, updatedAt);
+    }
+
+    @Override
+    public CompletableFuture<Boolean> reconcile(
+        TagReconciliationReceipt receipt,
+        long updatedAt
+    ) {
+        return repository.reconcile(receipt, updatedAt);
+    }
+
+    @Override
+    public CompletableFuture<Boolean> abort(
+        UUID publicationId,
+        long updatedAt,
+        String detail
+    ) {
+        return repository.abort(publicationId, updatedAt, detail);
+    }
+
+    @Override
+    public boolean beginReclaimClaim(ReclaimClaim claim) {
+        return repository.beginReclaimClaim(claim);
+    }
+
+    @Override
+    public boolean transitionReclaimClaim(
+        UUID claimId,
+        ReclaimClaimState expectedState,
+        ReclaimClaimState targetState,
+        long updatedAt,
+        String detail
+    ) {
+        return repository.transitionReclaimClaim(
+            claimId,
+            expectedState,
+            targetState,
+            updatedAt,
+            detail
+        );
+    }
+
+    @Override
+    public Optional<ReclaimClaim> getReclaimClaim(UUID claimId) {
+        return repository.getReclaimClaim(claimId);
+    }
+
+    public void updateItemLastAction(
+        String code,
+        String action,
+        Location location,
+        String ownerName,
+        UUID ownerUuid
+    ) {
+        repository.updateLastAction(
+            code,
+            action,
+            formatLocation(location),
+            ownerName,
+            ownerUuid,
+            System.currentTimeMillis()
+        );
+    }
+
+    public void updateItemLocationOnly(
+        String code,
+        Location location,
+        String ownerName,
+        UUID ownerUuid
+    ) {
+        repository.updateLocation(
+            code,
+            formatLocation(location),
+            ownerName,
+            ownerUuid,
+            System.currentTimeMillis()
+        );
     }
 
     public void logHistory(ItemHistory history) {
-        executeAsync(() -> {
-            try (PreparedStatement ps = connection.prepareStatement(
-                """
-                INSERT INTO item_history (code, item_uuid, action, player_name, player_uuid, location, world, x, y, z, timestamp, additional_data)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, Statement.RETURN_GENERATED_KEYS
-            )) {
-                ps.setString(1, history.getCode());
-                ps.setString(2, history.getItemUuid().toString());
-                ps.setString(3, history.getAction());
-                ps.setString(4, history.getPlayerName());
-                ps.setString(5, history.getPlayerUuid() != null ? history.getPlayerUuid().toString() : null);
-                ps.setString(6, history.getLocation());
-                ps.setString(7, history.getWorld());
-                ps.setInt(8, history.getX());
-                ps.setInt(9, history.getY());
-                ps.setInt(10, history.getZ());
-                ps.setLong(11, history.getTimestamp());
-                ps.setString(12, history.getAdditionalData());
-                ps.executeUpdate();
-                connection.commit();
-            } catch (SQLException e) {
-                plugin.getLogger().log(Level.SEVERE, "Failed to log history", e);
-            }
-        });
+        repository.logHistory(history);
+    }
+
+    /**
+     * Refreshes the most recent matching row instead of appending a duplicate.
+     *
+     * <p>Used when the same holder repeats the same action on the same item inside the suppression
+     * window. The event is still reflected — its timestamp moves forward and a repeat counter rises —
+     * so nothing is lost, but a held drop key no longer grows the table without bound.
+     */
+    public void touchHistory(ItemHistory history) {
+        repository.touchHistory(history);
     }
 
     public void incrementDuplicateCount() {
-        executeAsync(() -> {
-            try (PreparedStatement ps = connection.prepareStatement(
-                "UPDATE plugin_stats SET duplicates_detected = duplicates_detected + 1, last_updated = ? WHERE id = 1"
-            )) {
-                ps.setLong(1, System.currentTimeMillis());
-                ps.executeUpdate();
-                connection.commit();
-            } catch (SQLException e) {
-                plugin.getLogger().log(Level.SEVERE, "Failed to update stats", e);
-            }
-        });
+        repository.incrementDuplicateCount(System.currentTimeMillis());
+    }
+
+    public void recordObservation(ItemObservation observation) {
+        repository.recordObservation(observation);
+    }
+
+    public void completeObservationEpoch(long scanEpoch) {
+        repository.completeObservationEpoch(scanEpoch);
+    }
+
+    public CompletableFuture<List<DuplicateFinding>> completeObservationEpochAndAudit(
+        long scanEpoch,
+        boolean antiDupeEnabled,
+        DuplicateAction action,
+        long detectionCooldownMillis,
+        long completedAt
+    ) {
+        return repository.completeObservationEpochAndAudit(
+            scanEpoch,
+            antiDupeEnabled,
+            action,
+            detectionCooldownMillis,
+            completedAt
+        );
+    }
+
+    public long getMaximumPersistedObservationEpoch() {
+        return repository.getMaximumPersistedObservationEpoch();
     }
 
     public Optional<ItemData> getItem(String code) {
-        try {
-            ensureConnection();
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to get item (connection): " + code, e);
-            return Optional.empty();
-        }
-        try (PreparedStatement ps = connection.prepareStatement(
-            "SELECT * FROM tracked_items WHERE code = ?"
-        )) {
-            ps.setString(1, code);
-            ResultSet rs = ps.executeQuery();
-            if (rs.next()) {
-                return Optional.of(parseItem(rs));
-            }
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to get item: " + code, e);
-        }
-        return Optional.empty();
+        return repository.getItem(code);
+    }
+
+    public CompletableFuture<Optional<ItemData>> getItemAsync(String code) {
+        return repository.getItemAsync(code);
     }
 
     public Optional<ItemData> getItemByUuid(UUID itemUuid) {
-        try {
-            ensureConnection();
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to get item by UUID (connection): " + itemUuid, e);
-            return Optional.empty();
-        }
-        try (PreparedStatement ps = connection.prepareStatement(
-            "SELECT * FROM tracked_items WHERE item_uuid = ? ORDER BY last_seen_at DESC LIMIT 1"
-        )) {
-            ps.setString(1, itemUuid.toString());
-            ResultSet rs = ps.executeQuery();
-            if (rs.next()) {
-                return Optional.of(parseItem(rs));
-            }
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to get item by UUID: " + itemUuid, e);
-        }
-        return Optional.empty();
+        return repository.getItemByUuid(itemUuid);
     }
 
     public List<ItemHistory> getHistory(String code, int limit) {
-        try {
-            ensureConnection();
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to get history (connection): " + code, e);
-            return Collections.emptyList();
-        }
-        List<ItemHistory> histories = new ArrayList<>();
-        try (PreparedStatement ps = connection.prepareStatement(
-            "SELECT * FROM item_history WHERE code = ? ORDER BY timestamp DESC LIMIT ?"
-        )) {
-            ps.setString(1, code);
-            ps.setInt(2, limit);
-            ResultSet rs = ps.executeQuery();
-            while (rs.next()) {
-                histories.add(parseHistory(rs));
-            }
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to get history: " + code, e);
-        }
-        return histories;
+        return repository.getHistory(code, limit);
+    }
+
+    public CompletableFuture<List<ItemHistory>> getHistoryAsync(String code, int limit) {
+        return repository.getHistoryAsync(code, limit);
+    }
+
+    public CompletableFuture<List<ItemHistory>> getHistoryByPlayerAsync(
+        UUID playerUuid,
+        int limit
+    ) {
+        return repository.getHistoryByPlayerAsync(playerUuid, limit);
+    }
+
+    public CompletableFuture<List<ItemHistorySummary>> getHistorySummariesByPlayerAsync(
+        UUID playerUuid,
+        int limit,
+        int offset
+    ) {
+        return repository.getHistorySummariesByPlayerAsync(playerUuid, limit, offset);
     }
 
     public List<ItemData> getItemsByPlayer(UUID playerUuid) {
-        try {
-            ensureConnection();
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to get items by player (connection): " + playerUuid, e);
-            return Collections.emptyList();
-        }
-        List<ItemData> items = new ArrayList<>();
-        try (PreparedStatement ps = connection.prepareStatement(
-            "SELECT * FROM tracked_items WHERE owner_uuid = ? ORDER BY last_seen_at DESC LIMIT 200"
-        )) {
-            ps.setString(1, playerUuid.toString());
-            ResultSet rs = ps.executeQuery();
-            while (rs.next()) {
-                items.add(parseItem(rs));
-            }
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to get items by player: " + playerUuid, e);
-        }
-        return items;
+        return repository.getItemsByPlayer(playerUuid);
+    }
+
+    public CompletableFuture<List<ItemData>> getItemsByPlayerAsync(UUID playerUuid) {
+        return repository.getItemsByPlayerAsync(playerUuid);
     }
 
     public List<ItemData> searchItems(String query) {
-        try {
-            ensureConnection();
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to search items (connection): " + query, e);
-            return Collections.emptyList();
-        }
-        List<ItemData> items = new ArrayList<>();
-        try (PreparedStatement ps = connection.prepareStatement(
-            """
-            SELECT * FROM tracked_items
-            WHERE owner_name LIKE ? OR code LIKE ? OR item_name LIKE ?
-            ORDER BY last_seen_at DESC LIMIT 100
-            """
-        )) {
-            String likeQuery = "%" + query + "%";
-            ps.setString(1, likeQuery);
-            ps.setString(2, likeQuery);
-            ps.setString(3, likeQuery);
-            ResultSet rs = ps.executeQuery();
-            while (rs.next()) {
-                items.add(parseItem(rs));
-            }
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to search items: " + query, e);
-        }
-        return items;
+        return repository.searchItems(query);
+    }
+
+    public CompletableFuture<List<ItemData>> searchItemsAsync(String query) {
+        return repository.searchItemsAsync(query);
+    }
+
+    @Override
+    public boolean startSearchRequest(ItemSearchRequest request) {
+        return repository.startSearchRequest(request);
+    }
+
+    @Override
+    public boolean stopSearchRequest(String code, long updatedAt) {
+        return repository.stopSearchRequest(code, updatedAt);
+    }
+
+    @Override
+    public Optional<ItemSearchRequest> getSearchRequest(String code) {
+        return repository.getSearchRequest(code);
+    }
+
+    @Override
+    public List<ItemSearchRequest> listActiveSearchRequests(
+        long now,
+        int offset,
+        int limit
+    ) {
+        return repository.listActiveSearchRequests(now, offset, limit);
+    }
+
+    @Override
+    public boolean removeSearchRequest(String code) {
+        return repository.removeSearchRequest(code);
+    }
+
+    @Override
+    public int clearSearchRequests() {
+        return repository.clearSearchRequests();
     }
 
     public int getHistoryCount(String code) {
-        try {
-            ensureConnection();
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to get history count (connection): " + code, e);
-            return 0;
-        }
-        try (PreparedStatement ps = connection.prepareStatement(
-            "SELECT COUNT(*) FROM item_history WHERE code = ?"
-        )) {
-            ps.setString(1, code);
-            ResultSet rs = ps.executeQuery();
-            if (rs.next()) {
-                return rs.getInt(1);
-            }
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to get history count: " + code, e);
-        }
-        return 0;
+        return repository.getHistoryCount(code);
     }
 
     public PluginStats getStats() {
-        PluginStats stats = new PluginStats();
-        try {
-            ensureConnection();
-        } catch (SQLException e) {
-            stats.setDatabaseStatus("ERROR: " + e.getMessage());
-            plugin.getLogger().log(Level.SEVERE, "Failed to get stats (connection)", e);
-            return stats;
-        }
-        try (Statement stmt = connection.createStatement()) {
-            ResultSet rs = stmt.executeQuery("SELECT COUNT(*) FROM tracked_items");
-            if (rs.next()) stats.setTotalItems(rs.getInt(1));
+        return repository.getStats();
+    }
 
-            rs = stmt.executeQuery("SELECT COUNT(*) FROM item_history");
-            if (rs.next()) stats.setTotalHistory(rs.getInt(1));
-
-            rs = stmt.executeQuery("SELECT duplicates_detected FROM plugin_stats WHERE id = 1");
-            if (rs.next()) stats.setDuplicatesDetected(rs.getInt(1));
-
-            stats.setDatabaseType(dbType);
-            stats.setDatabaseStatus("OK");
-        } catch (SQLException e) {
-            stats.setDatabaseStatus("ERROR: " + e.getMessage());
-            plugin.getLogger().log(Level.SEVERE, "Failed to get stats", e);
-        }
-        return stats;
+    public CompletableFuture<PluginStats> getStatsAsync() {
+        return repository.getStatsAsync();
     }
 
     public int getOnlineTrackedCount() {
         int count = 0;
-        for (Player p : Bukkit.getOnlinePlayers()) {
-            for (ItemStack item : p.getInventory().getContents()) {
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            for (ItemStack item : player.getInventory().getContents()) {
                 if (item != null && item.getType() != Material.AIR) {
                     count++;
                     break;
@@ -556,127 +350,43 @@ public class DatabaseManager {
     }
 
     public void deleteOldHistory(int keepDays) {
-        try {
-            ensureConnection();
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to delete old history (connection)", e);
-            return;
+        if (keepDays < 0) {
+            throw new IllegalArgumentException("History retention days cannot be negative");
         }
-        long cutoff = System.currentTimeMillis() - (keepDays * 86400000L);
-        try (PreparedStatement ps = connection.prepareStatement(
-            "DELETE FROM item_history WHERE timestamp < ?"
-        )) {
-            ps.setLong(1, cutoff);
-            int deleted = ps.executeUpdate();
-            connection.commit();
-            plugin.getLogger().info("Deleted " + deleted + " old history entries (older than " + keepDays + " days)");
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to delete old history", e);
-        }
-    }
-
-    public boolean isDuplicate(String code) {
-        try {
-            ensureConnection();
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to check duplicate (connection): " + code, e);
-            return false;
-        }
-        try (PreparedStatement ps = connection.prepareStatement(
-            "SELECT current_count FROM tracked_items WHERE code = ?"
-        )) {
-            ps.setString(1, code);
-            ResultSet rs = ps.executeQuery();
-            if (rs.next()) {
-                return rs.getInt("current_count") > 1;
-            }
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to check duplicate: " + code, e);
-        }
-        return false;
-    }
-
-    public boolean canReportDuplicate(String code) {
-        String key = code + "-" + (System.currentTimeMillis() / plugin.getConfigs().getDetectionCooldown());
-        if (dupeCooldownCache.containsKey(key)) {
-            return false;
-        }
-        dupeCooldownCache.put(key, System.currentTimeMillis());
-        dupeCooldownCache.entrySet().removeIf(e -> e.getValue() < System.currentTimeMillis() - 60000);
-        return true;
+        long cutoff = System.currentTimeMillis() - Math.multiplyExact(keepDays, 86_400_000L);
+        int deleted = repository.deleteHistoryBefore(cutoff);
+        plugin.getLogger().info(
+            "Deleted " + deleted + " old history entries (older than " + keepDays + " days)"
+        );
     }
 
     public void flush() {
-        try {
-            ensureConnection();
-            connection.commit();
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to flush database", e);
-        }
+        connectionOwner.flush();
     }
 
     public void close() {
-        try {
-            flush();
-            executor.shutdown();
-            if (connection != null && !connection.isClosed()) {
-                connection.close();
-            }
-            plugin.getLogger().info("Database connection closed");
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to close database", e);
+        if (!connectionOwner.close(CLOSE_TIMEOUT)) {
+            plugin.getLogger().severe(
+                "ItemGuard database did not close cleanly within " + CLOSE_TIMEOUT.toSeconds() + " seconds"
+            );
+            return;
         }
+        plugin.getLogger().info("Database connection closed");
     }
 
-    // ---------- PARSING ----------
-    private ItemData parseItem(ResultSet rs) throws SQLException {
-        ItemData item = new ItemData(
-            rs.getString("code"),
-            UUID.fromString(rs.getString("item_uuid"))
+    private String formatLocation(Location location) {
+        if (location == null || location.getWorld() == null) {
+            return "Unknown";
+        }
+        return String.format(
+            "%s (%d, %d, %d)",
+            location.getWorld().getName(),
+            location.getBlockX(),
+            location.getBlockY(),
+            location.getBlockZ()
         );
-        String ownerUuid = rs.getString("owner_uuid");
-        if (ownerUuid != null) item.setOwnerUuid(UUID.fromString(ownerUuid));
-        item.setOwnerName(rs.getString("owner_name"));
-        String mat = rs.getString("material");
-        if (mat != null) {
-            try {         item.setMaterial(Material.valueOf(mat)); } catch (Exception ignored) {}
-        }
-        item.setItemName(rs.getString("item_name"));
-        item.setItemLore(rs.getString("item_lore"));
-        item.setCreatedAt(rs.getLong("created_at"));
-        item.setLastSeenAt(rs.getLong("last_seen_at"));
-        try { item.setLastAction(rs.getString("last_action")); } catch (Exception ignored) {}
-        try { item.setDetectionCount(rs.getInt("detection_count")); } catch (Exception ignored) {}
-        item.setLastLocation(rs.getString("last_location"));
-        return item;
     }
 
-    private ItemHistory parseHistory(ResultSet rs) throws SQLException {
-        ItemHistory h = new ItemHistory();
-        h.setId(rs.getLong("id"));
-        h.setCode(rs.getString("code"));
-        h.setItemUuid(UUID.fromString(rs.getString("item_uuid")));
-        h.setAction(rs.getString("action"));
-        h.setPlayerName(rs.getString("player_name"));
-        String puuid = rs.getString("player_uuid");
-        if (puuid != null) h.setPlayerUuid(UUID.fromString(puuid));
-        h.setLocation(rs.getString("location"));
-        h.setWorld(rs.getString("world"));
-        h.setX(rs.getInt("x"));
-        h.setY(rs.getInt("y"));
-        h.setZ(rs.getInt("z"));
-        h.setTimestamp(rs.getLong("timestamp"));
-        h.setAdditionalData(rs.getString("additional_data"));
-        return h;
-    }
-
-    private String formatLocation(Location loc) {
-        if (loc == null) return "Unknown";
-        return String.format("%s (%d, %d, %d)",
-            loc.getWorld().getName(), loc.getBlockX(), loc.getBlockY(), loc.getBlockZ());
-    }
-
-    // ---------- KEY HELPERS ----------
     public static String getKeyNamespace() {
         return KEY_NAMESPACE;
     }

@@ -1,0 +1,68 @@
+[
+  {
+    "version": "1.21.4",
+    "started": "2026-09-14T21:11:57.495354+00:00",
+    "build": "232",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-218fc9062c73",
+    "smoke_exit": 0,
+    "smoke_tail": "{\n  \"status\": \"CAPTURED\",\n  \"cleanup\": [\n    {\n      \"child\": \"bots-1\",\n      \"pid\": 31304,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    },\n    {\n      \"child\": \"server-1\",\n      \"pid\": 5112,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "PASS_SWEEP_SMOKE",
+      "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-218fc9062c73",
+      "candidate_sha256": "c4f734cdaa5473b40bf3dacb005f05edd9c286e62cb701c5190a662e9cffcb83"
+    },
+    "status": "PASS_SWEEP_SMOKE",
+    "duplicate_confirmed": true,
+    "confirmed_code": "DX85XN",
+    "confirmed_locations": 2,
+    "plugin_enabled": true,
+    "unsupported_api": false,
+    "finished": "2026-09-14T21:13:06.393774+00:00"
+  },
+  {
+    "version": "1.21.11",
+    "started": "2026-09-14T21:13:06.395349+00:00",
+    "build": "132",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-329d8d4f3eab",
+    "smoke_exit": 0,
+    "smoke_tail": "{\n  \"status\": \"CAPTURED\",\n  \"cleanup\": [\n    {\n      \"child\": \"bots-1\",\n      \"pid\": 31564,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    },\n    {\n      \"child\": \"server-1\",\n      \"pid\": 54736,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "PASS_SWEEP_SMOKE",
+      "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-329d8d4f3eab",
+      "candidate_sha256": "c4f734cdaa5473b40bf3dacb005f05edd9c286e62cb701c5190a662e9cffcb83"
+    },
+    "status": "PASS_SWEEP_SMOKE",
+    "duplicate_confirmed": true,
+    "confirmed_code": "5QVCD9",
+    "confirmed_locations": 2,
+    "plugin_enabled": true,
+    "unsupported_api": false,
+    "finished": "2026-09-14T21:14:12.268696+00:00"
+  },
+  {
+    "version": "26.2",
+    "started": "2026-09-14T21:14:12.269446+00:00",
+    "build": "123",
+    "java_minimum": 25,
+    "jdk": "jdk-25",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-f186ac633fbb",
+    "smoke_exit": 0,
+    "smoke_tail": "{\n  \"status\": \"CAPTURED\",\n  \"cleanup\": [\n    {\n      \"child\": \"bots-1\",\n      \"pid\": 51740,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    },\n    {\n      \"child\": \"server-1\",\n      \"pid\": 49820,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "PASS_SWEEP_SMOKE",
+      "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-f186ac633fbb",
+      "candidate_sha256": "c4f734cdaa5473b40bf3dacb005f05edd9c286e62cb701c5190a662e9cffcb83"
+    },
+    "status": "PASS_SWEEP_SMOKE",
+    "duplicate_confirmed": true,
+    "confirmed_code": "4P14LS",
+    "confirmed_locations": 2,
+    "plugin_enabled": true,
+    "unsupported_api": false,
+    "finished": "2026-09-14T21:15:15.729507+00:00"
+  }
+]

@@ -1,7 +1,10 @@
 package com.itemguard.commands;
 
 import com.itemguard.ItemGuard;
+import com.itemguard.config.ReloadDecision;
+import com.itemguard.config.ReloadStatus;
 import com.itemguard.data.ItemData;
+import com.itemguard.gui.UiMainThreadHandoff;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -51,14 +54,17 @@ public class MainCommand implements CommandExecutor, TabCompleter {
                     plugin.getMessages().send(sender, "player-only");
                     return true;
                 }
-                new HistoryCommand(plugin).openHistoryForPlayer((Player) sender, args);
+                new HistoryCommand(plugin).openHistoryForPlayer(
+                    (Player) sender,
+                    SubcommandArguments.tail(args)
+                );
             }
             case "search" -> {
                 if (!sender.hasPermission("itemguard.search")) {
                     plugin.getMessages().send(sender, "no-permission");
                     return true;
                 }
-                new SearchCommand(plugin).searchItems(sender, args);
+                new SearchCommand(plugin).searchItems(sender, SubcommandArguments.tail(args));
             }
             case "stats" -> {
                 if (!sender.hasPermission("itemguard.stats")) {
@@ -76,7 +82,14 @@ public class MainCommand implements CommandExecutor, TabCompleter {
                     plugin.getMessages().send(sender, "player-only");
                     return true;
                 }
-                plugin.getGuiListener().openBrowserPendingFilter(player, args);
+                if (args.length == 1) {
+                    plugin.getCatalogUi().open(player);
+                } else {
+                    plugin.getGuiListener().openBrowserPendingFilter(
+                        player,
+                        SubcommandArguments.tail(args)
+                    );
+                }
             }
             case "reload" -> {
                 if (!sender.hasPermission("itemguard.reload")) {
@@ -84,7 +97,12 @@ public class MainCommand implements CommandExecutor, TabCompleter {
                     return true;
                 }
                 try {
-                    plugin.reload();
+                    ReloadDecision decision = plugin.reload();
+                    if (decision.status() == ReloadStatus.RESTART_REQUIRED) {
+                        sender.sendMessage("§e§l[ItemGuard] §cCan restart de ap dung: §f"
+                            + String.join(", ", decision.changedRestartKeys()));
+                        return true;
+                    }
                     plugin.getMessages().send(sender, "reload-success");
                 } catch (Exception e) {
                     plugin.getMessages().send(sender, "reload-fail");
@@ -94,28 +112,55 @@ public class MainCommand implements CommandExecutor, TabCompleter {
             case "info" -> sendInfo(sender);
             case "help" -> sendHelp(sender);
             default -> {
-                plugin.getMessages().sendRaw(sender, "invalid-args", Map.of("usage", "/itemguard <check|history|search|stats|reload|info>"));
+                plugin.getMessages().sendRaw(sender, "invalid-args", Map.of("usage", "/itemguard <check|history|search|stats|browser|reload|info>"));
             }
         }
         return true;
     }
 
     private void sendHelp(CommandSender sender) {
-        sender.sendMessage("§e§l=== ItemGuard Commands ===");
-        sender.sendMessage("§7/itemguard check §f- Kiem tra item trên tay");
-        sender.sendMessage("§7/itemguard history [player] [limit] §f- Xem lich su item");
-        sender.sendMessage("§7/itemguard search <player> §f- Tim kiem item cua nguoi choi");
-        sender.sendMessage("§7/itemguard stats §f- Xem thong ke plugin");
-        sender.sendMessage("§7/itemguard reload §f- Tai lai cau hinh");
-        sender.sendMessage("§7/itemguard info §f- Thong tin plugin");
+        sender.sendMessage("§e§l=== Lệnh ItemGuard ===");
+        if (sender.hasPermission("itemguard.check")) {
+            sender.sendMessage("§e/itemguard check §7- Kiểm tra vật phẩm đang cầm");
+        }
+        if (sender.hasPermission("itemguard.history")) {
+            sender.sendMessage("§e/itemguard history [player|#code] [limit] §7- Xem lịch sử");
+        }
+        if (sender.hasPermission("itemguard.search")) {
+            sender.sendMessage("§e/itemguard search <player|#code> §7- Tìm vật phẩm");
+        }
+        if (sender.hasPermission("itemguard.gui")) {
+            sender.sendMessage("§e/itemguard browser [player] §7- Mặc định: kho tra cứu (cần quyền search)");
+            sender.sendMessage("§e/itemguard browser <player> §7- Tra theo người chơi");
+        }
+        if (sender.hasPermission("itemguard.stats")) {
+            sender.sendMessage("§e/itemguard stats §7- Xem thống kê hệ thống");
+        }
+        if (sender.hasPermission("itemguard.reload")) {
+            sender.sendMessage("§e/itemguard reload §7- Tải lại cấu hình an toàn");
+        }
+        sender.sendMessage("§e/itemguard info §7- Thông tin plugin");
     }
 
     private void sendInfo(CommandSender sender) {
-        sender.sendMessage("§e§l=== ItemGuard ===");
-        sender.sendMessage("§7Version: §f" + plugin.getDescription().getVersion());
-        sender.sendMessage("§7Author: §fAI.WORK");
-        sender.sendMessage("§7Minecraft: §f1.21 - 1.21.11");
-        sender.sendMessage("§7Database: §f" + plugin.getDB().getStats().getDatabaseType());
+        plugin.getDB().getStatsAsync().whenComplete((stats, failure) ->
+            UiMainThreadHandoff.dispatch(plugin, () -> {
+                sender.sendMessage("§e§l=== ItemGuard ===");
+                sender.sendMessage("§7Phiên bản: §f" + plugin.getDescription().getVersion());
+                sender.sendMessage("§7Tác giả: §fAI.WORK");
+                sender.sendMessage("§7Minecraft: §f1.21 - 1.21.11");
+                if (failure != null) {
+                    plugin.getLogger().log(
+                        java.util.logging.Level.SEVERE,
+                        "Failed to load ItemGuard info stats",
+                        failure
+                    );
+                    sender.sendMessage("§7Cơ sở dữ liệu: §cKhông thể đọc trạng thái");
+                    return;
+                }
+                sender.sendMessage("§7Cơ sở dữ liệu: §f" + stats.getDatabaseType());
+            })
+        );
     }
 
     @Override
@@ -132,8 +177,20 @@ public class MainCommand implements CommandExecutor, TabCompleter {
             return filter(subs, args[0]);
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("history")) {
-            return filter(plugin.getServer().getOnlinePlayers().stream()
-                .map(Player::getName).collect(Collectors.toList()), args[1]);
+            if (!(sender instanceof Player player)) {
+                return List.of();
+            }
+            List<String> onlineNames = plugin.getServer().getOnlinePlayers().stream()
+                .map(Player::getName)
+                .collect(Collectors.toList());
+            return filter(
+                new HistoryAccessPolicy().completionCandidates(
+                    player.getName(),
+                    onlineNames,
+                    player.hasPermission("itemguard.history.others")
+                ),
+                args[1]
+            );
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("search")) {
             return filter(plugin.getServer().getOnlinePlayers().stream()

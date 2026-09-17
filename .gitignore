@@ -70,3 +70,17 @@ bin/
 # Server plugins folder (common for testing)
 plugins/
 server/
+
+# Runtime fixtures and dev-server logs (evidence JSON in run/ is kept)
+logs/
+
+# Python tooling bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Code index (regenerable, ~37 MB)
+.codegraph/
+
+# Local agent coordination state; .hermes/plans and lessons are kept
+.hermes/WORKING_STATE.md

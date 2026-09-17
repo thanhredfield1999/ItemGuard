@@ -1,0 +1,46 @@
+[
+  {
+    "version": "1.21.9",
+    "started": "2026-09-17T10:24:35.167640+00:00",
+    "build": "59",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-7c7aab89b536",
+    "smoke_exit": 0,
+    "smoke_tail": "{\n  \"status\": \"CAPTURED\",\n  \"cleanup\": [\n    {\n      \"child\": \"bots-1\",\n      \"pid\": 16836,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    },\n    {\n      \"child\": \"server-1\",\n      \"pid\": 13492,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "PASS_SWEEP_SMOKE",
+      "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-7c7aab89b536",
+      "candidate_sha256": "80fc610b1e1f3be4c3abb7a163d899fce5d285c23578449dff6b27e08cd167ab"
+    },
+    "status": "PASS_SWEEP_SMOKE",
+    "duplicate_confirmed": true,
+    "confirmed_code": "TPA1OO",
+    "confirmed_locations": 2,
+    "plugin_enabled": true,
+    "unsupported_api": false,
+    "finished": "2026-09-17T10:26:10.648374+00:00"
+  },
+  {
+    "version": "1.21.10",
+    "started": "2026-09-17T10:26:10.649292+00:00",
+    "build": "130",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-cb30a30c467a",
+    "smoke_exit": 0,
+    "smoke_tail": "{\n  \"status\": \"CAPTURED\",\n  \"cleanup\": [\n    {\n      \"child\": \"bots-1\",\n      \"pid\": 30824,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    },\n    {\n      \"child\": \"server-1\",\n      \"pid\": 30412,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "PASS_SWEEP_SMOKE",
+      "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-cb30a30c467a",
+      "candidate_sha256": "80fc610b1e1f3be4c3abb7a163d899fce5d285c23578449dff6b27e08cd167ab"
+    },
+    "status": "PASS_SWEEP_SMOKE",
+    "duplicate_confirmed": true,
+    "confirmed_code": "LM6SMH",
+    "confirmed_locations": 2,
+    "plugin_enabled": true,
+    "unsupported_api": false,
+    "finished": "2026-09-17T10:28:50.838850+00:00"
+  }
+]

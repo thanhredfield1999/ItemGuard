@@ -1,0 +1,211 @@
+[
+  {
+    "version": "1.21.4",
+    "started": "2026-09-16T17:43:40.806151+00:00",
+    "build": "232",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-14e252096fb6",
+    "smoke_exit": 1,
+    "smoke_tail": "{\n  \"status\": \"FAILED\",\n  \"cleanup\": [\n    {\n      \"child\": \"server-failure\",\n      \"pid\": 50920,\n      \"exit\": 1,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"error\": \"RuntimeError('Child exited before expected evidence')\",\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "REJECTED",
+      "reason": "incomplete or failed attempt"
+    },
+    "status": "REJECTED",
+    "duplicate_confirmed": false,
+    "plugin_enabled": false,
+    "unsupported_api": false,
+    "finished": "2026-09-16T17:44:09.822511+00:00"
+  },
+  {
+    "version": "1.21.5",
+    "started": "2026-09-16T17:44:09.827404+00:00",
+    "build": "114",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-88149b61fed8",
+    "smoke_exit": 1,
+    "smoke_tail": "{\n  \"status\": \"FAILED\",\n  \"cleanup\": [\n    {\n      \"child\": \"server-failure\",\n      \"pid\": 64212,\n      \"exit\": 1,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"error\": \"RuntimeError('Child exited before expected evidence')\",\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "REJECTED",
+      "reason": "incomplete or failed attempt"
+    },
+    "status": "REJECTED",
+    "duplicate_confirmed": false,
+    "plugin_enabled": false,
+    "unsupported_api": false,
+    "finished": "2026-09-16T17:44:41.540785+00:00"
+  },
+  {
+    "version": "1.21.6",
+    "started": "2026-09-16T17:44:41.551019+00:00",
+    "build": "48",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-545b95a59e6f",
+    "smoke_exit": 1,
+    "smoke_tail": "{\n  \"status\": \"FAILED\",\n  \"cleanup\": [\n    {\n      \"child\": \"server-failure\",\n      \"pid\": 66996,\n      \"exit\": 1,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"error\": \"RuntimeError('Child exited before expected evidence')\",\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "REJECTED",
+      "reason": "incomplete or failed attempt"
+    },
+    "status": "REJECTED",
+    "duplicate_confirmed": false,
+    "plugin_enabled": false,
+    "unsupported_api": false,
+    "finished": "2026-09-16T17:44:51.590663+00:00"
+  },
+  {
+    "version": "1.21.7",
+    "started": "2026-09-16T17:44:51.598120+00:00",
+    "build": "32",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-c07d74e0864f",
+    "smoke_exit": 1,
+    "smoke_tail": "{\n  \"status\": \"FAILED\",\n  \"cleanup\": [\n    {\n      \"child\": \"server-failure\",\n      \"pid\": 66688,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"error\": \"RuntimeError('Child exited before expected evidence')\",\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "REJECTED",
+      "reason": "incomplete or failed attempt"
+    },
+    "status": "REJECTED",
+    "duplicate_confirmed": false,
+    "plugin_enabled": false,
+    "unsupported_api": false,
+    "finished": "2026-09-16T17:44:58.246806+00:00"
+  },
+  {
+    "version": "1.21.8",
+    "started": "2026-09-16T17:44:58.253651+00:00",
+    "build": "60",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-3fea0dad9a81",
+    "smoke_exit": 1,
+    "smoke_tail": "{\n  \"status\": \"FAILED\",\n  \"cleanup\": [\n    {\n      \"child\": \"server-failure\",\n      \"pid\": 66296,\n      \"exit\": 1,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"error\": \"RuntimeError('Child exited before expected evidence')\",\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "REJECTED",
+      "reason": "incomplete or failed attempt"
+    },
+    "status": "REJECTED",
+    "duplicate_confirmed": false,
+    "plugin_enabled": false,
+    "unsupported_api": false,
+    "finished": "2026-09-16T17:45:06.787456+00:00"
+  },
+  {
+    "version": "1.21.9",
+    "started": "2026-09-16T17:45:06.792864+00:00",
+    "build": "59",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-d795537cc138",
+    "smoke_exit": 1,
+    "smoke_tail": "{\n  \"status\": \"FAILED\",\n  \"cleanup\": [\n    {\n      \"child\": \"server-failure\",\n      \"pid\": 27172,\n      \"exit\": 1,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"error\": \"RuntimeError('Child exited before expected evidence')\",\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "REJECTED",
+      "reason": "incomplete or failed attempt"
+    },
+    "status": "REJECTED",
+    "duplicate_confirmed": false,
+    "plugin_enabled": false,
+    "unsupported_api": false,
+    "finished": "2026-09-16T17:45:31.385678+00:00"
+  },
+  {
+    "version": "1.21.10",
+    "started": "2026-09-16T17:45:31.391124+00:00",
+    "build": "130",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-8ba2edfcc117",
+    "smoke_exit": 1,
+    "smoke_tail": "{\n  \"status\": \"FAILED\",\n  \"cleanup\": [\n    {\n      \"child\": \"server-failure\",\n      \"pid\": 25420,\n      \"exit\": 1,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"error\": \"RuntimeError('Child exited before expected evidence')\",\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "REJECTED",
+      "reason": "incomplete or failed attempt"
+    },
+    "status": "REJECTED",
+    "duplicate_confirmed": false,
+    "plugin_enabled": false,
+    "unsupported_api": false,
+    "finished": "2026-09-16T17:45:43.845395+00:00"
+  },
+  {
+    "version": "1.21.11",
+    "started": "2026-09-16T17:45:43.853263+00:00",
+    "build": "132",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-0e6aaf30304d",
+    "smoke_exit": 1,
+    "smoke_tail": "{\n  \"status\": \"FAILED\",\n  \"cleanup\": [\n    {\n      \"child\": \"server-failure\",\n      \"pid\": 66484,\n      \"exit\": 1,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"error\": \"RuntimeError('Child exited before expected evidence')\",\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "REJECTED",
+      "reason": "incomplete or failed attempt"
+    },
+    "status": "REJECTED",
+    "duplicate_confirmed": false,
+    "plugin_enabled": false,
+    "unsupported_api": false,
+    "finished": "2026-09-16T17:45:56.679870+00:00"
+  },
+  {
+    "version": "26.1.1",
+    "started": "2026-09-16T17:45:56.688711+00:00",
+    "build": "29",
+    "java_minimum": 25,
+    "jdk": "jdk-25",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-d97c6d23f5a3",
+    "smoke_exit": 1,
+    "smoke_tail": "{\n  \"status\": \"FAILED\",\n  \"cleanup\": [\n    {\n      \"child\": \"server-failure\",\n      \"pid\": 22416,\n      \"exit\": 1,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"error\": \"RuntimeError('Child exited before expected evidence')\",\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "REJECTED",
+      "reason": "incomplete or failed attempt"
+    },
+    "status": "REJECTED",
+    "duplicate_confirmed": false,
+    "plugin_enabled": false,
+    "unsupported_api": false,
+    "finished": "2026-09-16T17:46:10.752117+00:00"
+  },
+  {
+    "version": "26.1.2",
+    "started": "2026-09-16T17:46:10.759334+00:00",
+    "build": "74",
+    "java_minimum": 25,
+    "jdk": "jdk-25",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-15e3459673c5",
+    "smoke_exit": 1,
+    "smoke_tail": "{\n  \"status\": \"FAILED\",\n  \"cleanup\": [\n    {\n      \"child\": \"server-failure\",\n      \"pid\": 71032,\n      \"exit\": 1,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"error\": \"RuntimeError('Child exited before expected evidence')\",\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "REJECTED",
+      "reason": "incomplete or failed attempt"
+    },
+    "status": "REJECTED",
+    "duplicate_confirmed": false,
+    "plugin_enabled": false,
+    "unsupported_api": false,
+    "finished": "2026-09-16T17:46:25.674459+00:00"
+  },
+  {
+    "version": "26.2",
+    "started": "2026-09-16T17:46:25.692123+00:00",
+    "build": "124",
+    "java_minimum": 25,
+    "jdk": "jdk-25",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-7cb326045f63",
+    "smoke_exit": 1,
+    "smoke_tail": "{\n  \"status\": \"FAILED\",\n  \"cleanup\": [\n    {\n      \"child\": \"server-failure\",\n      \"pid\": 71216,\n      \"exit\": 1,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"error\": \"RuntimeError('Child exited before expected evidence')\",\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "REJECTED",
+      "reason": "incomplete or failed attempt"
+    },
+    "status": "REJECTED",
+    "duplicate_confirmed": false,
+    "plugin_enabled": false,
+    "unsupported_api": false,
+    "finished": "2026-09-16T17:46:50.841762+00:00"
+  }
+]

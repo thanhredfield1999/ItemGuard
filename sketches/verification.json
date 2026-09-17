@@ -1,0 +1,206 @@
+{
+  "evidence": "OFFLINE_DOM_ONLY",
+  "limitations": [
+    "dialog.showModal/close stubbed for jsdom",
+    "no real browser pixels/layout",
+    "no native Minecraft inventory/Paper",
+    "no database/HavenBags API invocation"
+  ],
+  "variants": [
+    {
+      "variant": "catalog-direct",
+      "sha256": "cfdbae2f0cf1bf58c0665fa9490f6ad333406ffd1436143b37939afb59e380f7",
+      "cases": 22,
+      "failures": 0,
+      "results": [
+        {
+          "name": "script syntax and full CSS retained",
+          "pass": true
+        },
+        {
+          "name": "variant entry stance",
+          "pass": true
+        },
+        {
+          "name": "54 slots and 36 page results",
+          "pass": true
+        },
+        {
+          "name": "pager buffers and second page content",
+          "pass": true
+        },
+        {
+          "name": "detail back preserves second page",
+          "pass": true
+        },
+        {
+          "name": "category filter and clear",
+          "pass": true
+        },
+        {
+          "name": "source plus storage retain independent meanings",
+          "pass": true
+        },
+        {
+          "name": "person is last observed holder",
+          "pass": true
+        },
+        {
+          "name": "status conflict not single authoritative holder",
+          "pass": true
+        },
+        {
+          "name": "sort changes order",
+          "pass": true
+        },
+        {
+          "name": "exact six-character search and dialog cancellation",
+          "pass": true
+        },
+        {
+          "name": "timeline carries time and gaps",
+          "pass": true
+        },
+        {
+          "name": "holder chain preserves A to B to A",
+          "pass": true
+        },
+        {
+          "name": "bag owner versus carrier and nested return",
+          "pass": true
+        },
+        {
+          "name": "technical view keeps modifier separate",
+          "pass": true
+        },
+        {
+          "name": "other items do not inherit demo chain",
+          "pass": true
+        },
+        {
+          "name": "empty is not absence and clear works",
+          "pass": true
+        },
+        {
+          "name": "query error is not empty and has no fake total",
+          "pass": true
+        },
+        {
+          "name": "partial coverage visible at page level",
+          "pass": true
+        },
+        {
+          "name": "close and reopen preserve filters",
+          "pass": true
+        },
+        {
+          "name": "guided entry selectors accessible without back loop",
+          "pass": true
+        },
+        {
+          "name": "no errors and no external resources",
+          "pass": true
+        }
+      ]
+    },
+    {
+      "variant": "catalog-guided",
+      "sha256": "f66cc01f2c3b65bba5c33fa849d0f4f444725cc1cdd2b6341256f0c1d8974d81",
+      "cases": 22,
+      "failures": 0,
+      "results": [
+        {
+          "name": "script syntax and full CSS retained",
+          "pass": true
+        },
+        {
+          "name": "variant entry stance",
+          "pass": true
+        },
+        {
+          "name": "54 slots and 36 page results",
+          "pass": true
+        },
+        {
+          "name": "pager buffers and second page content",
+          "pass": true
+        },
+        {
+          "name": "detail back preserves second page",
+          "pass": true
+        },
+        {
+          "name": "category filter and clear",
+          "pass": true
+        },
+        {
+          "name": "source plus storage retain independent meanings",
+          "pass": true
+        },
+        {
+          "name": "person is last observed holder",
+          "pass": true
+        },
+        {
+          "name": "status conflict not single authoritative holder",
+          "pass": true
+        },
+        {
+          "name": "sort changes order",
+          "pass": true
+        },
+        {
+          "name": "exact six-character search and dialog cancellation",
+          "pass": true
+        },
+        {
+          "name": "timeline carries time and gaps",
+          "pass": true
+        },
+        {
+          "name": "holder chain preserves A to B to A",
+          "pass": true
+        },
+        {
+          "name": "bag owner versus carrier and nested return",
+          "pass": true
+        },
+        {
+          "name": "technical view keeps modifier separate",
+          "pass": true
+        },
+        {
+          "name": "other items do not inherit demo chain",
+          "pass": true
+        },
+        {
+          "name": "empty is not absence and clear works",
+          "pass": true
+        },
+        {
+          "name": "query error is not empty and has no fake total",
+          "pass": true
+        },
+        {
+          "name": "partial coverage visible at page level",
+          "pass": true
+        },
+        {
+          "name": "close and reopen preserve filters",
+          "pass": true
+        },
+        {
+          "name": "guided entry selectors accessible without back loop",
+          "pass": true
+        },
+        {
+          "name": "no errors and no external resources",
+          "pass": true
+        }
+      ]
+    }
+  ],
+  "sharedTemplateExact": true,
+  "cases": 44,
+  "failures": 0
+}

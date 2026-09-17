@@ -1,0 +1,83 @@
+{
+  "candidate_sha256": "532a778c8c751f84e13c09f36bf93ebab1c4aebd24c7cc41bf11fde15d93ad1e",
+  "hoppers": 3000,
+  "sample_seconds": 60,
+  "without_itemguard": {
+    "p50": "0.28",
+    "p95": "3.74",
+    "p99": "5.44",
+    "max": "18.83",
+    "mean": "0.87"
+  },
+  "with_itemguard": {
+    "p50": "0.23",
+    "p95": "3.42",
+    "p99": "4.41",
+    "max": "24.97",
+    "mean": "0.82"
+  },
+  "delta_p50_ms": -0.05000000000000002,
+  "delta_p95_ms": -0.3200000000000003,
+  "limits": [
+    "Hopper-heavy synthetic workload, not a replica of real players.",
+    "One run per arm on one machine; indicative, not authoritative.",
+    "Server otherwise empty; a real server shares the tick with other plugins."
+  ],
+  "roots": {
+    "without-0": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-load-b0e82bfa1dfa",
+    "with-0": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-load-3888b34f6af2",
+    "without-1": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-load-f13875924d63",
+    "with-1": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-load-aabbc8c5eaee",
+    "without-2": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-load-17fbd07cd6d4",
+    "with-2": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-load-8b9edfd18709"
+  },
+  "repeats": 3,
+  "raw_samples": {
+    "without": [
+      {
+        "p50": "0.28",
+        "p95": "3.74",
+        "p99": "5.78",
+        "max": "19.45",
+        "mean": "0.87"
+      },
+      {
+        "p50": "0.30",
+        "p95": "3.16",
+        "p99": "4.05",
+        "max": "16.08",
+        "mean": "0.79"
+      },
+      {
+        "p50": "0.23",
+        "p95": "3.99",
+        "p99": "5.44",
+        "max": "18.83",
+        "mean": "0.87"
+      }
+    ],
+    "with": [
+      {
+        "p50": "0.23",
+        "p95": "3.42",
+        "p99": "4.24",
+        "max": "24.97",
+        "mean": "0.82"
+      },
+      {
+        "p50": "0.28",
+        "p95": "3.70",
+        "p99": "5.21",
+        "max": "59.13",
+        "mean": "0.99"
+      },
+      {
+        "p50": "0.23",
+        "p95": "3.20",
+        "p99": "4.41",
+        "max": "21.87",
+        "mean": "0.76"
+      }
+    ]
+  }
+}

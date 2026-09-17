@@ -1,0 +1,42 @@
+# ItemGuard LITE: Paper, Purpur or Spigot 1.21.4+, Java 21 (Java 25 on 26.x).
+# Do not overwrite an existing Full installation.
+# Stop/start the server after changes; do not use /reload or hot loaders.
+general:
+  language: en # English only: the Vietnamese message file is not shipped in this edition
+  prefix: '&6[ItemGuard LITE] &r'
+  debug: false
+anti-dupe:
+  enabled: true
+  action: NOTIFY # Warnings only; never remove or confiscate items.
+  notify-staff: true
+  notify-player: false
+  sweep:
+    enabled: true # Sweeps already-loaded containers; never loads a chunk.
+    chunks-per-tick: 8 # Keep small on a busy server.
+worlds:
+  disabled-worlds: []
+  worldguard-support: false # Not available in LITE, even if set to true.
+discord:
+  enabled: false # Not available in LITE.
+database:
+  # LITE never deletes history, so this file only grows. Warn in the console once it
+  # passes this size. Set to 0 to silence the warning. Nothing is ever deleted either way.
+  warn-size-mb: 500
+performance:
+  auto-cleanup:
+    interval-hours: 0 # LITE keeps history permanently; this cannot be enabled here.
+  inventory-scan-interval: 600
+  container-scan-enabled: true
+# Crafting a tool, weapon or armour piece whose result would need a new tracked identity is
+# cancelled by default, and the player is told so. Set false to let those crafts through and let the
+# identity be created at the next scan or pickup instead.
+tracking:
+  cancel-untracked-craft-output: true
+# Other tracking settings use the shared engine defaults.
+# LITE never registers reclaim/withdraw/lost-item or external-storage commands.
+
+# Any item a player uses carries its ID as a dim grey line at the bottom of its lore,
+# so a player can read the code without running a command.
+uuid-tag:
+  show-on-item: true
+  lore-position: -1

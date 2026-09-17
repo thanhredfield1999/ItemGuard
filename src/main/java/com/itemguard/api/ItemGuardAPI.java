@@ -2,6 +2,8 @@ package com.itemguard.api;
 
 import com.itemguard.ItemGuard;
 import com.itemguard.data.ItemData;
+import com.itemguard.tracking.CraftItemStackPhysicalHandle;
+import com.itemguard.tracking.InventoryPhysicalSourcePolicy;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 
@@ -11,6 +13,8 @@ import java.util.UUID;
 public class ItemGuardAPI {
 
     private final ItemGuard plugin;
+    private final InventoryPhysicalSourcePolicy physicalSourcePolicy =
+        new InventoryPhysicalSourcePolicy();
 
     public ItemGuardAPI(ItemGuard plugin) {
         this.plugin = plugin;
@@ -40,8 +44,29 @@ public class ItemGuardAPI {
         return plugin.getTrackingService().getItemUuidFromItem(item);
     }
 
+    @Deprecated(forRemoval = false)
     public ItemStack trackItem(ItemStack item, Player owner) {
-        return plugin.getTrackingService().trackItem(item, owner);
+        trackPlayerItemAsync(item, owner);
+        return item;
+    }
+
+    public boolean trackPlayerItemAsync(ItemStack item, Player owner) {
+        if (item == null || owner == null) {
+            return false;
+        }
+        Object expectedPhysicalHandle = CraftItemStackPhysicalHandle.extract(item);
+        if (expectedPhysicalHandle == null) {
+            return false;
+        }
+        for (int slot = 0; slot < owner.getInventory().getSize(); slot++) {
+            if (physicalSourcePolicy.samePhysicalHandle(
+                expectedPhysicalHandle,
+                CraftItemStackPhysicalHandle.extract(owner.getInventory().getItem(slot))
+            )) {
+                return plugin.getTrackingService().requestPlayerSlotTag(owner, slot);
+            }
+        }
+        return false;
     }
 
     public boolean shouldTrack(ItemStack item) {

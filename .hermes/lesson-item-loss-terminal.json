@@ -1,0 +1,14 @@
+{
+  "project": "ItemGuard",
+  "key": "damage-cause-is-not-terminal-destruction",
+  "lesson": "Sai lam da tai lap: coi damage cause la bang chung item da bi huy. ItemLossListener ghi loss BURNED/VOID ngay khi co EntityDamageEvent FIRE/LAVA/VOID tren ground item, trong khi item entity co health (max 5) va song sot; moi LossReason do deu confirmsDestruction nen item con nam duoi dat lai bi ghi la da huy - duong dan dupe giong loi DEATH->CLEARED truoc day. Cach tranh: chi ghi loss khi co tin hieu terminal that su (EntityRemoveEvent) va dung allowlist fail-closed DEATH/DISCARD/OUT_OF_WORLD; PICKUP/MERGE/UNLOAD/PLUGIN/DESPAWN/null/cause la khong ghi gi. Phep kiem: quan sat RED that ('recordLoss Never wanted here') roi chung minh test khong vacuous bang mutation (them PICKUP vao allowlist phai lam fail dung 3 test). Luu y harness: tao that ItemStack/EntityDamageEvent offline nem 'No RegistryAccess implementation found', va Mockito any(Location.class) khong khop null nen verify never() co the pass gia.",
+  "evidence": [
+    {
+      "document": "CURRENT_STATE.md",
+      "sha256": "82ca4c5e47864c5a8931129b389abfb2cb72ae86659c10674c2d360f3dbe916e",
+      "start_line": 6,
+      "end_line": 7,
+      "quote": "- Root cause confirmed against the pinned `paper-api-1.21.11-R0.1-20260511.115010-91.jar`: `Item` has health (default max 5, \"a non-positive value will destroy the entity\") and `EntityRemoveEvent.Cause.OUT_OF_WORLD` is documented as applying only to entities removed immediately because \"some entities get damage instead\". Damage is survivable, so it is not a terminal signal.\n- Fix is conservative and grants no restore: damage now only *remembers* the reason per entity UUID; the new `onGroundItemRemoved(EntityRemoveEvent)` records the loss only when the removal cause is in the fail-closed allowlist `DEATH`/`DISCARD`/`OUT_OF_WORLD`. `PICKUP`, `MERGE`, `UNLOAD`, `PLUGIN`, `DESPAWN`, null and unknown future causes record nothing. `EntityRemoveEvent` is present and not deprecated in that exact jar and was previously unused in the repo. `ItemDespawnEvent` deliberately untouched."
+    }
+  ]
+}

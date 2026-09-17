@@ -1,0 +1,70 @@
+{
+  "candidate_sha256": "8c0e540ec646ffec38cd1409cb69b8c339d1d83f7ba499841bbe6866d624ce4a",
+  "elapsed_s": 442.0,
+  "passed": 7,
+  "total": 7,
+  "results": [
+    {
+      "gate": "separate",
+      "fixture": "itemguard-lite-isolated-836201295596",
+      "status": "PASS",
+      "verifier": "{\n  \"status\": \"PASS_CONTROLLED_SMOKE\",\n  \"root\": \"E:\\\\AI.WORK\\\\30_KET_QUA_THU_NGHIEM\\\\itemguard-lite-isolated-836201295596\",\n  \"candidate_sha256\": \"8c0e540ec646ffec38cd1409cb69b8c339d1d83f7ba499841bbe6866d624ce4a\",\n  \"limitations\": [\n    \"No client visual acceptance\",\n    \"No crafting/natural-break/scale/crash/guardian claims\"\n  ]\n}",
+      "candidate_sha256": "8c0e540ec646ffec38cd1409cb69b8c339d1d83f7ba499841bbe6866d624ce4a"
+    },
+    {
+      "gate": "loss",
+      "fixture": "itemguard-lite-isolated-de889630ec24",
+      "status": "PASS",
+      "verifier": "{\n  \"status\": \"PASS_LOSS_ONLY_SMOKE\",\n  \"root\": \"E:\\\\AI.WORK\\\\30_KET_QUA_THU_NGHIEM\\\\itemguard-lite-isolated-de889630ec24\",\n  \"candidate_sha256\": \"8c0e540ec646ffec38cd1409cb69b8c339d1d83f7ba499841bbe6866d624ce4a\",\n  \"limitations\": [\n    \"Terminal loss boundary only\",\n    \"Cursor/crafting presence proven for one identity and one clear control\",\n    \"Crafting close proven for one spare-inventory and one full-inventory close; no claim about other window types\",\n    \"No crash/power-loss, scale, concurrency or visual acceptance claims\"\n  ]\n}",
+      "candidate_sha256": "8c0e540ec646ffec38cd1409cb69b8c339d1d83f7ba499841bbe6866d624ce4a"
+    },
+    {
+      "gate": "sweep",
+      "fixture": "itemguard-lite-isolated-96daf846e57a",
+      "status": "PASS",
+      "verifier": "{\n  \"status\": \"PASS_SWEEP_SMOKE\",\n  \"root\": \"E:\\\\AI.WORK\\\\30_KET_QUA_THU_NGHIEM\\\\itemguard-lite-isolated-96daf846e57a\",\n  \"candidate_sha256\": \"8c0e540ec646ffec38cd1409cb69b8c339d1d83f7ba499841bbe6866d624ce4a\"\n}",
+      "candidate_sha256": "8c0e540ec646ffec38cd1409cb69b8c339d1d83f7ba499841bbe6866d624ce4a"
+    },
+    {
+      "gate": "reload",
+      "fixture": "itemguard-lite-isolated-09a53fc5c744",
+      "exit_code": 0,
+      "verdict": "PASS_RELOAD",
+      "status": "PASS",
+      "independent_verifier": false,
+      "tail": "PASS_RELOAD",
+      "candidate_sha256": "8c0e540ec646ffec38cd1409cb69b8c339d1d83f7ba499841bbe6866d624ce4a"
+    },
+    {
+      "gate": "multi",
+      "fixture": "itemguard-lite-isolated-43ede009afbf",
+      "exit_code": 0,
+      "verdict": "PASS_MULTI",
+      "status": "PASS",
+      "independent_verifier": true,
+      "verifier": "  \"candidate_sha256\": \"8c0e540ec646ffec38cd1409cb69b8c339d1d83f7ba499841bbe6866d624ce4a\",\n  \"privacy\": {\n    \"member_answer_lines\": 7,\n    \"staff_answer_lines\": 7,\n    \"member_foreign_rows\": 3,\n    \"member_kept_foreign_location\": false,\n    \"member_saw_redaction\": true,\n    \"member_leaked_actor\": false,\n    \"staff_saw_actor\": true,\n    \"member_lines_inspected\": 7\n  }\n}",
+      "tail": "PASS_MULTI",
+      "candidate_sha256": "8c0e540ec646ffec38cd1409cb69b8c339d1d83f7ba499841bbe6866d624ce4a"
+    },
+    {
+      "gate": "two-plugin",
+      "fixture": "itemguard-lite-isolated-e139adaccaa6",
+      "exit_code": 0,
+      "verdict": "PASS_TWO_PLUGIN",
+      "status": "PASS",
+      "independent_verifier": false,
+      "tail": "PASS_TWO_PLUGIN",
+      "candidate_sha256": "8c0e540ec646ffec38cd1409cb69b8c339d1d83f7ba499841bbe6866d624ce4a"
+    },
+    {
+      "gate": "power-cut",
+      "fixture": "itemguard-lite-isolated-d8f6ddf74c8b",
+      "exit_code": 0,
+      "verdict": "PASS_POWER_CUT",
+      "status": "PASS",
+      "independent_verifier": false,
+      "tail": "PASS_POWER_CUT",
+      "candidate_sha256": "8c0e540ec646ffec38cd1409cb69b8c339d1d83f7ba499841bbe6866d624ce4a"
+    }
+  ]
+}

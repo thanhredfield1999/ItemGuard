@@ -8,6 +8,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.inventory.ItemStack;
@@ -23,6 +24,7 @@ public class GUIListener implements Listener {
     private final ItemGuard plugin;
     private final Map<UUID, HistoryGUI> openGUIs = new ConcurrentHashMap<>();
     private final Map<UUID, PlayerBrowserGUI> openBrowsers = new ConcurrentHashMap<>();
+    private final GuiClickPolicy clickPolicy = new GuiClickPolicy();
     private FilterChatListener filterChatListener;
 
     public GUIListener(ItemGuard plugin) {
@@ -36,34 +38,36 @@ public class GUIListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onInventoryClick(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player player)) return;
-        if (event.isShiftClick()) return;
-
         var holder = event.getInventory().getHolder();
+        boolean itemGuardGui = holder instanceof HistoryGUI
+            || holder instanceof PlayerBrowserGUI
+            || holder instanceof PlayerBrowserGUI.MainBrowser
+            || holder instanceof HistoryGUI.HistoryDetailHolder;
+        GuiClickAction action = clickPolicy.resolve(itemGuardGui, event.isShiftClick());
+        if (action == GuiClickAction.IGNORE) return;
+        event.setCancelled(true);
+        if (action == GuiClickAction.CANCEL_ONLY) return;
 
         // HistoryGUI
         if (holder instanceof HistoryGUI gui) {
-            event.setCancelled(true);
             HistoryGUI.handleClick(event, gui);
             return;
         }
 
         // PlayerBrowserGUI - Player Items
         if (holder instanceof PlayerBrowserGUI browser) {
-            event.setCancelled(true);
             handleBrowserClick(event, player, browser);
             return;
         }
 
         // MainBrowser - Player List
         if (holder instanceof PlayerBrowserGUI.MainBrowser mainBrowser) {
-            event.setCancelled(true);
             handleMainBrowserClick(event, player, mainBrowser);
             return;
         }
 
         // Detail view
         if (holder instanceof HistoryGUI.HistoryDetailHolder) {
-            event.setCancelled(true);
             HistoryGUI.handleDetailClick(event);
         }
     }
@@ -72,7 +76,9 @@ public class GUIListener implements Listener {
         ItemStack clicked = event.getCurrentItem();
         if (clicked == null || clicked.getType() == Material.AIR) return;
 
-        var pdc = clicked.getItemMeta().getPersistentDataContainer();
+        var meta = clicked.getItemMeta();
+        if (meta == null) return;
+        var pdc = meta.getPersistentDataContainer();
         var ns = new org.bukkit.NamespacedKey(browser.getPlugin(), "ig_item_idx");
         var codeKey = new org.bukkit.NamespacedKey(browser.getPlugin(), "ig_code");
         var navKey = new org.bukkit.NamespacedKey(browser.getPlugin(), "ig_nav");
@@ -110,16 +116,28 @@ public class GUIListener implements Listener {
         var idxVal = pdc.get(ns, org.bukkit.persistence.PersistentDataType.INTEGER);
         var codeVal = pdc.get(codeKey, org.bukkit.persistence.PersistentDataType.STRING);
         if (idxVal != null && codeVal != null) {
-            List<com.itemguard.data.ItemHistory> histories = browser.getPlugin().getDB().getHistory(codeVal, 100);
-            if (!histories.isEmpty()) {
-                HistoryGUI gui = new HistoryGUI(
-                    browser.getPlugin(), player, codeVal, histories,
-                    browser.getTargetPlayerUuid(), browser.getTargetPlayerName());
-                openGUIs.put(player.getUniqueId(), gui);
-                gui.open();
-            } else {
-                player.sendMessage("§7Khong co lich su cho item nay.");
-            }
+            browser.getPlugin().getDB().getHistoryAsync(codeVal, 100)
+                .whenComplete((histories, failure) -> UiMainThreadHandoff.dispatch(
+                    browser.getPlugin(),
+                    () -> {
+                        if (!player.isOnline()) {
+                            return;
+                        }
+                        if (failure != null) {
+                            reportReadFailure(player, "lịch sử vật phẩm", failure);
+                            return;
+                        }
+                        if (histories.isEmpty()) {
+                            player.sendMessage("§7Không có lịch sử cho vật phẩm này.");
+                            return;
+                        }
+                        HistoryGUI gui = new HistoryGUI(
+                            browser.getPlugin(), player, codeVal, histories,
+                            browser.getTargetPlayerUuid(), browser.getTargetPlayerName());
+                        openGUIs.put(player.getUniqueId(), gui);
+                        gui.open();
+                    }
+                ));
         }
     }
 
@@ -127,7 +145,9 @@ public class GUIListener implements Listener {
         ItemStack clicked = event.getCurrentItem();
         if (clicked == null || clicked.getType() == Material.AIR) return;
 
-        var pdc = clicked.getItemMeta().getPersistentDataContainer();
+        var meta = clicked.getItemMeta();
+        if (meta == null) return;
+        var pdc = meta.getPersistentDataContainer();
         var navKey = new org.bukkit.NamespacedKey(mainBrowser.getPlugin(), "ig_main_nav");
         var playerKey = new org.bukkit.NamespacedKey(mainBrowser.getPlugin(), "ig_main_player");
 
@@ -157,15 +177,33 @@ public class GUIListener implements Listener {
                 org.bukkit.OfflinePlayer target = Bukkit.getOfflinePlayer(uuid);
                 String targetName = target.getName() != null ? target.getName() : uuidStr;
 
-                List<com.itemguard.data.ItemData> items = mainBrowser.getPlugin().getDB().getItemsByPlayer(uuid);
-                if (items.isEmpty()) {
-                    player.sendMessage("§7Nguoi choi nay chua co item nao duoc theo doi.");
-                    return;
-                }
-
-                player.closeInventory();
-                PlayerBrowserGUI.openPlayerItems(player, targetName, uuid, items);
-            } catch (Exception ignored) {}
+                mainBrowser.getPlugin().getDB().getItemsByPlayerAsync(uuid)
+                    .whenComplete((items, failure) -> UiMainThreadHandoff.dispatch(
+                        mainBrowser.getPlugin(),
+                        () -> {
+                            if (!player.isOnline()) {
+                                return;
+                            }
+                            if (failure != null) {
+                                reportReadFailure(player, "danh sách vật phẩm", failure);
+                                return;
+                            }
+                            if (items.isEmpty()) {
+                                player.sendMessage("§7Người chơi này chưa có vật phẩm nào được theo dõi.");
+                                return;
+                            }
+                            player.closeInventory();
+                            PlayerBrowserGUI.openPlayerItems(player, targetName, uuid, items);
+                        }
+                    ));
+            } catch (IllegalArgumentException invalidUuid) {
+                plugin.getLogger().log(
+                    java.util.logging.Level.WARNING,
+                    "Invalid player UUID stored in ItemGuard GUI: " + uuidStr,
+                    invalidUuid
+                );
+                player.sendMessage("§e§l[ItemGuard] §cDữ liệu người chơi trong giao diện không hợp lệ.");
+            }
         }
     }
 
@@ -177,6 +215,19 @@ public class GUIListener implements Listener {
         }
         if (event.getInventory().getHolder() instanceof HistoryGUI gui) {
             HistoryGUI.handleDrag(event, gui);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onInventoryClose(InventoryCloseEvent event) {
+        UUID playerUuid = event.getPlayer().getUniqueId();
+        Object holder = event.getInventory().getHolder();
+        if (holder instanceof HistoryGUI gui) {
+            openGUIs.remove(playerUuid, gui);
+        } else if (holder instanceof HistoryGUI.HistoryDetailHolder) {
+            openGUIs.remove(playerUuid);
+        } else if (holder instanceof PlayerBrowserGUI browser) {
+            openBrowsers.remove(playerUuid, browser);
         }
     }
 
@@ -192,6 +243,19 @@ public class GUIListener implements Listener {
         openGUIs.remove(player.getUniqueId());
     }
 
+    public void releasePlayer(UUID playerUuid) {
+        openGUIs.remove(playerUuid);
+        openBrowsers.remove(playerUuid);
+        if (filterChatListener != null) {
+            filterChatListener.releasePlayer(playerUuid);
+        }
+    }
+
+    public void clearSessions() {
+        openGUIs.clear();
+        openBrowsers.clear();
+    }
+
     public boolean hasOpenGUI(Player player) {
         return openGUIs.containsKey(player.getUniqueId());
     }
@@ -203,24 +267,49 @@ public class GUIListener implements Listener {
     public void openBrowserPendingFilter(Player player, String[] args) {
         // /ig browser - open main browser
         // /ig browser <player> - open player items directly
-        if (args.length <= 1) {
+        if (args.length == 0) {
             PlayerBrowserGUI.MainBrowser.openMainBrowser(player);
             return;
         }
 
         // /ig browser <playerName>
-        String targetName = args[1];
-        org.bukkit.entity.Player target = org.bukkit.Bukkit.getPlayer(targetName);
+        String targetName = args[0];
+        Player target = org.bukkit.Bukkit.getPlayer(targetName);
         if (target != null) {
-            java.util.List<com.itemguard.data.ItemData> items = plugin.getDB().getItemsByPlayer(target.getUniqueId());
-            if (items.isEmpty()) {
-                player.sendMessage(plugin.getMessages().getRaw("search-empty"));
-                return;
-            }
-            PlayerBrowserGUI.openPlayerItems(player, target.getName(), target.getUniqueId(), items);
+            UUID targetUuid = target.getUniqueId();
+            String resolvedName = target.getName();
+            plugin.getDB().getItemsByPlayerAsync(targetUuid)
+                .whenComplete((items, failure) -> UiMainThreadHandoff.dispatch(plugin, () -> {
+                    if (!player.isOnline()) {
+                        return;
+                    }
+                    if (failure != null) {
+                        reportReadFailure(player, "danh sách vật phẩm", failure);
+                        return;
+                    }
+                    if (items.isEmpty()) {
+                        player.sendMessage(plugin.getMessages().getRaw("search-empty"));
+                        return;
+                    }
+                    PlayerBrowserGUI.openPlayerItems(
+                        player,
+                        resolvedName,
+                        targetUuid,
+                        items
+                    );
+                }));
         } else {
             player.sendMessage(plugin.getMessages().getRaw("player-not-found", java.util.Map.of("player", targetName)));
         }
+    }
+
+    private void reportReadFailure(Player player, String operation, Throwable failure) {
+        plugin.getLogger().log(
+            java.util.logging.Level.SEVERE,
+            "Failed to load ItemGuard " + operation,
+            failure
+        );
+        player.sendMessage("§e§l[ItemGuard] §cKhông thể tải " + operation + " lúc này.");
     }
 
     public void handleFilterInput(Player player, String input) {

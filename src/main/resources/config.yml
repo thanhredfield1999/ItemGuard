@@ -24,11 +24,21 @@ tracking:
   # Recommended: true (prevents duping exploits)
   track-non-stackable: true
 
-  # Track stackable items (blocks, food, etc.)
-  # Not recommended for performance on large servers
+  # Cancel a craft whose result would need a brand-new tracked identity (every tool, weapon and
+  # armour piece). true keeps the plugin's original fail-closed behaviour: the craft does not
+  # happen and the player is told why. Set it to false and the craft proceeds, with the identity
+  # created at the next scan or pickup — the same "tag when it is seen" path a Spigot server
+  # already uses. Nothing else changes either way: a crafted copy of an already-tagged item is
+  # still refused.
+  cancel-untracked-craft-output: true
+
+  # Reserved compatibility key. UUID-per-item identity does not support
+  # stackable materials safely; true is ignored and remains fail-closed.
   track-stackable: false
 
-  # Materials to ALWAYS track regardless of stackable setting
+  # Materials to always track when they are non-stackable. Stackable
+  # materials in this list are ignored by the identity safety policy.
+  # Full administrators may opt in to the narrow LITE exclusions here.
   force-track-materials:
     - DIAMOND_SWORD
     - DIAMOND_PICKAXE
@@ -45,6 +55,12 @@ tracking:
     - TRIDENT
     - SHIELD
     - ELYTRA
+    - FISHING_ROD
+    - SHEARS
+    - FLINT_AND_STEEL
+    - BRUSH
+    - SPYGLASS
+    - RECOVERY_COMPASS
     - BOOKSHELF
     - ANCIENT_DEBRIS
     - NETHERITE_INGOT
@@ -59,6 +75,9 @@ tracking:
     - ENCHANTED_GOLDEN_APPLE
     - GOLDEN_APPLE
     - TOTEM_OF_UNDYING
+    - NETHERITE_SCRAP
+    - NETHERITE_UPGRADE_SMITHING_TEMPLATE
+    - HEART_OF_THE_SEA
     - MUSIC_DISC_13
     - MUSIC_DISC_CAT
     - MUSIC_DISC_BLOCKS
@@ -102,19 +121,20 @@ tracking:
 uuid-tag:
   # Show a visible code tag on tracked items (in lore)
   # Set to false to disable lore tag completely
-  # Format: #XXXX-XXXX (alphanumeric code only)
-  show-on-item: false
+  # New code format: #XXXXXX (6 uppercase A-Z / 0-9 characters).
+  # Public display code, not proof of uniqueness; DB reservation resolves collisions.
+  # Existing code/UUID identities are not rewritten.
+  show-on-item: true
 
   # Tag position in lore: 0 = first line, -1 = last line
   lore-position: -1
 
 # ---------- ANTI-DUPE ----------
 anti-dupe:
-  # Enable automatic duplicate detection
-  enabled: true
+  # Release gate: keep disabled until controlled Paper verification passes.
+  enabled: false
 
-  # Action to take when duplicate is detected
-  # Options: NOTIFY (notify staff only), REMOVE_OLDER, REMOVE_NEWER, REMOVE_ALL
+  # MVP only permits NOTIFY. Destructive actions are fail-closed.
   action: NOTIFY
 
   # Notify online staff when duplicate is detected
@@ -125,7 +145,13 @@ anti-dupe:
 
   # Cooldown (ms) between duplicate detections for same item
   # Prevents spam when duplicate spreads across multiple players
-  detection-cooldown-ms: 5000
+  # Must be at least TWO scan cycles (performance.inventory-scan-interval below), and values below
+  # that are raised to it rather than silently doing nothing. One cycle is not enough: the window is
+  # only meaningful against the real gap between two audits, and that gap is not the configured
+  # cycle. A sweep that overruns, or a server below 20 TPS, makes it longer, so a one-cycle window
+  # would suppress nothing exactly when it is needed. This value cannot be set to 0 to disable the
+  # throttle; it is floored whatever the config says.
+  detection-cooldown-ms: 300000
 
   # Maximum history entries per item before pruning
   max-history-per-item: 1000
@@ -134,31 +160,23 @@ anti-dupe:
   # Helps prevent false positives during item spawning
   grace-period-ms: 3000
 
+  # Sweeps already-loaded chests, barrels, shulker boxes, hoppers, dispensers,
+  # droppers and furnaces so two closed containers can be compared, not just an
+  # open one. Never loads a chunk. Set to false for zero cost from this feature.
+  sweep:
+    enabled: true
+    # Chunks scanned per tick while a sweep is in flight. Keep small; a busy
+    # server can have thousands of loaded chunks.
+    chunks-per-tick: 8
+
 # ---------- DATABASE ----------
 database:
-  # Database type: SQLITE, MYSQL, POSTGRESQL
+  # This release supports SQLite only. Other values fail startup.
   type: SQLITE
 
   # SQLite database file name
   sqlite:
     file-name: itemguard.db
-
-  # MySQL / PostgreSQL configuration
-  mysql:
-    host: localhost
-    port: 3306
-    database: itemguard
-    username: root
-    password: ""
-    use-ssl: false
-
-  postgres:
-    host: localhost
-    port: 5432
-    database: itemguard
-    username: postgres
-    password: ""
-    use-ssl: false
 
   # Connection pool settings
   pool:
@@ -215,6 +233,20 @@ commands:
     search: [igsearch, igs]
     stats: [igstats]
 
+# ---------- RECLAIM ----------
+reclaim:
+  # /matdo check retention window.
+  history-days: 20
+
+  # Release gate remains closed: PlayerVaults/zAuctionHouse version detection
+  # is audited fail-closed. Official APIs exist, but their sync I/O/full-list
+  # or full-bucket queries lack the hard bounds, side-effect/thread and read-consistency
+  # contracts required to prove canonical identity absence everywhere.
+  # The separate Modrinth PlayerVaultsX 1.0.x fork lacks enumerate/read APIs.
+  # Persistent issuance transaction and controlled external-plugin tests are
+  # also not implemented/verified.
+  issuance-enabled: false
+
 # ---------- LOGGING ----------
 logging:
   # Log all item transfers to console
@@ -235,9 +267,6 @@ logging:
 
 # ---------- PERFORMANCE ----------
 performance:
-  # Async database operations (recommended: true)
-  async-database: true
-
   # Batch size for bulk database operations
   batch-size: 100
 
@@ -264,10 +293,11 @@ worlds:
   # Items in these worlds will not be tagged or tracked
   disabled-worlds: []
 
-  # Enable WorldGuard region integration
-  # Players with 'itemguard.track' permission in WorldGuard regions
-  # can opt-out of tracking
-  worldguard-support: true
+  # Enable the legacy WorldGuard allow-policy integration.
+  # When enabled, tracking is allowed only when the verified hook query returns
+  # permission 'itemguard.track'; unavailable/error states deny fail-closed.
+  # Keep disabled until the deployed WorldGuard version/API is validated.
+  worldguard-support: false
 
 # ---------- DISCORD WEBHOOK ----------
 discord:

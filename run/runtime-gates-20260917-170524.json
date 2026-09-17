@@ -1,0 +1,57 @@
+{
+  "candidate_sha256": "80fc610b1e1f3be4c3abb7a163d899fce5d285c23578449dff6b27e08cd167ab",
+  "elapsed_s": 415.2,
+  "passed": 7,
+  "total": 7,
+  "results": [
+    {
+      "gate": "separate",
+      "fixture": "itemguard-lite-isolated-d0dc43a9e6d3",
+      "status": "PASS",
+      "verifier": "{\n  \"status\": \"PASS_CONTROLLED_SMOKE\",\n  \"root\": \"E:\\\\AI.WORK\\\\30_KET_QUA_THU_NGHIEM\\\\itemguard-lite-isolated-d0dc43a9e6d3\",\n  \"candidate_sha256\": \"80fc610b1e1f3be4c3abb7a163d899fce5d285c23578449dff6b27e08cd167ab\",\n  \"limitations\": [\n    \"No client visual acceptance\",\n    \"No crafting/natural-break/scale/crash/guardian claims\"\n  ]\n}",
+      "candidate_sha256": "80fc610b1e1f3be4c3abb7a163d899fce5d285c23578449dff6b27e08cd167ab"
+    },
+    {
+      "gate": "loss",
+      "fixture": "itemguard-lite-isolated-810109f0a060",
+      "status": "PASS",
+      "verifier": "{\n  \"status\": \"PASS_LOSS_ONLY_SMOKE\",\n  \"root\": \"E:\\\\AI.WORK\\\\30_KET_QUA_THU_NGHIEM\\\\itemguard-lite-isolated-810109f0a060\",\n  \"candidate_sha256\": \"80fc610b1e1f3be4c3abb7a163d899fce5d285c23578449dff6b27e08cd167ab\",\n  \"limitations\": [\n    \"Terminal loss boundary only\",\n    \"Cursor/crafting presence proven for one identity and one clear control\",\n    \"Crafting close proven for one spare-inventory and one full-inventory close; no claim about other window types\",\n    \"No crash/power-loss, scale, concurrency or visual acceptance claims\"\n  ]\n}",
+      "candidate_sha256": "80fc610b1e1f3be4c3abb7a163d899fce5d285c23578449dff6b27e08cd167ab"
+    },
+    {
+      "gate": "sweep",
+      "fixture": "itemguard-lite-isolated-7b16cdae2775",
+      "status": "PASS",
+      "verifier": "{\n  \"status\": \"PASS_SWEEP_SMOKE\",\n  \"root\": \"E:\\\\AI.WORK\\\\30_KET_QUA_THU_NGHIEM\\\\itemguard-lite-isolated-7b16cdae2775\",\n  \"candidate_sha256\": \"80fc610b1e1f3be4c3abb7a163d899fce5d285c23578449dff6b27e08cd167ab\"\n}",
+      "candidate_sha256": "80fc610b1e1f3be4c3abb7a163d899fce5d285c23578449dff6b27e08cd167ab"
+    },
+    {
+      "gate": "reload",
+      "fixture": "itemguard-lite-isolated-1d0164787ba2",
+      "status": "PASS",
+      "tail": "1 warning",
+      "candidate_sha256": "80fc610b1e1f3be4c3abb7a163d899fce5d285c23578449dff6b27e08cd167ab"
+    },
+    {
+      "gate": "multi",
+      "fixture": "itemguard-lite-isolated-05f2c46ff43a",
+      "status": "PASS",
+      "tail": "1 warning",
+      "candidate_sha256": "80fc610b1e1f3be4c3abb7a163d899fce5d285c23578449dff6b27e08cd167ab"
+    },
+    {
+      "gate": "two-plugin",
+      "fixture": "itemguard-lite-isolated-28ebfcc46808",
+      "status": "PASS",
+      "tail": "1 warning",
+      "candidate_sha256": "80fc610b1e1f3be4c3abb7a163d899fce5d285c23578449dff6b27e08cd167ab"
+    },
+    {
+      "gate": "power-cut",
+      "fixture": "itemguard-lite-isolated-478d33b8dbb2",
+      "status": "PASS",
+      "tail": "1 warning",
+      "candidate_sha256": "80fc610b1e1f3be4c3abb7a163d899fce5d285c23578449dff6b27e08cd167ab"
+    }
+  ]
+}

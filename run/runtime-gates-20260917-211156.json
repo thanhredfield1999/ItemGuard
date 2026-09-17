@@ -1,0 +1,18 @@
+{
+  "candidate_sha256": "80fc610b1e1f3be4c3abb7a163d899fce5d285c23578449dff6b27e08cd167ab",
+  "elapsed_s": 33.8,
+  "passed": 0,
+  "total": 1,
+  "results": [
+    {
+      "gate": "multi",
+      "fixture": "itemguard-lite-isolated-bcd9b13887b4",
+      "exit_code": 0,
+      "verdict": "FAILED_MULTI",
+      "status": "REJECTED",
+      "independent_verifier": true,
+      "tail": "itemguard-lite-isolated-bcd9b13887b4\", \"two_items\": {\"slot0\": \"7F8EB4\", \"slot1\": \"AYIHQ6\", \"distinct\": \"true\"}, \"two_items_distinct\": true, \"shared_code\": \"7F8EB4\", \"staff_codes\": [], \"member_codes\": [\"7F8EB4\"], \"staff_saw_code\": false, \"member_saw_code\": true, \"one_identity_for_both\": true, \"staff_told_no_id\": true, \"holder_sees_id_non_holder_does_not\": true, \"history_consistent\": true, \"member_reply_lines\": 2, \"staff_reply_lines\": 2, \"member_actor_hidden\": false, \"member_location_hidden\": false, \"member_leaked_actor_name\": false, \"member_leaked_location\": false, \"staff_sees_actor_name\": false, \"privacy_ok\": false, \"cleanup\": [{\"child\": \"bots\", \"pid\": 33916, \"exit\": 0, \"forced\": false, \"log_closed\": true}, {\"child\": \"server\", \"pid\": 33184, \"exit\": 0, \"forced\": false, \"log_closed\": true}]}",
+      "candidate_sha256": "80fc610b1e1f3be4c3abb7a163d899fce5d285c23578449dff6b27e08cd167ab"
+    }
+  ]
+}

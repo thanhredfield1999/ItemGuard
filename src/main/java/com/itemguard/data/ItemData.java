@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 public class ItemData {
@@ -160,11 +161,14 @@ public class ItemData {
 
     private String formatMaterialName(String name) {
         StringBuilder sb = new StringBuilder();
-        for (char c : name.toLowerCase().toCharArray()) {
-            if (sb.length() == 0) {
-                sb.append(Character.toUpperCase(c));
-            } else if (c == '_') {
+        boolean capitalizeNext = true;
+        for (char c : name.toLowerCase(Locale.ROOT).toCharArray()) {
+            if (c == '_') {
                 sb.append(' ');
+                capitalizeNext = true;
+            } else if (capitalizeNext) {
+                sb.append(Character.toUpperCase(c));
+                capitalizeNext = false;
             } else {
                 sb.append(c);
             }

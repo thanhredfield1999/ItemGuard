@@ -1,0 +1,62 @@
+[
+  {
+    "version": "1.21.11",
+    "started": "2026-09-14T19:29:52.917953+00:00",
+    "build": "132",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-71cbe75abfb6",
+    "smoke_exit": 1,
+    "verdict": {
+      "status": "REJECTED",
+      "reason": "[Errno 22] Invalid argument: '\"E:\\\\AI.WORK\\\\30_KET_QUA_THU_NGHIEM\\\\itemguard-lite-isolated-71cbe75abfb6\"\\\\stage.json'"
+    },
+    "status": "REJECTED",
+    "finished": "2026-09-14T19:30:01.636877+00:00"
+  },
+  {
+    "version": "26.1.1",
+    "started": "2026-09-14T19:30:01.639853+00:00",
+    "build": "29",
+    "java_minimum": 25,
+    "jdk": "jdk-25",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-1f4e992b1d88",
+    "smoke_exit": 1,
+    "verdict": {
+      "status": "REJECTED",
+      "reason": "[Errno 22] Invalid argument: '\"E:\\\\AI.WORK\\\\30_KET_QUA_THU_NGHIEM\\\\itemguard-lite-isolated-1f4e992b1d88\"\\\\stage.json'"
+    },
+    "status": "REJECTED",
+    "finished": "2026-09-14T19:30:10.448300+00:00"
+  },
+  {
+    "version": "26.1.2",
+    "started": "2026-09-14T19:30:10.449075+00:00",
+    "build": "74",
+    "java_minimum": 25,
+    "jdk": "jdk-25",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-114a6621c234",
+    "smoke_exit": 1,
+    "verdict": {
+      "status": "REJECTED",
+      "reason": "[Errno 22] Invalid argument: '\"E:\\\\AI.WORK\\\\30_KET_QUA_THU_NGHIEM\\\\itemguard-lite-isolated-114a6621c234\"\\\\stage.json'"
+    },
+    "status": "REJECTED",
+    "finished": "2026-09-14T19:30:16.621180+00:00"
+  },
+  {
+    "version": "26.2",
+    "started": "2026-09-14T19:30:16.621925+00:00",
+    "build": "123",
+    "java_minimum": 25,
+    "jdk": "jdk-25",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-41ad143ce0e1",
+    "smoke_exit": 1,
+    "verdict": {
+      "status": "REJECTED",
+      "reason": "[Errno 22] Invalid argument: '\"E:\\\\AI.WORK\\\\30_KET_QUA_THU_NGHIEM\\\\itemguard-lite-isolated-41ad143ce0e1\"\\\\stage.json'"
+    },
+    "status": "REJECTED",
+    "finished": "2026-09-14T19:30:26.418276+00:00"
+  }
+]

@@ -1,0 +1,65 @@
+[
+  {
+    "version": "1.21.5",
+    "started": "2026-09-16T18:07:41.265071+00:00",
+    "build": "114",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-10cbdae7a0e6",
+    "smoke_exit": 0,
+    "smoke_tail": "{\n  \"status\": \"CAPTURED\",\n  \"cleanup\": [\n    {\n      \"child\": \"bots-1\",\n      \"pid\": 70948,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    },\n    {\n      \"child\": \"server-1\",\n      \"pid\": 11228,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "PASS_SWEEP_SMOKE",
+      "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-10cbdae7a0e6",
+      "candidate_sha256": "082d73b34e83f29d98f21a2ee88eaf7d29068b38acfc21be0db7ab9f5d7f2d9c"
+    },
+    "status": "PASS_SWEEP_SMOKE",
+    "duplicate_confirmed": true,
+    "confirmed_code": "EGBFG6",
+    "confirmed_locations": 2,
+    "plugin_enabled": true,
+    "unsupported_api": false,
+    "finished": "2026-09-16T18:09:21.151201+00:00"
+  },
+  {
+    "version": "1.21.6",
+    "started": "2026-09-16T18:09:21.157901+00:00",
+    "build": "48",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-202a530748a1",
+    "smoke_exit": 0,
+    "smoke_tail": "{\n  \"status\": \"CAPTURED\",\n  \"cleanup\": [\n    {\n      \"child\": \"bots-1\",\n      \"pid\": 64592,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    },\n    {\n      \"child\": \"server-1\",\n      \"pid\": 11772,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "PASS_SWEEP_SMOKE",
+      "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-202a530748a1",
+      "candidate_sha256": "082d73b34e83f29d98f21a2ee88eaf7d29068b38acfc21be0db7ab9f5d7f2d9c"
+    },
+    "status": "PASS_SWEEP_SMOKE",
+    "duplicate_confirmed": true,
+    "confirmed_code": "KU9ZUN",
+    "confirmed_locations": 2,
+    "plugin_enabled": true,
+    "unsupported_api": false,
+    "finished": "2026-09-16T18:11:12.220126+00:00"
+  },
+  {
+    "version": "1.21.7",
+    "started": "2026-09-16T18:11:12.224624+00:00",
+    "build": "32",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-4c0f567c8f34",
+    "smoke_exit": 1,
+    "smoke_tail": "{\n  \"status\": \"FAILED\",\n  \"cleanup\": [\n    {\n      \"child\": \"bots-failure\",\n      \"pid\": 74816,\n      \"exit\": 1,\n      \"forced\": false,\n      \"log_closed\": true\n    },\n    {\n      \"child\": \"server-failure\",\n      \"pid\": 2044,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"error\": \"RuntimeError('Probe/bot failure; inspect log')\",\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "REJECTED",
+      "reason": "incomplete or failed attempt"
+    },
+    "status": "REJECTED",
+    "duplicate_confirmed": false,
+    "plugin_enabled": true,
+    "unsupported_api": false,
+    "finished": "2026-09-16T18:12:06.552186+00:00"
+  }
+]

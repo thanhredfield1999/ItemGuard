@@ -1,5 +1,8 @@
 package com.itemguard;
 
+import com.itemguard.config.RestartSensitiveSettings;
+import com.itemguard.config.AntiDupeSettings;
+import com.itemguard.tracking.ItemIdentityEligibilityPolicy;
 import org.bukkit.Material;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.inventory.ItemStack;
@@ -9,6 +12,8 @@ import java.util.*;
 public class ConfigManager {
 
     private final ItemGuard plugin;
+    private final ItemIdentityEligibilityPolicy identityEligibilityPolicy =
+        new ItemIdentityEligibilityPolicy();
     private FileConfiguration config;
 
     public ConfigManager(ItemGuard plugin) {
@@ -21,8 +26,11 @@ public class ConfigManager {
     }
 
     public void reload() {
-        plugin.reloadConfig();
         load();
+    }
+
+    public RestartSensitiveSettings getRestartSensitiveSettings() {
+        return RestartSensitiveSettings.from(config);
     }
 
     // ---------- GENERAL ----------
@@ -35,12 +43,25 @@ public class ConfigManager {
     }
 
     public String getLanguage() {
-        return config.getString("general.language", "vi");
+        return new com.itemguard.config.MessageLanguagePolicy().resolve(
+            config.getString("general.language"),
+            plugin.isLiteEdition()
+        );
     }
 
     // ---------- TRACKING ----------
     public boolean isTrackingEnabled() {
         return config.getBoolean("tracking.enabled", true);
+    }
+
+    /**
+     * C1 (review 2026-09-17): whether a craft whose result would need a brand-new identity is
+     * cancelled. Default true — the behaviour this plugin has always had, and the one its own
+     * README discloses. It is a switch because cancelling every crafted tool, weapon and armour
+     * piece is a large thing to do to a server, and the Spigot page did not say so.
+     */
+    public boolean cancelsUntrackedCraftOutput() {
+        return config.getBoolean("tracking.cancel-untracked-craft-output", true);
     }
 
     public boolean isTrackNonStackable() {
@@ -64,20 +85,14 @@ public class ConfigManager {
 
     public boolean shouldTrack(ItemStack item) {
         if (item == null || item.getType() == Material.AIR) return false;
-        if (!isTrackingEnabled()) return false;
-
-        boolean isStackable = item.getMaxStackSize() > 1;
-
-        if (isStackable && !isTrackStackable()) {
-            return getForceTrackMaterials().contains(item.getType());
-        }
-
-        if (!isStackable && !isTrackNonStackable()) {
-            return getForceTrackMaterials().contains(item.getType());
-        }
-
-        if (!isStackable) return true;
-        return getForceTrackMaterials().contains(item.getType());
+        return identityEligibilityPolicy.shouldTrack(
+            item.getMaxStackSize(),
+            item.getAmount(),
+            isTrackingEnabled(),
+            isTrackNonStackable(),
+            isTrackStackable(),
+            getForceTrackMaterials().contains(item.getType())
+        );
     }
 
     // ---------- UUID TAG ----------
@@ -90,32 +105,44 @@ public class ConfigManager {
     }
 
     // ---------- ANTI-DUPE ----------
+    private AntiDupeSettings antiDupeSettings() {
+        return AntiDupeSettings.from(config);
+    }
+
     public boolean isAntiDupeEnabled() {
-        return config.getBoolean("anti-dupe.enabled", true);
+        return antiDupeSettings().enabled();
     }
 
     public String getAntiDupeAction() {
-        return config.getString("anti-dupe.action", "NOTIFY");
+        return plugin.isLiteEdition() ? "NOTIFY" : antiDupeSettings().action();
     }
 
     public boolean isNotifyStaff() {
-        return config.getBoolean("anti-dupe.notify-staff", true);
+        return antiDupeSettings().notifyStaff();
     }
 
     public boolean isNotifyPlayer() {
-        return config.getBoolean("anti-dupe.notify-player", false);
+        return antiDupeSettings().notifyPlayer();
     }
 
     public long getDetectionCooldown() {
-        return config.getLong("anti-dupe.detection-cooldown-ms", 5000);
+        return antiDupeSettings().detectionCooldown();
     }
 
     public int getMaxHistoryPerItem() {
-        return config.getInt("anti-dupe.max-history-per-item", 1000);
+        return antiDupeSettings().maxHistoryPerItem();
     }
 
     public long getGracePeriod() {
-        return config.getLong("anti-dupe.grace-period-ms", 3000);
+        return antiDupeSettings().gracePeriod();
+    }
+
+    public boolean isSweepEnabled() {
+        return antiDupeSettings().sweepEnabled();
+    }
+
+    public int getSweepChunksPerTick() {
+        return antiDupeSettings().sweepChunksPerTick();
     }
 
     // ---------- DATABASE ----------
@@ -127,53 +154,18 @@ public class ConfigManager {
         return config.getString("database.sqlite.file-name", "itemguard.db");
     }
 
-    public String getMySQLHost() {
-        return config.getString("database.mysql.host", "localhost");
+    /**
+     * Size at which to warn that the database is growing, in bytes; 0 disables the warning.
+     *
+     * <p>Only relevant in LITE, where automatic history deletion is off and the file therefore
+     * only ever grows. 500 MB is a deliberately unalarming default: large enough that a normal
+     * server never sees the message, small enough to arrive long before a full disk.
+     */
+    public long getDatabaseWarnBytes() {
+        long megabytes = config.getLong("database.warn-size-mb", 500L);
+        return megabytes <= 0 ? 0L : megabytes * 1024L * 1024L;
     }
 
-    public int getMySQLPort() {
-        return config.getInt("database.mysql.port", 3306);
-    }
-
-    public String getMySQLDatabase() {
-        return config.getString("database.mysql.database", "itemguard");
-    }
-
-    public String getMySQLUsername() {
-        return config.getString("database.mysql.username", "root");
-    }
-
-    public String getMySQLPassword() {
-        return config.getString("database.mysql.password", "");
-    }
-
-    public boolean getMySQLSSL() {
-        return config.getBoolean("database.mysql.use-ssl", false);
-    }
-
-    public String getPostgresHost() {
-        return config.getString("database.postgres.host", "localhost");
-    }
-
-    public int getPostgresPort() {
-        return config.getInt("database.postgres.port", 5432);
-    }
-
-    public String getPostgresDatabase() {
-        return config.getString("database.postgres.database", "itemguard");
-    }
-
-    public String getPostgresUsername() {
-        return config.getString("database.postgres.username", "postgres");
-    }
-
-    public String getPostgresPassword() {
-        return config.getString("database.postgres.password", "");
-    }
-
-    public boolean getPostgresSSL() {
-        return config.getBoolean("database.postgres.use-ssl", false);
-    }
 
     public int getPoolMaxSize() {
         return config.getInt("database.pool.maximum-pool-size", 10);
@@ -258,16 +250,14 @@ public class ConfigManager {
     }
 
     // ---------- PERFORMANCE ----------
-    public boolean isAsyncDatabase() {
-        return config.getBoolean("performance.async-database", true);
-    }
 
     public int getBatchSize() {
         return config.getInt("performance.batch-size", 100);
     }
 
     public int getCleanupIntervalHours() {
-        return config.getInt("performance.auto-cleanup.interval-hours", 24);
+        // LITE is an investigation build: automatic history deletion stays off regardless of config.
+        return plugin.isLiteEdition() ? 0 : config.getInt("performance.auto-cleanup.interval-hours", 24);
     }
 
     public int getCleanupKeepDays() {
@@ -286,6 +276,10 @@ public class ConfigManager {
         return config.getInt("performance.max-track-per-player", 500);
     }
 
+    public int getReclaimHistoryDays() {
+        return Math.max(1, config.getInt("reclaim.history-days", 20));
+    }
+
     // ---------- WORLD MANAGEMENT ----------
     public boolean isWorldEnabled(String worldName) {
         if (worldName == null) return true;
@@ -294,12 +288,12 @@ public class ConfigManager {
     }
 
     public boolean isWorldGuardEnabled() {
-        return config.getBoolean("worlds.worldguard-support", true);
+        return !plugin.isLiteEdition() && config.getBoolean("worlds.worldguard-support", false);
     }
 
     // ---------- DISCORD ----------
     public boolean isDiscordWebhookEnabled() {
-        return config.getBoolean("discord.enabled", false);
+        return !plugin.isLiteEdition() && config.getBoolean("discord.enabled", false);
     }
 
     public String getDiscordWebhookUrl() {

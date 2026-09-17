@@ -1,0 +1,78 @@
+[
+  {
+    "version": "1.21.4",
+    "started": "2026-09-16T17:59:44.133854+00:00",
+    "build": "232",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-0005f0b5105d",
+    "smoke_exit": 1,
+    "smoke_tail": "{\n  \"status\": \"FAILED\",\n  \"cleanup\": [\n    {\n      \"child\": \"bots-failure\",\n      \"pid\": 69040,\n      \"exit\": 1,\n      \"forced\": false,\n      \"log_closed\": true\n    },\n    {\n      \"child\": \"server-failure\",\n      \"pid\": 46900,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"error\": \"RuntimeError('Probe/bot failure; inspect log')\",\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "REJECTED",
+      "reason": "incomplete or failed attempt"
+    },
+    "status": "REJECTED",
+    "duplicate_confirmed": false,
+    "plugin_enabled": true,
+    "unsupported_api": false,
+    "finished": "2026-09-16T18:00:23.961627+00:00"
+  },
+  {
+    "version": "1.21.5",
+    "started": "2026-09-16T18:00:23.963060+00:00",
+    "build": "114",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-2c7ede869e25",
+    "smoke_exit": 1,
+    "smoke_tail": "{\n  \"status\": \"FAILED\",\n  \"cleanup\": [\n    {\n      \"child\": \"bots-failure\",\n      \"pid\": 68476,\n      \"exit\": 1,\n      \"forced\": false,\n      \"log_closed\": true\n    },\n    {\n      \"child\": \"server-failure\",\n      \"pid\": 67112,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"error\": \"RuntimeError('Probe/bot failure; inspect log')\",\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "REJECTED",
+      "reason": "incomplete or failed attempt"
+    },
+    "status": "REJECTED",
+    "duplicate_confirmed": false,
+    "plugin_enabled": true,
+    "unsupported_api": false,
+    "finished": "2026-09-16T18:01:01.761822+00:00"
+  },
+  {
+    "version": "1.21.6",
+    "started": "2026-09-16T18:01:01.762735+00:00",
+    "build": "48",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-93511edfa3de",
+    "smoke_exit": 1,
+    "smoke_tail": "{\n  \"status\": \"FAILED\",\n  \"cleanup\": [\n    {\n      \"child\": \"bots-failure\",\n      \"pid\": 70384,\n      \"exit\": 1,\n      \"forced\": false,\n      \"log_closed\": true\n    },\n    {\n      \"child\": \"server-failure\",\n      \"pid\": 2368,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"error\": \"RuntimeError('Probe/bot failure; inspect log')\",\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "REJECTED",
+      "reason": "incomplete or failed attempt"
+    },
+    "status": "REJECTED",
+    "duplicate_confirmed": false,
+    "plugin_enabled": true,
+    "unsupported_api": false,
+    "finished": "2026-09-16T18:01:39.145958+00:00"
+  },
+  {
+    "version": "1.21.7",
+    "started": "2026-09-16T18:01:39.146601+00:00",
+    "build": "32",
+    "java_minimum": 21,
+    "jdk": "jdk-21",
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-lite-isolated-b27ef82bde30",
+    "smoke_exit": 1,
+    "smoke_tail": "{\n  \"status\": \"FAILED\",\n  \"cleanup\": [\n    {\n      \"child\": \"bots-failure\",\n      \"pid\": 27012,\n      \"exit\": 1,\n      \"forced\": false,\n      \"log_closed\": true\n    },\n    {\n      \"child\": \"server-failure\",\n      \"pid\": 46296,\n      \"exit\": 0,\n      \"forced\": false,\n      \"log_closed\": true\n    }\n  ],\n  \"error\": \"RuntimeError('Probe/bot failure; inspect log')\",\n  \"port_released\": true\n}\n",
+    "verdict": {
+      "status": "REJECTED",
+      "reason": "incomplete or failed attempt"
+    },
+    "status": "REJECTED",
+    "duplicate_confirmed": false,
+    "plugin_enabled": true,
+    "unsupported_api": false,
+    "finished": "2026-09-16T18:02:18.970999+00:00"
+  }
+]

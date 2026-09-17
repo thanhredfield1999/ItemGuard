@@ -1,0 +1,33 @@
+name: ItemGuard
+version: '${project.version}-lite'
+main: com.itemguard.lite.ItemGuardLite
+api-version: '1.21.4'
+author: thanhredfield1999
+description: ItemGuard LITE - item identity and read-only history; Paper, Purpur or Spigot
+commands:
+  itemguard:
+    description: ItemGuard LITE check, recent history, exact ID lookup and preview
+    usage: /ig help
+    aliases: [ig]
+permissions:
+  itemguard.check:
+    default: true
+  itemguard.history:
+    default: true
+  itemguard.history.others:
+    default: op
+  itemguard.search:
+    default: op
+  itemguard.stats:
+    default: op
+  itemguard.notify:
+    default: op
+  itemguard.admin:
+    default: op
+    children:
+      itemguard.check: true
+      itemguard.history: true
+      itemguard.history.others: true
+      itemguard.search: true
+      itemguard.stats: true
+      itemguard.notify: true

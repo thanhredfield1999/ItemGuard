@@ -27,7 +27,7 @@ public class PlayerBrowserGUI implements InventoryHolder {
     private static final int NEXT_SLOT = 53;
     private static final int PLAYER_START = 10;
     private static final int PLAYER_END = 44;
-    private static final int COLUMNS = 7;
+
 
     private final ItemGuard plugin;
     private final Player viewer;
@@ -57,7 +57,7 @@ public class PlayerBrowserGUI implements InventoryHolder {
                 return false;
             }).collect(Collectors.toList())
             : items;
-        this.totalPages = Math.max(1, (int) Math.ceil((double) filteredItems.size() / (float) COLUMNS));
+        this.totalPages = GuiPageLayout.totalPages(filteredItems.size());
         this.currentPage = 1;
     }
 
@@ -95,6 +95,7 @@ public class PlayerBrowserGUI implements InventoryHolder {
         this.currentPage = Math.max(1, Math.min(page, totalPages));
         buildInventory();
         viewer.openInventory(inventory);
+        plugin.getGuiListener().registerOpenBrowser(viewer, this);
     }
 
     private void buildInventory() {
@@ -104,7 +105,6 @@ public class PlayerBrowserGUI implements InventoryHolder {
         inventory = Bukkit.createInventory(this, SIZE, title);
 
         fillBorder();
-        fillPlayerHeader();
         fillItems();
         fillNavigation();
     }
@@ -154,21 +154,11 @@ public class PlayerBrowserGUI implements InventoryHolder {
     }
 
     private void fillItems() {
-        int itemsPerRow = COLUMNS;
-        int start = (currentPage - 1) * itemsPerRow * 4;
-        int end = Math.min(start + itemsPerRow * 4, filteredItems.size());
-
-        int slot = PLAYER_START;
+        int start = GuiPageLayout.startIndex(currentPage);
+        int end = GuiPageLayout.endIndex(currentPage, filteredItems.size());
         for (int i = start; i < end; i++) {
-            if (slot >= PLAYER_END) break;
-            int row = (slot / 9);
-            if (slot % 9 == 0) slot++;
-            if (slot % 9 == 8) slot++;
-            if (slot >= PLAYER_END) break;
-
             ItemData item = filteredItems.get(i);
-            inventory.setItem(slot, makeItemIcon(item, i));
-            slot++;
+            inventory.setItem(GuiPageLayout.inventorySlot(i - start), makeItemIcon(item, i));
         }
     }
 
@@ -374,7 +364,7 @@ public class PlayerBrowserGUI implements InventoryHolder {
             this.plugin = plugin;
             this.viewer = viewer;
             this.onlinePlayers = new ArrayList<>(Bukkit.getOnlinePlayers());
-            this.totalPages = Math.max(1, (int) Math.ceil((double) onlinePlayers.size() / 45.0));
+            this.totalPages = GuiPageLayout.totalPages(onlinePlayers.size());
         }
 
         public static void openMainBrowser(Player player) {
@@ -426,17 +416,11 @@ public class PlayerBrowserGUI implements InventoryHolder {
         }
 
         private void fillPlayers() {
-            int start = (currentPage - 1) * 45;
-            int end = Math.min(start + 45, onlinePlayers.size());
-
-            int slot = 9;
+            int start = GuiPageLayout.startIndex(currentPage);
+            int end = GuiPageLayout.endIndex(currentPage, onlinePlayers.size());
             for (int i = start; i < end; i++) {
-                while (slot % 9 == 0 || slot % 9 == 8) slot++;
-                if (slot >= SIZE - 9) break;
-
                 Player p = onlinePlayers.get(i);
-                inventory.setItem(slot, makePlayerHead(p));
-                slot++;
+                inventory.setItem(GuiPageLayout.inventorySlot(i - start), makePlayerHead(p));
             }
         }
 
@@ -450,8 +434,7 @@ public class PlayerBrowserGUI implements InventoryHolder {
             lore.add("§7§m------------------------");
             lore.add("§7Click de xem item cua nguoi nay");
             lore.add("§7");
-            int itemCount = plugin.getDB().getItemsByPlayer(p.getUniqueId()).size();
-            lore.add("§7Item dang theo doi: §f" + itemCount);
+            lore.add("§7Click để tải danh sách vật phẩm");
             lore.add("§7§m------------------------");
             meta.setLore(lore);
 

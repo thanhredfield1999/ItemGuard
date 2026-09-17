@@ -1,0 +1,22 @@
+{
+  "candidate_sha256": "28aed104cf9a01bae98373016bafe5033a398533447a56868381433c66b14a30",
+  "elapsed_s": 134.5,
+  "passed": 2,
+  "total": 2,
+  "results": [
+    {
+      "gate": "separate",
+      "fixture": "itemguard-lite-isolated-705dc454eceb",
+      "status": "PASS",
+      "verifier": "{\n  \"status\": \"PASS_CONTROLLED_SMOKE\",\n  \"root\": \"E:\\\\AI.WORK\\\\30_KET_QUA_THU_NGHIEM\\\\itemguard-lite-isolated-705dc454eceb\",\n  \"candidate_sha256\": \"28aed104cf9a01bae98373016bafe5033a398533447a56868381433c66b14a30\",\n  \"limitations\": [\n    \"No client visual acceptance\",\n    \"No crafting/natural-break/scale/crash/guardian claims\"\n  ]\n}",
+      "candidate_sha256": "28aed104cf9a01bae98373016bafe5033a398533447a56868381433c66b14a30"
+    },
+    {
+      "gate": "reload",
+      "fixture": "itemguard-lite-isolated-8305460c4b4f",
+      "status": "PASS",
+      "tail": "1 warning",
+      "candidate_sha256": "28aed104cf9a01bae98373016bafe5033a398533447a56868381433c66b14a30"
+    }
+  ]
+}

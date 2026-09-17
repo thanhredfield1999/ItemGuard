@@ -1,0 +1,3 @@
+8c0e540ec646ffec38cd1409cb69b8c339d1d83f7ba499841bbe6866d624ce4a *target/ItemGuard-LITE-1.0.0.jar
+8c0e540ec646ffec38cd1409cb69b8c339d1d83f7ba499841bbe6866d624ce4a *release/upload/ItemGuard-LITE-1.0.0.jar
+8c0e540ec646ffec38cd1409cb69b8c339d1d83f7ba499841bbe6866d624ce4a *release/spigot-upload/ItemGuard-LITE-1.0.0.jar

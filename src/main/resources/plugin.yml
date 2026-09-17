@@ -5,11 +5,12 @@ api-version: '1.21.11'
 description: Anti-dupe item tracking with unique UUID, history, and GUI inspection
 author: AI.WORK
 website: https://github.com/aiwork-itemguard
+softdepend: [WorldGuard]
 
 commands:
   itemguard:
     description: ItemGuard main command
-    usage: /<command> <check|history|search|stats|reload>
+    usage: /<command> <check|history|search|stats|browser|reload>
     aliases: [ig]
   ig:
     description: ItemGuard alias command
@@ -23,9 +24,17 @@ commands:
   igsearch:
     description: Search player items
     usage: /<command> <player>
+    permission: itemguard.search
   igstats:
     description: View plugin statistics
     usage: /<command>
+    permission: itemguard.stats
+  finditem:
+    description: Quan ly yeu cau tim vat pham theo ID
+    usage: /<command> <startfinding|starttaking|stopfinding|listfinding|removefinding|clearfinding>
+  matdo:
+    description: Xem lich su va yeu cau ho tro lay lai vat pham
+    usage: /<command> <check|sos>
 
 permissions:
   itemguard.*:
@@ -34,29 +43,53 @@ permissions:
     children:
       itemguard.check: true
       itemguard.history: true
+      itemguard.history.others: true
       itemguard.search: true
       itemguard.stats: true
+      itemguard.restore: true
+      itemguard.teleport: true
       itemguard.reload: true
       itemguard.gui: true
       itemguard.bypass: true
+      itemguard.finditem.admin: true
+      itemguard.matdo: true
+      itemguard.track: true
   itemguard.check:
     description: Check item UUID in hand
     default: true
   itemguard.history:
     description: View item transfer history
     default: true
+  itemguard.history.others:
+    description: View another player's history or query a direct item code
+    default: op
   itemguard.search:
     description: Search items by player
     default: op
   itemguard.stats:
     description: View plugin statistics
     default: op
+  itemguard.teleport:
+    description: Teleport to a tracked item's container location from the timeline
+    default: op
+  itemguard.restore:
+    description: Judge and carry out the restore of a destroyed item
+    default: op
   itemguard.reload:
     description: Reload plugin configuration
     default: op
   itemguard.gui:
     description: Open history GUI
-    default: true
+    default: op
   itemguard.bypass:
     description: Bypass anti-dupe checks (staff)
+    default: op
+  itemguard.finditem.admin:
+    description: Quan ly /finditem
+    default: op
+  itemguard.matdo:
+    description: Su dung /matdo check va /matdo sos
+    default: true
+  itemguard.track:
+    description: Cho phep tracking khi WorldGuard support duoc bat
     default: op
