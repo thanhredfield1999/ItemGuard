@@ -1,0 +1,103 @@
+OUT=C:/Users/thanh/AppData/Local/Temp/itemguard-codec-bin
+PASS 6 encoding vectors + 3 invalid-surrogate cases
+PASS CodecScalarTests: 9 vectors + 8 rejection cases + root-domain guard
+PASS CodecObjectTests: 11 ordering/nesting vectors + 10 bound cases
+PASS CodecEncoderGuardTests: 3 duplicate cases + 3 frame-cap cases + parity
+PASS RecoveryDecoderTests: 12 accept + 6 value + 60 reject + 8 bound cases
+PASS RecordHashTests: 7 pre-image vectors + shape + 11 journal-line cases
+OUT=C:/Users/thanh/AppData/Local/Temp/itemguard-codec-bin
+PASS 4 absent-Paper summary cases
+history combinations=128 failures=0
+PASS spawn/created axes
+branch failures=0
+PASS prefix/event matrix cases=242
+AXIS_VECTORS cases=22 failures=0
+OUT=C:/Users/thanh/AppData/Local/Temp/itemguard-codec-bin
+PASS request round trip and release gate
+PASS close EOF before exit
+PASS close exit before EOF
+PASS pending operation blocks close
+PASS silent exit without protocol
+PASS ACK write failure after notifications
+PASS unknown role
+PASS unknown request kind
+PASS duplicate request ID
+PASS decreasing request ID
+PASS invalid hash null
+PASS invalid hash 0
+PASS invalid hash 64
+PASS invalid hash 64
+PASS invalid hash 63
+PASS invalid hash 65
+PASS ACK callback after EOF/exit
+PASS wrong ACK ID
+PASS wrong ACK hash
+PASS mirror failure 0
+PASS mirror failure 1
+PASS mirror failure 2
+PASS fault terminal at stage 0
+PASS reject complete at stage 0
+PASS reject dispatch at stage 0
+PASS reject commit at stage 0
+PASS reject ack at stage 0
+PASS reject eof at stage 0
+PASS reject exit at stage 0
+PASS fault terminal at stage 1
+PASS reject begin at stage 1
+PASS reject dispatch at stage 1
+PASS reject commit at stage 1
+PASS reject ack at stage 1
+PASS reject eof at stage 1
+PASS reject exit at stage 1
+PASS fault terminal at stage 2
+PASS reject begin at stage 2
+PASS reject complete at stage 2
+PASS reject commit at stage 2
+PASS reject ack at stage 2
+PASS reject eof at stage 2
+PASS reject exit at stage 2
+PASS fault terminal at stage 3
+PASS reject begin at stage 3
+PASS reject complete at stage 3
+PASS reject dispatch at stage 3
+PASS reject ack at stage 3
+PASS reject eof at stage 3
+PASS reject exit at stage 3
+PASS fault terminal at stage 4
+PASS reject begin at stage 4
+PASS reject complete at stage 4
+PASS reject dispatch at stage 4
+PASS reject commit at stage 4
+PASS fault terminal at stage 5
+PASS reject begin at stage 5
+PASS reject complete at stage 5
+PASS reject dispatch at stage 5
+PASS reject commit at stage 5
+PASS reject ack at stage 5
+PASS fault terminal at stage 6
+PASS reject begin at stage 6
+PASS reject complete at stage 6
+PASS reject dispatch at stage 6
+PASS reject commit at stage 6
+PASS reject ack at stage 6
+PASS reject eof at stage 6
+PASS fault terminal at stage 7
+PASS reject begin at stage 7
+PASS reject complete at stage 7
+PASS reject dispatch at stage 7
+PASS reject commit at stage 7
+PASS reject ack at stage 7
+PASS reject eof at stage 7
+PASS reject exit at stage 7
+CONTROL cases=76 failures=0
+PASS one-byte fragmented frame and immutable body
+FRAME_BOUNDS cases=53 failures=0
+COMPOSITION cases=9 failures=0 (in-memory only)
+OUT=C:/Users/thanh/AppData/Local/Temp/itemguard-codec-bin
+CHAIN_BYTE_MUTATIONS cases=50745 failures=0
+CHAIN cases=25 failures=0
+JOURNAL_LINE_BOUNDS cases=8 failures=0
+JOURNAL_TRUNCATIONS cases=1095 failures=0
+JOURNAL_SCAN cases=9 failures=0
+OUT=C:/Users/thanh/AppData/Local/Temp/itemguard-codec-bin
+DUAL_COMMIT checks=60 failures=0 (pure sinks only)

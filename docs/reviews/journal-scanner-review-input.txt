@@ -1,0 +1,682 @@
+Independent review in Vietnamese <=400 words. No tools, edits, runtime, approval. Scope ONLY finite immutable standard .NET blocking Stream snapshots, exclusive caller ownership, position zero (nonseekable supplied from beginning). Scanner caps each line including LF at 1MiB, scans paired lines, validates exact canonical bytes, seq and hashes through independent recovery decoder. Reject invalid/partial/unmatched suffix; retain prior common count on errors. Result BothEof ONLY means byte/hash/seq scan exhausted, NOT trusted genesis, historyComplete, lifecycle, authorization, full guardian or runtime approval. Caller validates paths/file identity and schema separately; two wrappers to one file not detectible here. Review exact scanner and recent decoder line-cap correction; current encoder EncodeJournalLine uses EncodeDocument(record, MaxDocumentBytes - 1), thus LF included in line cap. Check preallocation caps, integer/UTF8 exception boundaries, read error retention and budget-at-EOF; no speculative catch-all unless concrete in-scope input. Return PASS_FOR_OFFLINE_SCANNER or BLOCK and concrete findings. Tests are coverage, not exhaustive proof. Prior chain review PASS flagged cap and possible malformed-input exception escape; cap regression caught decoder accepting Max+1, fixed before body allocation; 50745 single-byte mutations now rejected without exception escape. Supplied full decoder to check this claim independently.
+
+FILE recovery/CommonJournalScanner.cs SHA256=d05deeeb2c84a8e20f0034f9d7a6eb74cbd16173c510ec9b422b7a69b0669cb9
+using System.IO;
+
+namespace ItemGuard.Recovery {
+    public enum JournalScanEnd { BothEof, InvalidSuffix, ReadFailure, RecordLimit }
+    public sealed class JournalScanResult {
+        public int CommonRecordCount { get; private set; }
+        public JournalScanEnd End { get; private set; }
+        internal JournalScanResult(int count, JournalScanEnd end) { CommonRecordCount = count; End = end; }
+    }
+
+    // Finite immutable snapshots from position zero, blocking reads only. Caller owns streams.
+    // Byte/hash/seq evidence, NEVER schema/genesis/lifecycle authority or historyComplete.
+    public static class CommonJournalScanner {
+        sealed class LineReader {
+            readonly Stream source;
+            readonly byte[] chunk = new byte[4096];
+            readonly byte[] line = new byte[CanonicalDecoder.MaxDocumentBytes];
+            int start, end;
+            public LineReader(Stream source) { this.source = source; }
+            public bool HasByte() {
+                if (start < end) return true;
+                end = source.Read(chunk, 0, chunk.Length); start = 0;
+                return end != 0;
+            }
+            public byte[] NextLine() {
+                if (!HasByte()) return null;
+                int length = 0;
+                do {
+                    byte value = chunk[start++];
+                    line[length++] = value;
+                    if (value == 10) {
+                        byte[] result = new byte[length];
+                        System.Buffer.BlockCopy(line, 0, result, 0, length);
+                        return result;
+                    }
+                } while (length < line.Length && HasByte());
+                return new byte[0]; // Unterminated or over cap: never a clean EOF.
+            }
+        }
+        public static JournalScanResult Scan(Stream first, Stream second, int maximumRecords) {
+            var chain = new CommonJournalChain(maximumRecords);
+            if (first == null || second == null || object.ReferenceEquals(first, second)
+                || !first.CanRead || !second.CanRead
+                || (first.CanSeek && first.Position != 0) || (second.CanSeek && second.Position != 0))
+                throw new System.ArgumentException("distinct readable snapshots from position zero required");
+            var left = new LineReader(first);
+            var right = new LineReader(second);
+            while (true) {
+                try {
+                    if (chain.CommonRecordCount == maximumRecords) {
+                        bool moreLeft = left.HasByte(), moreRight = right.HasByte();
+                        return new JournalScanResult(chain.CommonRecordCount,
+                            moreLeft || moreRight ? JournalScanEnd.RecordLimit : JournalScanEnd.BothEof);
+                    }
+                    byte[] a = left.NextLine(), b = right.NextLine();
+                    if (a == null && b == null) return new JournalScanResult(chain.CommonRecordCount, JournalScanEnd.BothEof);
+                    if (!chain.AppendPair(a, b)) return new JournalScanResult(chain.CommonRecordCount, JournalScanEnd.InvalidSuffix);
+                } catch (IOException) {
+                    return new JournalScanResult(chain.CommonRecordCount, JournalScanEnd.ReadFailure);
+                }
+            }
+        }
+    }
+}
+
+
+FILE recovery/CommonJournalChain.cs SHA256=ea88b7c9f63efee96c62be8c01f15e078740eb75751966f15044c76f0461adee
+namespace ItemGuard.Recovery {
+    // Byte/hash/sequence layer only, not trusted genesis, schema, lifecycle or historyComplete.
+    // Caller supplies one complete line from EACH mirror in order; never filter/reorder.
+    public sealed class CommonJournalChain {
+        readonly int maximumRecords;
+        string previousLineHash = new string('0', 64);
+        public int CommonRecordCount { get; private set; }
+        public bool Stopped { get; private set; }
+        public CommonJournalChain(int maximumRecords) {
+            if (maximumRecords <= 0) throw new System.ArgumentOutOfRangeException("maximumRecords");
+            this.maximumRecords = maximumRecords;
+        }
+        bool Stop() { Stopped = true; return false; }
+        public bool AppendPair(byte[] first, byte[] second) {
+            if (Stopped) return false;
+            if (first == null || second == null || CommonRecordCount >= maximumRecords
+                || first.Length == 0 || first.Length > CanonicalDecoder.MaxDocumentBytes
+                || first.Length != second.Length) return Stop();
+            for (int i = 0; i < first.Length; i++) if (first[i] != second[i]) return Stop();
+            try {
+                var record = CanonicalDecoder.VerifyJournalLine(first);
+                if (!(record["seq"] is ulong) || (ulong)record["seq"] != (ulong)CommonRecordCount
+                    || !(record["previousRecordSha256"] is string)
+                    || (string)record["previousRecordSha256"] != previousLineHash) return Stop();
+                // Hash exact complete prior line bytes, including LF; no retained array alias.
+                using (var sha = System.Security.Cryptography.SHA256.Create()) {
+                    var text = new System.Text.StringBuilder(64);
+                    foreach (byte b in sha.ComputeHash(first)) text.Append(b.ToString("x2"));
+                    previousLineHash = text.ToString();
+                }
+                CommonRecordCount++;
+                return true;
+            } catch (System.FormatException) { return Stop(); }
+        }
+    }
+}
+
+
+FILE recovery/CanonicalDecoder.cs SHA256=332e012a4efff21d43a700829e04728f170cbc8212242c93c2e7dacb221c4f59
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Text;
+
+namespace ItemGuard.Recovery {
+    /// <summary>
+    /// Recovery-side canonical JSON v1 decoder/validator. Written independently of the
+    /// guardian encoder: separate assembly, separate source, no shared helper.
+    ///
+    /// It is a validator first and a parser second: it accepts only byte sequences that
+    /// are already in exact canonical form. No whitespace anywhere outside strings, root
+    /// must be an object, members strictly increasing by unsigned UTF-8 key bytes,
+    /// duplicates rejected, escape whitelist limited to \" \\ and lowercase \u00xx for
+    /// U+0000..001F, raw control bytes rejected, strict UTF-8 (no BOM, no overlong, no
+    /// surrogate encoding, nothing above U+10FFFF), integers are shortest-form decimal in
+    /// [0, 2^64-1], and no null. Bounds are checked before allocation/recursion.
+    /// </summary>
+    public static class CanonicalDecoder {
+        public const int MaxDepth = 32;
+        public const int MaxContainerEntries = 4096;
+        public const int MaxDocumentBytes = 1024 * 1024;
+
+        public const string RecordHashMember = "recordSha256";
+
+        /// <summary>SHA-256 over the recovery-side canonical re-encoding of the body with
+        /// exactly the top-level <c>recordSha256</c> member deleted.</summary>
+        public static string ComputeRecordSha256(IDictionary body) {
+            if (body == null) throw new FormatException("record body required");
+            var preImage = new System.Collections.Specialized.OrderedDictionary();
+            foreach (DictionaryEntry e in body) {
+                var key = e.Key as string;
+                if (key == null) throw new FormatException("member name must be a string");
+                if (key == RecordHashMember) continue;
+                preImage.Add(key, e.Value);
+            }
+            return Hex(CanonicalReEncoder.Encode(preImage));
+        }
+
+        /// <summary>Verifies one journal line: exactly one terminating LF, strict canonical
+        /// body, canonical round-trip byte equality, a lowercase hex-64 <c>recordSha256</c>
+        /// member, and a hash matching the deletion pre-image.</summary>
+        public static IDictionary VerifyJournalLine(byte[] line) {
+            if (line == null) throw new FormatException("line required");
+            // Journal document cap includes its LF, matching the independent writer.
+            // Reject before allocating/copying the body.
+            if (line.Length > MaxDocumentBytes) throw new FormatException("journal line exceeds byte cap");
+            if (line.Length < 2) throw new FormatException("line too short");
+            if (line[line.Length - 1] != 0x0A) throw new FormatException("line must end with exactly one LF");
+            if (line[line.Length - 2] == 0x0A) throw new FormatException("line must end with exactly one LF");
+            if (line[line.Length - 2] == 0x0D) throw new FormatException("CR is not permitted");
+
+            var body = new byte[line.Length - 1];
+            Buffer.BlockCopy(line, 0, body, 0, body.Length);
+            for (int k = 0; k < body.Length; k++) {
+                if (body[k] == 0x0A) throw new FormatException("embedded LF in record body");
+            }
+
+            IDictionary record = ParseDocument(body);
+
+            // Round-trip: rebuild canonical bytes and demand exact equality before hashing.
+            byte[] rebuilt = CanonicalReEncoder.Encode(record);
+            if (rebuilt.Length != body.Length) throw new FormatException("record is not exact canonical bytes");
+            for (int k = 0; k < body.Length; k++) {
+                if (rebuilt[k] != body[k]) throw new FormatException("record is not exact canonical bytes");
+            }
+
+            object declared = record.Contains(RecordHashMember) ? record[RecordHashMember] : null;
+            if (declared == null) throw new FormatException("record is missing " + RecordHashMember);
+            var hex = declared as string;
+            if (!IsLowerHex64(hex)) throw new FormatException(RecordHashMember + " must be lowercase hex-64");
+            if (hex != ComputeRecordSha256(record)) throw new FormatException("record hash mismatch");
+            return record;
+        }
+
+        public static bool IsLowerHex64(string value) {
+            if (value == null || value.Length != 64) return false;
+            foreach (char c in value) {
+                bool ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+                if (!ok) return false;
+            }
+            return true;
+        }
+
+        static string Hex(byte[] data) {
+            using (var sha = System.Security.Cryptography.SHA256.Create()) {
+                byte[] h = sha.ComputeHash(data);
+                var sb = new StringBuilder(64);
+                foreach (byte x in h) sb.Append(x.ToString("x2", System.Globalization.CultureInfo.InvariantCulture));
+                return sb.ToString();
+            }
+        }
+
+        public static IDictionary ParseDocument(byte[] input) {
+            return ParseDocument(input, MaxDocumentBytes);
+        }
+
+        public static IDictionary ParseDocument(byte[] input, int maxBytes) {
+            if (input == null) throw new FormatException("input required");
+            if (input.Length == 0) throw new FormatException("empty input");
+            if (input.Length > maxBytes)
+                throw new FormatException("document exceeds " + maxBytes + " byte cap");
+            var r = new Reader(input);
+            if (r.Peek() != (byte)'{') throw new FormatException("root must be an object");
+            IDictionary root = r.ReadObject(1);
+            if (!r.AtEnd) throw new FormatException("trailing bytes after root object");
+            return root;
+        }
+
+        sealed class Reader {
+            readonly byte[] b;
+            int i;
+
+            public Reader(byte[] bytes) { b = bytes; i = 0; }
+            public bool AtEnd { get { return i >= b.Length; } }
+
+            public byte Peek() {
+                if (i >= b.Length) throw new FormatException("unexpected end of input");
+                return b[i];
+            }
+
+            byte Next() { byte v = Peek(); i++; return v; }
+
+            void Expect(byte c) {
+                if (Next() != c) throw new FormatException("expected '" + (char)c + "'");
+            }
+
+            public IDictionary ReadObject(int depth) {
+                if (depth > MaxDepth) throw new FormatException("nesting exceeds depth " + MaxDepth);
+                Expect((byte)'{');
+                var map = new Dictionary<string, object>(StringComparer.Ordinal);
+                if (Peek() == (byte)'}') { i++; return map; }
+
+                byte[] previousKeyBytes = null;
+                int count = 0;
+                while (true) {
+                    if (++count > MaxContainerEntries)
+                        throw new FormatException("object exceeds " + MaxContainerEntries + " members");
+                    if (Peek() != (byte)'"') throw new FormatException("member name must be a string");
+                    byte[] keyBytes;
+                    string key = ReadString(out keyBytes);
+                    if (previousKeyBytes != null) {
+                        int cmp = CompareUnsigned(previousKeyBytes, keyBytes);
+                        if (cmp == 0) throw new FormatException("duplicate member name");
+                        if (cmp > 0) throw new FormatException("members not in canonical key order");
+                    }
+                    previousKeyBytes = keyBytes;
+                    Expect((byte)':');
+                    map[key] = ReadValue(depth);
+                    byte c = Next();
+                    if (c == (byte)',') continue;
+                    if (c == (byte)'}') return map;
+                    throw new FormatException("expected ',' or '}'");
+                }
+            }
+
+            IList ReadArray(int depth) {
+                if (depth > MaxDepth) throw new FormatException("nesting exceeds depth " + MaxDepth);
+                Expect((byte)'[');
+                var list = new ArrayList();
+                if (Peek() == (byte)']') { i++; return list; }
+                int count = 0;
+                while (true) {
+                    if (++count > MaxContainerEntries)
+                        throw new FormatException("array exceeds " + MaxContainerEntries + " elements");
+                    list.Add(ReadValue(depth));
+                    byte c = Next();
+                    if (c == (byte)',') continue;
+                    if (c == (byte)']') return list;
+                    throw new FormatException("expected ',' or ']'");
+                }
+            }
+
+            object ReadValue(int depth) {
+                byte c = Peek();
+                if (c == (byte)'{') return ReadObject(depth + 1);
+                if (c == (byte)'[') return ReadArray(depth + 1);
+                if (c == (byte)'"') { byte[] ignored; return ReadString(out ignored); }
+                if (c == (byte)'t') { Literal("true"); return true; }
+                if (c == (byte)'f') { Literal("false"); return false; }
+                if (c >= (byte)'0' && c <= (byte)'9') return ReadUInt64();
+                throw new FormatException("unsupported value token");
+            }
+
+            void Literal(string word) {
+                for (int k = 0; k < word.Length; k++) {
+                    if (Next() != (byte)word[k]) throw new FormatException("bad literal");
+                }
+            }
+
+            ulong ReadUInt64() {
+                int start = i;
+                while (i < b.Length && b[i] >= (byte)'0' && b[i] <= (byte)'9') i++;
+                int len = i - start;
+                if (len == 0) throw new FormatException("expected digits");
+                if (len > 1 && b[start] == (byte)'0') throw new FormatException("leading zero");
+                if (len > 20) throw new FormatException("integer out of UInt64 range");
+                ulong value = 0;
+                checked {
+                    try {
+                        for (int k = start; k < i; k++) value = value * 10 + (ulong)(b[k] - (byte)'0');
+                    } catch (OverflowException) {
+                        throw new FormatException("integer out of UInt64 range");
+                    }
+                }
+                return value;
+            }
+
+            /// <summary>Reads a canonical string; <paramref name="decodedBytes"/> receives the
+            /// strict-UTF-8 bytes of the decoded scalars, which is the key-ordering domain.</summary>
+            string ReadString(out byte[] decodedBytes) {
+                Expect((byte)'"');
+                var acc = new List<byte>();
+                while (true) {
+                    byte c = Next();
+                    if (c == (byte)'"') break;
+                    if (c == (byte)'\\') {
+                        byte e = Next();
+                        if (e == (byte)'"' || e == (byte)'\\') { acc.Add(e); continue; }
+                        if (e != (byte)'u') throw new FormatException("escape outside whitelist");
+                        if (i + 4 > b.Length) throw new FormatException("truncated \\u escape");
+                        if (b[i] != (byte)'0' || b[i + 1] != (byte)'0')
+                            throw new FormatException("only U+0000..001F may be escaped");
+                        int hi = LowerHex(b[i + 2]);
+                        int lo = LowerHex(b[i + 3]);
+                        int scalar = hi * 16 + lo;
+                        if (scalar > 0x1F) throw new FormatException("only U+0000..001F may be escaped");
+                        i += 4;
+                        acc.Add((byte)scalar);
+                        continue;
+                    }
+                    if (c < 0x20) throw new FormatException("raw control byte in string");
+                    if (c < 0x80) { acc.Add(c); continue; }
+                    ReadUtf8Sequence(c, acc);
+                }
+                decodedBytes = acc.ToArray();
+                return new UTF8Encoding(false, true).GetString(decodedBytes);
+            }
+
+            static int LowerHex(byte c) {
+                if (c >= (byte)'0' && c <= (byte)'9') return c - (byte)'0';
+                if (c >= (byte)'a' && c <= (byte)'f') return c - (byte)'a' + 10;
+                throw new FormatException("\\u escape must use lowercase hex");
+            }
+
+            /// <summary>Validates one multi-byte UTF-8 sequence: rejects overlong forms,
+            /// surrogate-range encodings, scalars above U+10FFFF and truncated tails.</summary>
+            void ReadUtf8Sequence(byte lead, List<byte> acc) {
+                int need;
+                int scalar;
+                if (lead >= 0xC2 && lead <= 0xDF) { need = 1; scalar = lead & 0x1F; }
+                else if (lead >= 0xE0 && lead <= 0xEF) { need = 2; scalar = lead & 0x0F; }
+                else if (lead >= 0xF0 && lead <= 0xF4) { need = 3; scalar = lead & 0x07; }
+                else throw new FormatException("invalid UTF-8 lead byte");
+
+                var seq = new byte[need + 1];
+                seq[0] = lead;
+                for (int k = 0; k < need; k++) {
+                    byte cont = Next();
+                    if ((cont & 0xC0) != 0x80) throw new FormatException("invalid UTF-8 continuation byte");
+                    scalar = (scalar << 6) | (cont & 0x3F);
+                    seq[k + 1] = cont;
+                }
+                if (need == 2 && scalar < 0x800) throw new FormatException("overlong UTF-8 sequence");
+                if (need == 3 && scalar < 0x10000) throw new FormatException("overlong UTF-8 sequence");
+                if (scalar >= 0xD800 && scalar <= 0xDFFF)
+                    throw new FormatException("surrogate scalar encoded in UTF-8");
+                if (scalar > 0x10FFFF) throw new FormatException("scalar above U+10FFFF");
+                acc.AddRange(seq);
+            }
+
+            static int CompareUnsigned(byte[] x, byte[] y) {
+                int n = x.Length < y.Length ? x.Length : y.Length;
+                for (int k = 0; k < n; k++) {
+                    if (x[k] != y[k]) return x[k] < y[k] ? -1 : 1;
+                }
+                return x.Length.CompareTo(y.Length);
+            }
+        }
+    }
+}
+
+
+FILE recovery/CanonicalReEncoder.cs SHA256=baf9be3555bee65887896ad4618f43b37fd0d6eb401ee47808943a25cb5ea0ad
+using System;
+using System.Collections;
+using System.Globalization;
+using System.Text;
+
+namespace ItemGuard.Recovery {
+    /// <summary>
+    /// Recovery-side canonical re-encoder. The verifier must rebuild canonical bytes from
+    /// a parsed object and compare them to the input for exact equality before hashing, so
+    /// recovery needs its own serializer — it must not import the guardian encoder.
+    /// Stage 1: emit members in the order supplied.
+    /// </summary>
+    public static class CanonicalReEncoder {
+        public static byte[] Encode(IDictionary root) {
+            if (root == null) throw new FormatException("root object required");
+            var sb = new StringBuilder();
+            WriteObject(sb, root);
+            return new UTF8Encoding(false, true).GetBytes(sb.ToString());
+        }
+
+        static void WriteObject(StringBuilder sb, IDictionary map) {
+            var utf8 = new UTF8Encoding(false, true);
+            var keys = new System.Collections.Generic.List<string>();
+            foreach (DictionaryEntry e in map) {
+                var k = e.Key as string;
+                if (k == null) throw new FormatException("member name must be a string");
+                keys.Add(k);
+            }
+            keys.Sort(delegate(string a, string b) {
+                byte[] x = utf8.GetBytes(a), y = utf8.GetBytes(b);
+                int n = x.Length < y.Length ? x.Length : y.Length;
+                for (int i = 0; i < n; i++) { if (x[i] != y[i]) return x[i] < y[i] ? -1 : 1; }
+                return x.Length.CompareTo(y.Length);
+            });
+            sb.Append('{');
+            for (int i = 0; i < keys.Count; i++) {
+                if (i > 0) sb.Append(',');
+                WriteString(sb, keys[i]);
+                sb.Append(':');
+                WriteValue(sb, map[keys[i]]);
+            }
+            sb.Append('}');
+        }
+
+        static void WriteArray(StringBuilder sb, IList list) {
+            sb.Append('[');
+            for (int i = 0; i < list.Count; i++) {
+                if (i > 0) sb.Append(',');
+                WriteValue(sb, list[i]);
+            }
+            sb.Append(']');
+        }
+
+        static void WriteValue(StringBuilder sb, object v) {
+            if (v == null) throw new FormatException("null is not part of codec v1");
+            if (v is bool) { sb.Append(((bool)v) ? "true" : "false"); return; }
+            if (v is ulong) { sb.Append(((ulong)v).ToString(CultureInfo.InvariantCulture)); return; }
+            var s = v as string;
+            if (s != null) { WriteString(sb, s); return; }
+            var m = v as IDictionary;
+            if (m != null) { WriteObject(sb, m); return; }
+            var l = v as IList;
+            if (l != null) { WriteArray(sb, l); return; }
+            throw new FormatException("unsupported value type " + v.GetType().FullName);
+        }
+
+        static void WriteString(StringBuilder sb, string value) {
+            sb.Append('"');
+            foreach (char c in value) {
+                if (c == '"' || c == '\\') sb.Append('\\').Append(c);
+                else if (c < 32) sb.Append("\\u00").Append(((int)c).ToString("x2", CultureInfo.InvariantCulture));
+                else sb.Append(c);
+            }
+            sb.Append('"');
+        }
+    }
+}
+
+
+FILE tests/CommonJournalScannerTests.cs SHA256=0cc5bfa2c45e1be2b4150094f7e8da9e543b8c5497b01e6d1bbf0f27bbd4cb54
+using System;
+using System.Collections;
+using System.IO;
+using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
+using ItemGuard.Recovery;
+
+// Finite in-memory snapshots only; no runtime journal, file handle or receipt is read.
+class CommonJournalScannerTests {
+    static MethodInfo encode;
+    static MethodInfo recordHash;
+    static int cases;
+    static int failures;
+    static void Check(bool value, string message) { if (!value) throw new Exception(message); }
+    static void Run(string name, Action test) {
+        cases++;
+        try { test(); } catch (Exception e) { failures++; Console.WriteLine("FAIL " + name + ": " + e.Message); }
+    }
+    static string Sha(byte[] bytes) {
+        using (var sha = SHA256.Create()) {
+            var text = new StringBuilder();
+            foreach (byte b in sha.ComputeHash(bytes)) text.Append(b.ToString("x2"));
+            return text.ToString();
+        }
+    }
+    static byte[] Line(ulong seq, string previous) {
+        var record = new Hashtable();
+        record["seq"] = seq; record["previousRecordSha256"] = previous;
+        record["recordSha256"] = recordHash.Invoke(null, new object[] { record });
+        return (byte[])encode.Invoke(null, new object[] { record });
+    }
+    static byte[] Join(byte[] a, byte[] b) {
+        var bytes = new byte[a.Length + b.Length];
+        Buffer.BlockCopy(a, 0, bytes, 0, a.Length);
+        Buffer.BlockCopy(b, 0, bytes, a.Length, b.Length);
+        return bytes;
+    }
+    static void CommonTwoLines() {
+        byte[] first = Line(0, new string('0', 64));
+        byte[] all = Join(first, Line(1, Sha(first)));
+        using (var left = new MemoryStream(all, false))
+        using (var right = new MemoryStream(all, false)) {
+            var result = CommonJournalScanner.Scan(left, right, 10);
+            Check(result.CommonRecordCount == 2, "scan must examine both records");
+            Check(result.End == JournalScanEnd.BothEof, "both snapshots exhausted without invalid suffix");
+            Check(left.CanRead && right.CanRead, "caller owns stream lifetime");
+        }
+    }
+    sealed class ShortReadStream : MemoryStream {
+        readonly int chunk;
+        readonly int failAt;
+        public ShortReadStream(byte[] data, int chunk, int failAt) : base(data, false) {
+            this.chunk = chunk; this.failAt = failAt;
+        }
+        public override int Read(byte[] buffer, int offset, int count) {
+            if (failAt >= 0 && Position >= failAt) throw new IOException("injected read failure");
+            if (failAt >= 0) count = Math.Min(count, failAt - (int)Position);
+            return base.Read(buffer, offset, Math.Min(count, chunk));
+        }
+    }
+    static void Suffixes() {
+        byte[] first = Line(0, new string('0', 64)), next = Line(1, Sha(first));
+        byte[] all = Join(first, next);
+        byte[] partial = (byte[])next.Clone(); Array.Resize(ref partial, partial.Length - 1);
+        byte[][] suffixes = { partial, new byte[] { 10 }, Encoding.ASCII.GetBytes("garbage\n"),
+            Line(2, Sha(first)), first, new byte[CanonicalDecoder.MaxDocumentBytes] };
+        foreach (byte[] suffix in suffixes) {
+            using (var left = new MemoryStream(Join(first, suffix), false))
+            using (var right = new MemoryStream(Join(first, suffix), false)) {
+                var result = CommonJournalScanner.Scan(left, right, 10);
+                Check(result.CommonRecordCount == 1 && result.End == JournalScanEnd.InvalidSuffix, "never skip invalid/partial suffix");
+            }
+        }
+        for (int side = 0; side < 2; side++) {
+            using (var left = new MemoryStream(side == 0 ? all : first, false))
+            using (var right = new MemoryStream(side == 0 ? first : all, false)) {
+                var result = CommonJournalScanner.Scan(left, right, 10);
+                Check(result.CommonRecordCount == 1 && result.End == JournalScanEnd.InvalidSuffix, "one-sided suffix cannot promote fact");
+            }
+        }
+    }
+    static void ShortReads() {
+        byte[] first = Line(0, new string('0', 64));
+        byte[] all = Join(first, Line(1, Sha(first)));
+        foreach (int chunk in new [] { 1, 2, 7, 31, 4096 }) {
+            using (var left = new ShortReadStream(all, chunk, -1))
+            using (var right = new ShortReadStream(all, 3, -1)) {
+                var result = CommonJournalScanner.Scan(left, right, 10);
+                Check(result.CommonRecordCount == 2 && result.End == JournalScanEnd.BothEof, "different chunk boundaries do not change evidence");
+            }
+        }
+    }
+    static void ReadFailures() {
+        byte[] first = Line(0, new string('0', 64));
+        byte[] all = Join(first, Line(1, Sha(first)));
+        foreach (int failAt in new [] { 0, 1, first.Length - 1, first.Length, first.Length + 5 }) {
+            for (int side = 0; side < 2; side++) {
+                using (var left = new ShortReadStream(all, 17, side == 0 ? failAt : -1))
+                using (var right = new ShortReadStream(all, 13, side == 1 ? failAt : -1)) {
+                    var result = CommonJournalScanner.Scan(left, right, 10);
+                    Check(result.CommonRecordCount == (failAt >= first.Length ? 1 : 0), "read failure retains only complete common facts");
+                    Check(result.End == JournalScanEnd.ReadFailure, "read error is not EOF");
+                }
+            }
+        }
+    }
+    static void Limits() {
+        byte[] first = Line(0, new string('0', 64));
+        byte[] all = Join(first, Line(1, Sha(first)));
+        using (var left = new MemoryStream(first, false))
+        using (var right = new MemoryStream(first, false)) {
+            var result = CommonJournalScanner.Scan(left, right, 1);
+            Check(result.CommonRecordCount == 1 && result.End == JournalScanEnd.BothEof, "exact record budget still checks EOF");
+        }
+        using (var left = new MemoryStream(all, false))
+        using (var right = new MemoryStream(first, false)) {
+            var result = CommonJournalScanner.Scan(left, right, 1);
+            Check(result.CommonRecordCount == 1 && result.End == JournalScanEnd.RecordLimit, "do not misclassify uninspected suffix or claim EOF at budget");
+        }
+    }
+    static void InputGuards() {
+        foreach (string scenario in new [] { "same", "nonzero-left", "nonzero-right", "null-left", "null-right", "closed-left", "closed-right", "zero-limit" }) {
+            using (var left = new MemoryStream(new byte[] { 10 }, false))
+            using (var right = new MemoryStream(new byte[] { 10 }, false)) {
+                if (scenario == "nonzero-left") left.Position = 1;
+                if (scenario == "nonzero-right") right.Position = 1;
+                if (scenario == "closed-left") left.Dispose();
+                if (scenario == "closed-right") right.Dispose();
+                bool rejected = false;
+                try {
+                    CommonJournalScanner.Scan(scenario == "null-left" ? null : left,
+                        scenario == "null-right" ? null : scenario == "same" ? left : right,
+                        scenario == "zero-limit" ? 0 : 1);
+                } catch (ArgumentException) { rejected = true; }
+                Check(rejected, "reject invalid snapshot input: " + scenario);
+            }
+        }
+    }
+    static int Main(string[] args) {
+        try {
+            var type = Assembly.LoadFrom(args[0]).GetType("ItemGuard.Execution.CanonicalJson", true);
+            encode = type.GetMethod("EncodeJournalLine");
+            recordHash = type.GetMethod("ComputeRecordSha256");
+            Run("both full mirrors", CommonTwoLines);
+            Run("invalid and one-sided suffixes", Suffixes);
+            Run("arbitrary short reads", ShortReads);
+            Run("read errors retain prefix", ReadFailures);
+            Run("record budget", Limits);
+            Run("snapshot input guards", InputGuards);
+            Run("empty snapshots are not genesis evidence", delegate {
+                using (var left = new MemoryStream()) using (var right = new MemoryStream()) {
+                    var result = CommonJournalScanner.Scan(left, right, 1);
+                    Check(result.CommonRecordCount == 0 && result.End == JournalScanEnd.BothEof, "empty byte streams only");
+                }
+            });
+            Console.WriteLine("JOURNAL_SCAN cases=" + cases + " failures=" + failures);
+            return failures == 0 ? 0 : 1;
+        } catch (Exception e) { Console.WriteLine("FAIL bootstrap " + e); return 1; }
+    }
+}
+
+
+FILE tests/JournalLineBoundaryTests.cs SHA256=4f46fdb1e9f0bdb0c141cf1f7673d722e395fd934d2e2cd89e9fd2233fa072f7
+using System;
+using System.Collections;
+using System.Reflection;
+using ItemGuard.Recovery;
+
+class JournalLineBoundaryTests {
+    static MethodInfo encodeDocument;
+    static MethodInfo recordHash;
+    static byte[] LineWithBodyLength(int length) {
+        var doc = new Hashtable();
+        doc["note"] = "";
+        doc["previousRecordSha256"] = new string('0', 64);
+        doc["seq"] = (ulong)0;
+        doc["recordSha256"] = new string('0', 64);
+        byte[] empty = (byte[])encodeDocument.Invoke(null, new object[] { doc });
+        doc["note"] = new string('x', length - empty.Length);
+        doc["recordSha256"] = recordHash.Invoke(null, new object[] { doc });
+        byte[] body = (byte[])encodeDocument.Invoke(null, new object[] { doc });
+        Check(body.Length == length, "fixture body size");
+        byte[] line = new byte[body.Length + 1];
+        Buffer.BlockCopy(body, 0, line, 0, body.Length);
+        line[line.Length - 1] = 10;
+        return line;
+    }
+    static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
+    static int Main(string[] args) {
+        try {
+            Type type = Assembly.LoadFrom(args[0]).GetType("ItemGuard.Execution.CanonicalJson", true);
+            encodeDocument = type.GetMethod("EncodeDocument", new Type[] { typeof(IDictionary) });
+            recordHash = type.GetMethod("ComputeRecordSha256");
+            int cap = CanonicalDecoder.MaxDocumentBytes;
+            byte[] atCap = LineWithBodyLength(cap - 1);
+            Check(CanonicalDecoder.VerifyJournalLine(atCap) != null, "exact line cap accepted by decoder");
+            Check(new CommonJournalChain(1).AppendPair(atCap, atCap), "exact line cap accepted by chain");
+            byte[] overCap = LineWithBodyLength(cap);
+            bool rejected = false;
+            try { CanonicalDecoder.VerifyJournalLine(overCap); } catch (FormatException) { rejected = true; }
+            Check(rejected, "line cap includes LF: decoder must reject max+1");
+            var chain = new CommonJournalChain(1);
+            Check(!chain.AppendPair(overCap, overCap) && chain.Stopped, "over cap stops chain");
+            Console.WriteLine("JOURNAL_LINE_BOUNDS cases=4 failures=0");
+            return 0;
+        } catch (Exception e) { Console.WriteLine("FAIL JournalLineBoundaryTests: " + e.Message); return 1; }
+    }
+}

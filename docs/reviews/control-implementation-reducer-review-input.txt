@@ -1,0 +1,156 @@
+Independent bounded lifecycle reducer review. Vietnamese <=300 words. No tools/runtime/edits. Review pure PaperLifecycle only. Caller guarantees one process identity and factual events in common validated prefix; not a journal validator. Important correction: design 776-781 allows activity absent if no factual source; released->seal->exit must preserve code NOT_ESTABLISHED. Prior implementation wrongly required activity. Validate exact branches, order/cardinality and frozen prefix on invalid suffix. Return PASS_FOR_OFFLINE_REDUCER or BLOCK with counterexample. No product or whole guardian PASS.
+
+SPEC
+771|10. full lifecycle `<ROLE>_SPAWN_INTENT`,
+772|    `<ROLE>_PROCESS_CREATED_SUSPENDED`, `<ROLE>_EXECUTION_RELEASE_INTENT`,
+773|    `<ROLE>_EXECUTION_RELEASE_OBSERVED`, `<ROLE>_OUTPUT_SEALED`,
+774|    `<ROLE>_EXIT_OBSERVED` cho `JAVAC`, `PAPER`,
+775|    `JDI_MONITOR`, `MINEFLAYER_BOT` và từng verifier role thật sự dùng;
+776|    `EXECUTION_ACTIVITY_OBSERVED` là optional chỉ khi chưa có factual activity;
+777|    nếu output/thread/protocol source factual xuất hiện thì event là mandatory
+778|    trước `OUTPUT_SEALED`. Seal operation lấy factual counters sau drain EOF và
+779|  final thread-times; nếu activity chưa được journal thì serialized writer
+780|  commit activity trước seal, không để drain thread tự append. Failure ở activity
+781|  commit cấm seal/exit. Nếu activity đã có, không emit duplicate hoặc đòi adjacency.
+782|  Pre-release abort dùng suspended-termination pair thay
+783|    toàn bộ release/activity events;
+784|
+
+SPEC
+836|## Recovery classifications
+837|
+838|- Verifier luôn xuất bốn trục strict enum trước summary:
+839|  `paperProcess = ABSENT|SPAWN_INTENT_ONLY|CREATED_SUSPENDED|
+840|  SUSPENDED_TERMINATION_INTENT_UNCERTAIN|TERMINATED_SUSPENDED|
+841|  RELEASE_INTENT_UNCERTAIN|RELEASED|EXITED`,
+842|  `paperCodeExecution = NOT_APPLICABLE|NON_EXECUTION_ESTABLISHED|
+843|  NOT_ESTABLISHED|ESTABLISHED`,
+844|  `paperOutput = NOT_APPLICABLE|NOT_ESTABLISHED|ESTABLISHED`,
+845|  `paperExit = NOT_APPLICABLE|NOT_ESTABLISHED|ESTABLISHED`. Chỉ common valid
+846|  prefix được nâng một trục; event chỉ có ở một mirror không nâng fact.
+847|- Exact transition reducer, theo thứ tự event trong common valid prefix:
+848|  - no spawn -> `ABSENT/NOT_APPLICABLE/NOT_APPLICABLE/NOT_APPLICABLE`;
+849|  - `PAPER_SPAWN_INTENT` ->
+850|    `SPAWN_INTENT_ONLY/NOT_APPLICABLE/NOT_APPLICABLE/NOT_APPLICABLE`;
+851|  - `PAPER_PROCESS_CREATED_SUSPENDED` ->
+852|    `CREATED_SUSPENDED/NOT_ESTABLISHED/NOT_ESTABLISHED/NOT_ESTABLISHED`;
+853|  - `PAPER_SUSPENDED_TERMINATION_INTENT` -> process
+854|    `SUSPENDED_TERMINATION_INTENT_UNCERTAIN`; ba state fields còn lại không đổi;
+855|  - valid `PAPER_SUSPENDED_TERMINATION_OBSERVED` -> process
+856|    `TERMINATED_SUSPENDED`, code `NON_EXECUTION_ESTABLISHED`; output/exit chưa đổi;
+857|  - `PAPER_EXECUTION_RELEASE_INTENT` -> process `RELEASE_INTENT_UNCERTAIN`;
+858|  - `PAPER_EXECUTION_RELEASE_OBSERVED` -> process `RELEASED`; code chưa đổi;
+859|  - factual `PAPER_EXECUTION_ACTIVITY_OBSERVED` -> code `ESTABLISHED`;
+860|  - valid `PAPER_OUTPUT_SEALED` -> output `ESTABLISHED`;
+861|  - valid `PAPER_EXIT_OBSERVED` -> process `EXITED`, exit `ESTABLISHED`.
+862|
+863|  Suspend-termination và release branches loại trừ nhau. Output seal yêu cầu exact
+864|  prior branch fact và exit yêu cầu output established. Activity không được xuất
+865|  hiện trên suspended-termination branch. Event vi phạm order/cardinality/branch
+866|  làm suffix invalid; reducer dừng trước offending event, không apply một phần.
+867|  Không event nào được hạ trục đã established.
+868|
+869|  `NOT_APPLICABLE` chỉ dùng khi chưa có Paper process object
+870|  (`ABSENT|SPAWN_INTENT_ONLY`). Từ `CREATED_SUSPENDED` trở đi output/exit là
+871|  `NOT_ESTABLISHED` cho tới matching event. Chỉ exact
+872|  `SUSPENDED_TERMINATION_OBSERVED` nâng code thành
+873|  `NON_EXECUTION_ESTABLISHED`; chỉ exact activity event nâng code thành
+874|  `ESTABLISHED`.
+875|
+
+FILE tools/execution-authority/lifecycle/PaperLifecycle.cs
+1|namespace ItemGuard.Execution {
+2|    // Consumes only externally validated common-prefix events for one process identity.
+3|    public sealed class PaperLifecycle {
+4|        public string Process { get; private set; }
+5|        public string Code { get; private set; }
+6|        public string Output { get; private set; }
+7|        public string Exit { get; private set; }
+8|        public bool InvalidSuffix { get; private set; }
+9|        public PaperLifecycle() { Process = "ABSENT"; Code = Output = Exit = "NOT_APPLICABLE"; }
+10|        public bool Apply(string kind) {
+11|            if (InvalidSuffix) return false;
+12|            if (kind == "SPAWN_INTENT" && Process == "ABSENT") { Process = "SPAWN_INTENT_ONLY"; return true; }
+13|            if (kind == "PROCESS_CREATED_SUSPENDED" && Process == "SPAWN_INTENT_ONLY") {
+14|                Process = "CREATED_SUSPENDED"; Code = Output = Exit = "NOT_ESTABLISHED"; return true;
+15|            }
+16|            if (kind == "EXECUTION_RELEASE_INTENT" && Process == "CREATED_SUSPENDED") { Process = "RELEASE_INTENT_UNCERTAIN"; return true; }
+17|            if (kind == "EXECUTION_RELEASE_OBSERVED" && Process == "RELEASE_INTENT_UNCERTAIN") { Process = "RELEASED"; return true; }
+18|            if (kind == "SUSPENDED_TERMINATION_INTENT" && Process == "CREATED_SUSPENDED") { Process = "SUSPENDED_TERMINATION_INTENT_UNCERTAIN"; return true; }
+19|            if (kind == "SUSPENDED_TERMINATION_OBSERVED" && Process == "SUSPENDED_TERMINATION_INTENT_UNCERTAIN") { Process = "TERMINATED_SUSPENDED"; Code = "NON_EXECUTION_ESTABLISHED"; return true; }
+20|            if (kind == "EXECUTION_ACTIVITY_OBSERVED" && Process == "RELEASED" && Code == "NOT_ESTABLISHED" && Output == "NOT_ESTABLISHED") { Code = "ESTABLISHED"; return true; }
+21|            // Caller validates the seal's factual counters. A released process with no
+22|            // activity evidence may seal, but its code execution remains uncertain.
+23|            if (kind == "OUTPUT_SEALED" && Output == "NOT_ESTABLISHED" && (Process == "TERMINATED_SUSPENDED" || Process == "RELEASED")) { Output = "ESTABLISHED"; return true; }
+24|            if (kind == "EXIT_OBSERVED" && Output == "ESTABLISHED" && Exit == "NOT_ESTABLISHED") { Process = "EXITED"; Exit = "ESTABLISHED"; return true; }
+25|            InvalidSuffix = true; return false;
+26|        }
+27|    }
+28|}
+29|
+
+FILE tools/execution-authority/lifecycle/PaperBranchTests.cs
+1|using System;
+2|using ItemGuard.Execution;
+3|class PaperBranchTests {
+4|    static int failures;
+5|    static void Check(bool value, string label) { if (!value) { failures++; Console.WriteLine("FAIL " + label); } }
+6|    static PaperLifecycle Created() { var s = new PaperLifecycle(); s.Apply("SPAWN_INTENT"); s.Apply("PROCESS_CREATED_SUSPENDED"); return s; }
+7|    static int Main() {
+8|        var s = Created();
+9|        Check(s.Apply("EXECUTION_RELEASE_INTENT") && s.Process == "RELEASE_INTENT_UNCERTAIN", "release intent");
+10|        Check(s.Apply("EXECUTION_RELEASE_OBSERVED") && s.Process == "RELEASED" && s.Code == "NOT_ESTABLISHED", "resume not activity");
+11|        Check(s.Apply("EXECUTION_ACTIVITY_OBSERVED") && s.Code == "ESTABLISHED", "activity");
+12|        Check(s.Apply("OUTPUT_SEALED") && s.Output == "ESTABLISHED", "seal");
+13|        Check(s.Apply("EXIT_OBSERVED") && s.Process == "EXITED" && s.Exit == "ESTABLISHED", "exit");
+14|        var t = Created();
+15|        Check(t.Apply("SUSPENDED_TERMINATION_INTENT") && t.Process == "SUSPENDED_TERMINATION_INTENT_UNCERTAIN", "termination intent");
+16|        Check(t.Apply("SUSPENDED_TERMINATION_OBSERVED") && t.Process == "TERMINATED_SUSPENDED" && t.Code == "NON_EXECUTION_ESTABLISHED", "termination observed");
+17|        Check(t.Apply("OUTPUT_SEALED") && t.Apply("EXIT_OBSERVED") && t.Code == "NON_EXECUTION_ESTABLISHED", "abort exit");
+18|        // Externally validated seal with no factual activity (design 776-781).
+19|        // Release permission is not evidence that code executed OR did not execute.
+20|        var noActivity = Created();
+21|        noActivity.Apply("EXECUTION_RELEASE_INTENT");
+22|        noActivity.Apply("EXECUTION_RELEASE_OBSERVED");
+23|        Check(noActivity.Apply("OUTPUT_SEALED") && noActivity.Output == "ESTABLISHED"
+24|            && noActivity.Code == "NOT_ESTABLISHED", "zero-activity seal retains uncertainty");
+25|        Check(noActivity.Apply("EXIT_OBSERVED") && noActivity.Exit == "ESTABLISHED"
+26|            && noActivity.Code == "NOT_ESTABLISHED", "zero-activity exit retains uncertainty");
+27|        Console.WriteLine("branch failures=" + failures); return failures == 0 ? 0 : 1;
+28|    }
+29|}
+30|
+
+FILE tools/execution-authority/lifecycle/PaperPrefixTests.cs
+1|using System;
+2|using ItemGuard.Execution;
+3|class PaperPrefixTests {
+4|    static string Snapshot(PaperLifecycle s) { return s.Process+"/"+s.Code+"/"+s.Output+"/"+s.Exit; }
+5|    static int Main() {
+6|        string[][] branches = {
+7|            new [] { "SPAWN_INTENT", "PROCESS_CREATED_SUSPENDED", "EXECUTION_RELEASE_INTENT", "EXECUTION_RELEASE_OBSERVED", "EXECUTION_ACTIVITY_OBSERVED", "OUTPUT_SEALED", "EXIT_OBSERVED" },
+8|            new [] { "SPAWN_INTENT", "PROCESS_CREATED_SUSPENDED", "EXECUTION_RELEASE_INTENT", "EXECUTION_RELEASE_OBSERVED", "OUTPUT_SEALED", "EXIT_OBSERVED" },
+9|            new [] { "SPAWN_INTENT", "PROCESS_CREATED_SUSPENDED", "SUSPENDED_TERMINATION_INTENT", "SUSPENDED_TERMINATION_OBSERVED", "OUTPUT_SEALED", "EXIT_OBSERVED" }
+10|        };
+11|        string[] events = { "SPAWN_INTENT", "PROCESS_CREATED_SUSPENDED", "EXECUTION_RELEASE_INTENT", "EXECUTION_RELEASE_OBSERVED", "EXECUTION_ACTIVITY_OBSERVED", "SUSPENDED_TERMINATION_INTENT", "SUSPENDED_TERMINATION_OBSERVED", "OUTPUT_SEALED", "EXIT_OBSERVED", "UNKNOWN", null };
+12|        int checkedCases=0;
+13|        foreach (var branch in branches) for (int prefix=0; prefix<=branch.Length; prefix++) foreach (var ev in events) {
+14|            var s=new PaperLifecycle(); for(int i=0;i<prefix;i++) if(!s.Apply(branch[i])) throw new Exception("valid prefix rejected");
+15|            string before=Snapshot(s);
+16|            bool allowed=prefix<branch.Length && ev==branch[prefix];
+17|            // At created-suspended either branch is allowed.
+18|            if(prefix==2 && (ev=="EXECUTION_RELEASE_INTENT" || ev=="SUSPENDED_TERMINATION_INTENT")) allowed=true;
+19|            // Validated zero-activity seal is allowed; only activity establishes code.
+20|            if(prefix==4 && branch[2]=="EXECUTION_RELEASE_INTENT"
+21|                && (ev=="EXECUTION_ACTIVITY_OBSERVED" || ev=="OUTPUT_SEALED")) allowed=true;
+22|            if(s.Apply(ev)!=allowed) throw new Exception("wrong acceptance at "+prefix+" event "+ev);
+23|            if(!allowed) {
+24|                if(!s.InvalidSuffix || Snapshot(s)!=before) throw new Exception("invalid event changed prefix");
+25|                foreach(var later in events) if(s.Apply(later) || Snapshot(s)!=before) throw new Exception("suffix recovered after failure");
+26|            }
+27|            checkedCases++;
+28|        }
+29|        Console.WriteLine("PASS prefix/event matrix cases="+checkedCases); return 0;
+30|    }
+31|}
+32|

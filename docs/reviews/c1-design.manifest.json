@@ -1,0 +1,11 @@
+{
+  "files": {
+    "docs/design/2026-09-09-catalog-c1-index-pagination.md": "bf0e92774e5bb25efa4c5c6d591aeebdafbb87477fce2b8f73a83d6b224c8419",
+    "src/main/java/com/itemguard/persistence/SqliteSchemaManager.java": "027e5cb1ca407330ab31f15af0b25c97db985526c33dd273818e6ece14235f0a",
+    "src/main/java/com/itemguard/persistence/SqliteConnectionOwner.java": "7aff238c140f0860bfeda96ef7f287ac87e9104a7b98d6707f86734f894f9732",
+    "src/main/java/com/itemguard/catalog/CatalogRepository.java": "d35392dedf1786a0fa8ef15504f4e0f6ac807b02c0da5a90bb73226b7f3286e6",
+    "src/main/java/com/itemguard/catalog/CatalogController.java": "8e6c6fb90829d36ea6d83a2301def578f3663309a817ee70b3e21d5542940173",
+    "src/main/java/com/itemguard/catalog/CatalogReadGate.java": "ee1bb36bcf3c674782ed0d6999768cf4508fb9136f18e997da0268b6187de86d"
+  },
+  "input_sha256": "af7e83d0a3994589dc78f4dfd6d59c06b35e9a720440cceb6368b0b300868fb6"
+}

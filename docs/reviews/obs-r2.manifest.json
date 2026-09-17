@@ -1,0 +1,17 @@
+{
+  "files": {
+    "docs/design/2026-09-09-retained-observations-browser.md": "6ff959d64c9429e0d2840dce44afe248cc91d69d8a1afbdc2c3c62ccb85cf08b",
+    "src/main/java/com/itemguard/catalog/CatalogObservation.java": "40d927dc7fc5cefca4ee8aff9042302808793ad647ab04b5ee012b37a919a477",
+    "src/main/java/com/itemguard/catalog/CatalogObservations.java": "1e809b299e2ce77894e417789f720964fde19295fcbf70dfbcb3fff325194c17",
+    "src/main/java/com/itemguard/catalog/CatalogRepository.java": "1a9a7241db5ed1ccf1052ff11378a603209991564f5285cf24684e674f179da3",
+    "src/main/java/com/itemguard/catalog/CatalogController.java": "f2bcdc0c0fc5be7c4a7a13972cd3a263b5b29d07063d037f2666dcbba8771627",
+    "src/main/java/com/itemguard/catalog/CatalogUi.java": "57607ebd04512ba1d3566bfbaa8d3a5ef50be750a3ef5c11407a25168519db78",
+    "src/main/java/com/itemguard/catalog/CatalogReadGate.java": "ee1bb36bcf3c674782ed0d6999768cf4508fb9136f18e997da0268b6187de86d",
+    "src/test/java/com/itemguard/catalog/CatalogObservationRepositoryTest.java": "1a439a2a0dd50a56d8693e74975bb50991a4b205be2821e393c50549fedb93d3",
+    "src/test/java/com/itemguard/catalog/CatalogObservationControllerTest.java": "a76af00a288b21563a12fc20cac5a46a3e367c8680ff8f3c1e2541c123ae97bb",
+    "src/test/java/com/itemguard/catalog/CatalogObservationFlowTest.java": "1bba2b4a9d3922ecbac7f609c30eb9439ecf1bd4c0345cacbb5db768f8db2b80",
+    "src/test/java/com/itemguard/catalog/CatalogUiLifecycleTest.java": "f3db3eb04293c8928dece17eb69512be5f4cc0e8dbb836caf21d6db11ceb93b2",
+    "src/main/java/com/itemguard/services/ItemTrackingService.java": "01fdfc7de3f06c4c81c7894fefa7d11571e900f493f942c2669c976aa39d3247"
+  },
+  "input_sha256": "72699a9909a3c5a1912545ef55290e96ddca7b1b6cce27a164bf426d2a139076"
+}

@@ -1,0 +1,129 @@
+{
+  "anti_dupe": {
+    "action": "NOTIFY",
+    "detection-cooldown-ms": 600000,
+    "enabled": true,
+    "grace-period-ms": 3000,
+    "max-history-per-item": 1000,
+    "notify-player": false,
+    "notify-staff": true
+  },
+  "atomic_capture": {
+    "capturedAt": 1787555240665,
+    "duplicatesDetected": 1,
+    "finding": {
+      "action": "NOTIFY",
+      "code": "NZ1GMT",
+      "created_at": 1787555240595,
+      "detail": "distinct_locations=2",
+      "distinct_locations": 2,
+      "item_uuid": "c9fe8bd1-a7d6-4827-b839-49d1c22425bf",
+      "scan_epoch": 1787555240591,
+      "status": "CONFIRMED"
+    },
+    "observations": [
+      {
+        "code": "NZ1GMT",
+        "epoch_complete": 1,
+        "holder_id": "71fcf6be-e1ee-3c92-9a42-893cbe44818c",
+        "holder_type": "PLAYER",
+        "item_uuid": "c9fe8bd1-a7d6-4827-b839-49d1c22425bf",
+        "observed_at": 1787555240591,
+        "scan_epoch": 1787555240591,
+        "slot": 5
+      },
+      {
+        "code": "NZ1GMT",
+        "epoch_complete": 1,
+        "holder_id": "71fcf6be-e1ee-3c92-9a42-893cbe44818c",
+        "holder_type": "PLAYER",
+        "item_uuid": "c9fe8bd1-a7d6-4827-b839-49d1c22425bf",
+        "observed_at": 1787555240591,
+        "scan_epoch": 1787555240591,
+        "slot": 8
+      }
+    ],
+    "readOnly": true
+  },
+  "candidate_sha256": "5864c2a15e9de6b3c5b16c2f7672f1a26ea504b03e02c5f4637823e2a2d74f34",
+  "current_fixture_observation_rows": 0,
+  "duplicates_detected": 1,
+  "findings": [
+    {
+      "action": "NOTIFY",
+      "code": "NZ1GMT",
+      "created_at": 1787555240595,
+      "detail": "distinct_locations=2",
+      "distinct_locations": 2,
+      "item_uuid": "c9fe8bd1-a7d6-4827-b839-49d1c22425bf",
+      "scan_epoch": 1787555240591,
+      "status": "CONFIRMED"
+    }
+  ],
+  "fixture_canonical_rows": 1,
+  "fixture_snapshot_rows": 1,
+  "indexes": {
+    "idx_duplicate_finding_identity_created": {
+      "origin": "c",
+      "unique": 0
+    },
+    "idx_duplicate_finding_identity_epoch": {
+      "origin": "c",
+      "unique": 1
+    }
+  },
+  "integrity": "ok",
+  "issuance_enabled": false,
+  "item_snapshots": 503,
+  "observations": [
+    {
+      "code": "NZ1GMT",
+      "epoch_complete": 1,
+      "holder_id": "71fcf6be-e1ee-3c92-9a42-893cbe44818c",
+      "holder_type": "PLAYER",
+      "item_uuid": "c9fe8bd1-a7d6-4827-b839-49d1c22425bf",
+      "observed_at": 1787555240591,
+      "scan_epoch": 1787555240591,
+      "slot": 5
+    },
+    {
+      "code": "NZ1GMT",
+      "epoch_complete": 1,
+      "holder_id": "71fcf6be-e1ee-3c92-9a42-893cbe44818c",
+      "holder_type": "PLAYER",
+      "item_uuid": "c9fe8bd1-a7d6-4827-b839-49d1c22425bf",
+      "observed_at": 1787555240591,
+      "scan_epoch": 1787555240591,
+      "slot": 8
+    }
+  ],
+  "pending_claims": 0,
+  "prepared_marker": {
+    "code": "NZ1GMT",
+    "itemUuid": "c9fe8bd1-a7d6-4827-b839-49d1c22425bf",
+    "playerUuid": "71fcf6be-e1ee-3c92-9a42-893cbe44818c",
+    "savedAt": 1787555231400,
+    "serializedSha256": "3449737bcf7a3033fab56e142d7060fdcf70571a7e88fb4476a1b340493ae954",
+    "slots": [
+      5,
+      8
+    ]
+  },
+  "prepared_publications": 0,
+  "probe_sha256": "88beac7f298ef00ebe1f5343b34c91fc56495e5cbc6c16832ad886aad5102d04",
+  "reclaim_claims": 9,
+  "schema_version": 7,
+  "tag_publications": 342,
+  "tracked_items": 503,
+  "verified_marker": {
+    "code": "NZ1GMT",
+    "itemUuid": "c9fe8bd1-a7d6-4827-b839-49d1c22425bf",
+    "playerUuid": "71fcf6be-e1ee-3c92-9a42-893cbe44818c",
+    "serializedSha256": "3449737bcf7a3033fab56e142d7060fdcf70571a7e88fb4476a1b340493ae954",
+    "slots": [
+      5,
+      8
+    ],
+    "verifiedAt": 1787555306436
+  }
+}

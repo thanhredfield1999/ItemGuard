@@ -1,0 +1,175 @@
+ItemGuard LITE 1.0.0
+
+Platform: Paper 1.21.11
+Java: 21
+
+Version numbers
+The console and /plugins report this build as 1.0.0-lite, while the download file and the
+marketplace version field say 1.0.0. That is the same build, not a mismatch - please do not
+report it as a bug.
+
+Installation
+1. Stop the server. Do not use /reload, PlugMan, or any hot-loader.
+2. Put ItemGuard-LITE-1.0.0.jar into the plugins folder.
+3. Start the server once so plugins/ItemGuard/config.yml is generated, then stop the
+   server again before you edit that file.
+4. Start the server again.
+
+Backing up the database (server stopped)
+The database is a plain SQLite file at plugins/ItemGuard/itemguard.db. The plugin holds
+it open while the server runs, so a copy taken from a live server is not a safe backup.
+1. Stop the server fully and wait for the process to exit.
+2. Copy plugins/ItemGuard/itemguard.db to your backup location. If sidecar files exist
+   next to it (itemguard.db-journal, itemguard.db-wal, itemguard.db-shm), copy them in
+   the same step. Never take the .db file on its own.
+3. Keep the copy until the upgrade is confirmed good. Restore by putting the same set of
+   files back, again with the server stopped.
+Do this before every upgrade.
+
+Important
+- Do not install ItemGuard LITE together with ItemGuard Full. They share the ItemGuard
+  plugin name and PDC namespace.
+- The same warning applies to any other plugin that rewrites item lore or persistent data
+  (PDC) on the same stacks - custom-item, reforge, gem/socket, item-serialising storage or
+  cosmetic-lore plugins. LITE writes its identity tag into PDC and appends the ID line to
+  lore, so another writer on those stacks can strip or overwrite the tag, and LITE can
+  overwrite what that plugin wrote. Combinations like this have not been tested.
+- Default language is English. Set general.language to vi for Vietnamese.
+- LITE only warns about detected duplicate identities. It never deletes, confiscates,
+  moves, or grants items. The duplicate action is forced to NOTIFY in code; editing
+  config.yml cannot enable removal.
+- There is no restore, reclaim, lost-item recovery or teleport command in LITE. None is
+  registered, so no permission - including a wildcard grant - can reach one.
+- ItemGuard LITE is not a read-only plugin. It writes identity tags into item PDC and
+  periodically scans player inventories and containers. It is a non-destructive
+  writer: it never deletes, confiscates, moves or grants items, but it does write. Only
+  the /ig gui menu is read-only - clicks and drags inside that menu are cancelled.
+
+Setup warning - shop, VIP kit and gacha templates
+- If you build a template by copying an item OUT OF A PLAYER'S INVENTORY, that copy keeps the
+  original identity code, and so does every copy handed out from it. The scan then reports a
+  duplicate for every buyer. The plugin is behaving correctly; the template was contaminated
+  before it was sold.
+- Build templates from a fresh /give instead, never from an item a player has held.
+- LITE cannot strip an identity back off an item, so this is a setup rule and not something
+  you can correct afterwards. An untrack command is planned for the paid edition.
+
+What the duplicate scan can and cannot see
+- The scan looks at the inventories of ONLINE players, and sweeps the containers in
+  chunks that are ALREADY LOADED - chests, barrels, shulkers, hoppers and the rest -
+  whether or not anyone has them open. Two copies hidden in two closed chests in a
+  loaded area will raise a warning.
+- The sweep NEVER loads a chunk. Forcing chunk loads on a schedule is how a monitoring
+  plugin becomes the reason a server lags, so a stash in a region nobody visits is not
+  compared. That is a deliberate trade for server health.
+- Still not compared: ender chests (per-player storage, not a block inventory), minecart
+  and animal inventories, and the inventories of offline players.
+- The sweep is spread over many ticks with a bounded number of chunks per tick, and one
+  pass always finishes before the next begins. Both the feature and the budget are config
+  keys (anti-dupe.sweep.enabled, anti-dupe.sweep.chunks-per-tick), so you can turn the
+  cost down or off without waiting for a release.
+- Nothing here can produce a false alarm from an item simply being moved: an item seen
+  twice in the same physical slot is recorded once, and the two halves of a double chest
+  count as one location.
+- WorldGuard and Discord integration are forced off in LITE regardless of config.yml.
+- Automatic history deletion is disabled in code for LITE, so history is not pruned
+  underneath you.
+- This release supports Paper 1.21.4 and newer, including the 26.x line. Eleven versions
+  were verified on a real server with this exact JAR: 1.21.4 (build 232), 1.21.5 (114),
+  1.21.6 (48), 1.21.7 (32), 1.21.8 (60), 1.21.9 (59), 1.21.10 (130), 1.21.11 (132) on
+  Java 21, and 26.1.1 (29), 26.1.2 (74), 26.2 (123) on Java 25 - which Paper itself
+  requires there. Eleven for eleven, same JAR, no load failures.
+- The plugin is compiled against the 1.21.4 API and declares api-version 1.21.4, so the
+  compiler enforces that floor. Servers older than 1.21.4 are refused at load time rather
+  than run in an untested state.
+- Vanilla Spigot and Folia are not supported.
+- Paper versions released after the list above have not been tested. There is no
+  version-specific server code in the plugin, so newer builds are likely to work - but that
+  is an expectation, not a promise.
+
+Fixed in this build
+- Item-entity handlers now ignore events after the plugin stops, so shutdown can no
+  longer throw from a Bukkit handler.
+- A code whose tracked database row was pruned is now retired once, instead of being
+  retried on every inventory scan forever.
+
+What you can change in config.yml
+Only the settings below are read by LITE. Stop the server before editing, then start again.
+  general.language            en or vi
+  general.prefix              the chat prefix shown before plugin messages
+  general.debug               extra console logging
+  anti-dupe.enabled           turn duplicate detection on or off
+  anti-dupe.notify-staff      send the duplicate warning to staff holding itemguard.notify
+  anti-dupe.notify-player     also warn the holding player
+  worlds.disabled-worlds      list of world names LITE ignores
+  performance.inventory-scan-interval   ticks between inventory scans (default 600)
+  performance.container-scan-enabled    scan containers as well (default true)
+  uuid-tag.show-on-item       show the ID as a lore line on the item (default true in LITE)
+  uuid-tag.lore-position      where that line goes (-1 = bottom)
+Forced regardless of config.yml:
+  anti-dupe.action is always NOTIFY - LITE cannot remove or confiscate.
+  worlds.worldguard-support and discord.enabled are always off in LITE.
+  performance.auto-cleanup.interval-hours is always 0 - LITE never prunes history.
+
+Metrics
+ItemGuard LITE initialises bStats on enable (plugin ID 34029) and sends the standard
+bStats server/plugin data plus three charts: edition, language, anti_dupe_mode.
+There is no per-plugin metrics switch in ItemGuard's config.yml. The only opt-out is the
+server-wide bStats configuration at plugins/bStats/config.yml: set enabled to false and
+restart. That turns collection off for every bStats plugin on the server, not just this
+one.
+LITE performs no update check: it never contacts SpigotMC, GitHub or any version endpoint.
+bStats is the only outbound connection the plugin makes.
+
+Commands
+LITE registers exactly one command, /itemguard, with the alias /ig.
+/ig check            read the ID of the item you are holding
+/ig history          your own recent history (window of your 45 most recent events)
+/ig history #ID      drill into one of your own items; any other player's ID needs
+                     the itemguard.history.others permission
+/ig gui              read-only menu of your own recorded items, 28 per page; clicks and
+                     drags are cancelled and nothing can be taken out
+/ig search #ID       exact-ID lookup; needs itemguard.history.others (staff)
+/ig stats            database statistics (staff)
+Any other argument, including /ig help, prints the usage line.
+
+Permissions
+itemguard.check           default true   /ig check
+itemguard.history         default true   /ig history and /ig gui - the menu has no node of
+                                         its own
+itemguard.history.others  default op     investigate another player's item; also what makes
+                                         /ig search return anything useful
+itemguard.search          default op     the node /ig search checks
+itemguard.stats           default op     /ig stats
+itemguard.notify          default op     receive duplicate warnings in chat
+itemguard.admin           default op     parent node only: granting it grants the six above.
+                                         LITE registers no admin command.
+
+Setting up shops, VIP kits and gacha prizes
+Build template items from a fresh /give, never by copying an item that came out of a
+player's inventory. A copied item carries its identity tag with it, so every copy you hand
+out has the SAME ID - and ItemGuard will correctly report that one identity is in many
+places at once, for every buyer. Templates made from a clean /give get their own ID when
+each player first handles them, which is what you want.
+LITE has no command to strip an identity from an item. If a template is already
+contaminated, rebuild it from a fresh /give.
+
+Licence
+ItemGuard LITE is free to use but it is not open source. You may run it on any server you
+operate, including public and commercial ones, at no cost. You may not redistribute,
+re-upload, resell or modify the JAR; link to the official resource page instead. Full terms
+are in LICENSE.txt next to this file.
+
+Support
+Discord: https://discord.gg/EnSNSNVV5G
+
+Support boundary
+Recorded history is not live custody: a recorded location says where an item was last
+observed, not where it is now. Missing history is not proof an item never existed, and
+the oldest line shown is only the oldest inside the loaded window, not proof of origin.
+ItemGuard LITE records and warns; it does not promise complete anti-dupe prevention.
+Crafting whose output would need a new tracked identity is cancelled fail-closed, and
+that refusal message is not translated.
+Behaviour around natural block breaking has never been verified. It is disclosed here as an
+open item: do not assume items obtained that way are tracked, ignored, or handled in any
+particular way.

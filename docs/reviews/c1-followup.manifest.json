@@ -1,0 +1,17 @@
+{
+  "files": {
+    "docs/reviews/c1-review-disposition.md": "fc52c7506d4a592f1f88ff1689bb0e393620ea6af16bafea5281be3f4fb13957",
+    "src/main/java/com/itemguard/persistence/SqliteSchemaManager.java": "894aa950b3c0c0611b6b230cdf1f14fab4ac79f9e5111e334c232d0ef9817dbf",
+    "src/main/java/com/itemguard/catalog/CatalogRepository.java": "714ca14ed2465baecbf9865f03813244943ed47d4af9246659c3eeeb67c4bd72",
+    "src/test/java/com/itemguard/catalog/CatalogCleanupTest.java": "b6127f9a818c0ca8ce469f92db8225f391bff67db0e3fc5ba848f4b802d7977b",
+    "src/test/java/com/itemguard/persistence/SqliteHistoryMigrationTest.java": "a3e10b80c0a738069865f4818c0ddab946f2ec4d70abe9071953df348d2066bf",
+    "src/test/java/com/itemguard/persistence/SqliteSchemaManagerTest.java": "0f9240b16f2af7d5c0efdf1a9d6f00a9af5658c7eeb87169ada4231a372d5cc3",
+    "src/main/java/com/itemguard/persistence/SqliteConnectionOwner.java": "7aff238c140f0860bfeda96ef7f287ac87e9104a7b98d6707f86734f894f9732",
+    "src/main/java/com/itemguard/persistence/SerialDatabaseExecutor.java": "aef2b1ca5dbc1b090453be9bffc282b54a3fcaeaeb5b15de88fdf2d23d7440c5",
+    "src/main/java/com/itemguard/catalog/CatalogCategory.java": "d4d4518fe84f5c0091e0c74302565f8704d20c70e806d01dc100d05c5be9c751",
+    "src/main/java/com/itemguard/data/DatabaseManager.java": "80d69509a07afe4e877a29c913fec7944fa004ab8965eb71e6b8e9844549288c",
+    "tools/catalog/CatalogC1Probe.java": "6e83a0955ccdbde400acf25c18a46991461e348de0a37c49fb5ba499985cff75",
+    "docs/reviews/c1-scale-final.log": "cd2fa505e424a3951fe21873d5b51ad5799ecea99b75872dc333c7d8a3a14eab"
+  },
+  "input_sha256": "ea899414da4963cf2b850db15084d60a9e7773185825eda15902761bacf41107"
+}

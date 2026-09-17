@@ -1,0 +1,7 @@
+OUT=C:/Users/thanh/AppData/Local/Temp/itemguard-codec-bin
+CHAIN_BYTE_MUTATIONS cases=50745 failures=0
+CHAIN cases=25 failures=0
+JOURNAL_LINE_BOUNDS cases=4 failures=0
+FAIL both full mirrors: scan must examine both records
+JOURNAL_SCAN cases=1 failures=1
+EXIT_CODE=1

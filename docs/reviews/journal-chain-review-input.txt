@@ -1,0 +1,209 @@
+Independent bounded review Vietnamese <=300 words. No tools/edits/runtime. Review CommonJournalChain only: streaming one already split LF-terminated line per mirror, stable inputs during call, caller preserves read order and invokes for EVERY pair incl unmatched suffix. This layer verifies canonical record hash, exact pair bytes, seq starting 0 and consecutive, previous hash of full prior line incl LF, positive count budget, permanent stop retaining prefix count. NOT schema/event/process identity validation or trusted genesis/historyComplete; never used to issue FAIL_BEFORE_PAPER. Tests deliberately have minimal codec/chain fields. Return PASS_FOR_OFFLINE_CHAIN or BLOCK with concrete counterexample within scope. Consider caps before copying, missing fields and rejection behavior.
+
+FILE tools/execution-authority/recovery/CommonJournalChain.cs
+1|namespace ItemGuard.Recovery {
+2|    // Byte/hash/sequence layer only, not trusted genesis, schema, lifecycle or historyComplete.
+3|    // Caller supplies one complete line from EACH mirror in order; never filter/reorder.
+4|    public sealed class CommonJournalChain {
+5|        readonly int maximumRecords;
+6|        string previousLineHash = new string('0', 64);
+7|        public int CommonRecordCount { get; private set; }
+8|        public bool Stopped { get; private set; }
+9|        public CommonJournalChain(int maximumRecords) {
+10|            if (maximumRecords <= 0) throw new System.ArgumentOutOfRangeException("maximumRecords");
+11|            this.maximumRecords = maximumRecords;
+12|        }
+13|        bool Stop() { Stopped = true; return false; }
+14|        public bool AppendPair(byte[] first, byte[] second) {
+15|            if (Stopped) return false;
+16|            if (first == null || second == null || CommonRecordCount >= maximumRecords
+17|                || first.Length == 0 || first.Length > CanonicalDecoder.MaxDocumentBytes
+18|                || first.Length != second.Length) return Stop();
+19|            for (int i = 0; i < first.Length; i++) if (first[i] != second[i]) return Stop();
+20|            try {
+21|                var record = CanonicalDecoder.VerifyJournalLine(first);
+22|                if (!(record["seq"] is ulong) || (ulong)record["seq"] != (ulong)CommonRecordCount
+23|                    || !(record["previousRecordSha256"] is string)
+24|                    || (string)record["previousRecordSha256"] != previousLineHash) return Stop();
+25|                // Hash exact complete prior line bytes, including LF; no retained array alias.
+26|                using (var sha = System.Security.Cryptography.SHA256.Create()) {
+27|                    var text = new System.Text.StringBuilder(64);
+28|                    foreach (byte b in sha.ComputeHash(first)) text.Append(b.ToString("x2"));
+29|                    previousLineHash = text.ToString();
+30|                }
+31|                CommonRecordCount++;
+32|                return true;
+33|            } catch (System.FormatException) { return Stop(); }
+34|        }
+35|    }
+36|}
+37|
+
+FILE tools/execution-authority/tests/CommonJournalChainTests.cs
+1|using System;
+2|using System.Collections;
+3|using System.Reflection;
+4|using System.Security.Cryptography;
+5|using System.Text;
+6|using ItemGuard.Recovery;
+7|
+8|// Minimal chain documents, not full runtime journal schemas or authority receipts.
+9|class CommonJournalChainTests {
+10|    static MethodInfo encode;
+11|    static MethodInfo recordHash;
+12|    static int cases;
+13|    static int failures;
+14|    static void Check(bool value, string message) { if (!value) throw new Exception(message); }
+15|    static void Run(string name, Action test) {
+16|        cases++;
+17|        try { test(); }
+18|        catch (Exception e) { failures++; Console.WriteLine("FAIL " + name + ": " + e.Message); }
+19|    }
+20|    static string Sha(byte[] bytes) {
+21|        using (var sha = SHA256.Create()) {
+22|            var text = new StringBuilder();
+23|            foreach (byte b in sha.ComputeHash(bytes)) text.Append(b.ToString("x2"));
+24|            return text.ToString();
+25|        }
+26|    }
+27|    static byte[] Line(ulong seq, string previous, string note) {
+28|        var doc = new Hashtable();
+29|        doc["seq"] = seq; doc["previousRecordSha256"] = previous; doc["note"] = note;
+30|        doc["recordSha256"] = recordHash.Invoke(null, new object[] { doc });
+31|        return (byte[])encode.Invoke(null, new object[] { doc });
+32|    }
+33|    static void CommonPrefix() {
+34|        var chain = new CommonJournalChain(10);
+35|        byte[] first = Line(0, new string('0', 64), "genesis");
+36|        byte[] next = Line(1, Sha(first), "next");
+37|        Check(chain.AppendPair(first, (byte[])first.Clone()), "first common record");
+38|        Check(chain.CommonRecordCount == 1, "count one");
+39|        Check(chain.AppendPair(next, (byte[])next.Clone()), "next binds exact complete prior line including LF");
+40|        Check(chain.CommonRecordCount == 2 && !chain.Stopped, "two common chain records");
+41|    }
+42|    static void RejectSuffix(string scenario) {
+43|        var chain = new CommonJournalChain(10);
+44|        byte[] first = Line(0, new string('0', 64), "genesis");
+45|        Check(chain.AppendPair(first, first), "valid genesis");
+46|        byte[] next = Line(1, Sha(first), "next");
+47|        byte[] left = (byte[])next.Clone(), right = (byte[])next.Clone();
+48|        switch (scenario) {
+49|            case "missing-left": left = null; break;
+50|            case "missing-right": right = null; break;
+51|            case "missing-both": left = right = null; break;
+52|            case "truncated": Array.Resize(ref left, left.Length - 1); right = (byte[])left.Clone(); break;
+53|            case "one-sided-truncation": Array.Resize(ref right, right.Length - 1); break;
+54|            case "gap": left = right = Line(2, Sha(first), "gap"); break;
+55|            case "repeat": left = right = first; break;
+56|            case "wrong-previous": left = right = Line(1, new string('0', 64), "wrong"); break;
+57|            case "previous-excludes-LF":
+58|                var withoutLf = new byte[first.Length - 1];
+59|                Buffer.BlockCopy(first, 0, withoutLf, 0, withoutLf.Length);
+60|                left = right = Line(1, Sha(withoutLf), "wrong hash boundary"); break;
+61|            case "different-valid-records": right = Line(1, Sha(first), "else"); break;
+62|            case "corrupt-both": left[10] ^= 1; right = (byte[])left.Clone(); break;
+63|            case "oversized": left = right = new byte[1048577]; break;
+64|            case "double-LF": Array.Resize(ref left, left.Length + 1); left[left.Length - 1] = 10; right = left; break;
+65|            default: throw new Exception("unknown fixture");
+66|        }
+67|        Check(!chain.AppendPair(left, right) && chain.Stopped, "bad suffix stops");
+68|        Check(chain.CommonRecordCount == 1, "prefix fact retained");
+69|        Check(!chain.AppendPair(next, next) && chain.CommonRecordCount == 1, "cannot skip bad record and resume");
+70|    }
+71|    static void MalformedChainField(string field, object value) {
+72|        var doc = new Hashtable();
+73|        doc["seq"] = (ulong)0; doc["previousRecordSha256"] = new string('0', 64);
+74|        if (value == null) doc.Remove(field); else doc[field] = value;
+75|        doc["recordSha256"] = recordHash.Invoke(null, new object[] { doc });
+76|        byte[] bytes = (byte[])encode.Invoke(null, new object[] { doc });
+77|        var chain = new CommonJournalChain(10);
+78|        Check(!chain.AppendPair(bytes, bytes) && chain.Stopped && chain.CommonRecordCount == 0, "valid record hash does not excuse invalid chain field");
+79|    }
+80|    static void RecordBudget() {
+81|        var chain = new CommonJournalChain(1);
+82|        byte[] first = Line(0, new string('0', 64), "genesis");
+83|        byte[] next = Line(1, Sha(first), "next");
+84|        Check(chain.AppendPair(first, first), "within budget");
+85|        Check(!chain.AppendPair(next, next) && chain.Stopped && chain.CommonRecordCount == 1, "over budget retains prefix");
+86|    }
+87|    static void InputAlias() {
+88|        var chain = new CommonJournalChain(10);
+89|        byte[] first = Line(0, new string('0', 64), "genesis");
+90|        byte[] next = Line(1, Sha(first), "next");
+91|        Check(chain.AppendPair(first, first), "first");
+92|        Array.Clear(first, 0, first.Length);
+93|        Check(chain.AppendPair(next, next), "later caller mutation must not change prior-line binding");
+94|    }
+95|    static int Main(string[] args) {
+96|        try {
+97|            var type = Assembly.LoadFrom(args[0]).GetType("ItemGuard.Execution.CanonicalJson", true);
+98|            encode = type.GetMethod("EncodeJournalLine");
+99|            recordHash = type.GetMethod("ComputeRecordSha256");
+100|            Run("two common records with independent codecs", CommonPrefix);
+101|            foreach (string scenario in new [] { "missing-left", "missing-right", "missing-both", "truncated", "one-sided-truncation", "gap", "repeat", "wrong-previous", "previous-excludes-LF", "different-valid-records", "corrupt-both", "oversized", "double-LF" }) {
+102|                string name = scenario;
+103|                Run(name, delegate { RejectSuffix(name); });
+104|            }
+105|            Run("missing seq", delegate { MalformedChainField("seq", null); });
+106|            Run("string seq", delegate { MalformedChainField("seq", "0"); });
+107|            Run("nonzero genesis seq", delegate { MalformedChainField("seq", (ulong)1); });
+108|            Run("missing previous hash", delegate { MalformedChainField("previousRecordSha256", null); });
+109|            Run("numeric previous hash", delegate { MalformedChainField("previousRecordSha256", (ulong)0); });
+110|            Run("wrong genesis seed", delegate { MalformedChainField("previousRecordSha256", new string('a', 64)); });
+111|            Run("record budget", RecordBudget);
+112|            Run("caller array mutation", InputAlias);
+113|            Run("invalid limit", delegate {
+114|                bool rejected = false;
+115|                try { new CommonJournalChain(0); } catch (ArgumentOutOfRangeException) { rejected = true; }
+116|                Check(rejected, "positive budget required");
+117|            });
+118|            Console.WriteLine("CHAIN cases=" + cases + " failures=" + failures);
+119|            return failures == 0 ? 0 : 1;
+120|        } catch (Exception e) { Console.WriteLine("FAIL bootstrap " + e); return 1; }
+121|    }
+122|}
+123|
+
+DECODER
+40|        /// <summary>Verifies one journal line: exactly one terminating LF, strict canonical
+41|        /// body, canonical round-trip byte equality, a lowercase hex-64 <c>recordSha256</c>
+42|        /// member, and a hash matching the deletion pre-image.</summary>
+43|        public static IDictionary VerifyJournalLine(byte[] line) {
+44|            if (line == null) throw new FormatException("line required");
+45|            if (line.Length < 2) throw new FormatException("line too short");
+46|            if (line[line.Length - 1] != 0x0A) throw new FormatException("line must end with exactly one LF");
+47|            if (line[line.Length - 2] == 0x0A) throw new FormatException("line must end with exactly one LF");
+48|            if (line[line.Length - 2] == 0x0D) throw new FormatException("CR is not permitted");
+49|
+50|            var body = new byte[line.Length - 1];
+51|            Buffer.BlockCopy(line, 0, body, 0, body.Length);
+52|            for (int k = 0; k < body.Length; k++) {
+53|                if (body[k] == 0x0A) throw new FormatException("embedded LF in record body");
+54|            }
+55|
+56|            IDictionary record = ParseDocument(body);
+57|
+58|            // Round-trip: rebuild canonical bytes and demand exact equality before hashing.
+59|            byte[] rebuilt = CanonicalReEncoder.Encode(record);
+60|            if (rebuilt.Length != body.Length) throw new FormatException("record is not exact canonical bytes");
+61|            for (int k = 0; k < body.Length; k++) {
+62|                if (rebuilt[k] != body[k]) throw new FormatException("record is not exact canonical bytes");
+63|            }
+64|
+65|            object declared = record.Contains(RecordHashMember) ? record[RecordHashMember] : null;
+66|            if (declared == null) throw new FormatException("record is missing " + RecordHashMember);
+67|            var hex = declared as string;
+68|            if (!IsLowerHex64(hex)) throw new FormatException(RecordHashMember + " must be lowercase hex-64");
+69|            if (hex != ComputeRecordSha256(record)) throw new FormatException("record hash mismatch");
+70|            return record;
+71|        }
+72|
+73|        public static bool IsLowerHex64(string value) {
+74|            if (value == null || value.Length != 64) return false;
+75|            foreach (char c in value) {
+76|                bool ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+77|                if (!ok) return false;
+78|            }
+79|            return true;
+80|        }
+81|

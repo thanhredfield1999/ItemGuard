@@ -1,0 +1,582 @@
+Review exact bounded pure dual journal commit policy, implementation and tests. Existing approved design mirror rule E then C append+flush before ACK, no atomic cross-volume claim; core is internal trusted adapter only. Test-only sinks, no host IO or runtime namespace. Check false success/partial writes/poison, sequencing/hash, bytes ownership, reentry/concurrent ordering. Return PASS_FOR_OFFLINE_CANDIDATE or BLOCK and concrete findings. No tools, no runtime authorization, no evidence attestation. Parent ran full offline suites incl 56 pure dual checks. Answer Vietnamese concise.
+
+FILE docs/design/2026-09-09-dual-journal-commit-core.md
+# P0 — bounded dual journal commit core
+
+Scope: implement only the pure sequential commit protocol already required by successor35 design lines516–521, canonical bytes/chain lines523–581 and TDD slice1 line934. Not the host writer or authority. No NtCreateFile/FileStream/process/token/ACL/runtime namespace. The existing approved full guardian architecture is NOT replaced.
+
+Two injected sinks expose Append(byte[]) -> written byte count and Flush(). True return from TryCommit requires exact full canonical line appended and flushed to sink E then sink C; no ACK callback exists here. Caller must not treat old LastCommittedLineSha256 as a new successful commit when TryCommit returns false.
+
+Validate canonical/hash line with guardian codec, sequence starting zero/previous complete-line SHA and positive max-record budget before append. Freeze bytes and provide separate array copy per sink. Any append/flush exception/short write or invalid order poisons instance; no retry/reuse, no further writes. Serialize threads; reject callback reentry terminally. Bound this class's retained state to count/hash, not record history.
+
+Caller owns a stable plain record tree exclusively until TryCommit returns; a hostile custom IDictionary implementation or concurrent mutation during canonical encoding is outside this internal API contract. Sink delegates are trusted synchronous host adapters, not untrusted plugin callbacks. They must not await another thread calling this instance. Serialization here is safety, NOT liveness: blocked native append/flush needs independently owned external watchdog/job-close path. State properties are inspected on the serial owner or after joining the commit operation, not as a cross-thread progress protocol.
+
+External owner retains responsibility for distinct NTFS volume/file/parent identities, final ACL/MIC at relative NtCreateFile creation, holding capability handles, protection and parent flush, native exact write/flush semantics, closing jobs on failure, deadlines and strict event/trusted genesis schema. A mock sink reporting Flush success is NOT disk durability evidence. Host sink cannot fallback to FileStream. Unit PASS must never grant runtime receipt.
+
+TDD cases: canonical positive two commits and recovery verifier interoperability; duplicate/gap/wrong previous, malformed hash, every sink write/flush error/short write, poisoned replay, maximum record bound, reentrancy and concurrent append, immutable byte copies. New pure core remains unused by runtime until host implementation and exact sealed review gates pass.
+
+
+FILE tools/execution-authority/guardian/DualJournalCommitCore.cs
+using System;
+using System.Collections;
+namespace ItemGuard.Execution {
+    // Pure commit policy only; no disk, native handle, schema or runtime authority.
+    public sealed class DualJournalCommitCore {
+        readonly Func<byte[], int> appendFirst, appendSecond;
+        readonly Action flushFirst, flushSecond;
+        readonly int maximumRecords;
+        readonly object gate = new object();
+        bool committing;
+        public bool Failed { get; private set; }
+        public int CommittedCount { get; private set; }
+        public string LastCommittedLineSha256 { get; private set; }
+        public DualJournalCommitCore(Func<byte[], int> appendFirst, Action flushFirst,
+            Func<byte[], int> appendSecond, Action flushSecond, int maximumRecords) {
+            if (appendFirst == null) throw new ArgumentNullException("appendFirst");
+            if (flushFirst == null) throw new ArgumentNullException("flushFirst");
+            if (appendSecond == null) throw new ArgumentNullException("appendSecond");
+            if (flushSecond == null) throw new ArgumentNullException("flushSecond");
+            this.appendFirst = appendFirst; this.flushFirst = flushFirst;
+            this.appendSecond = appendSecond; this.flushSecond = flushSecond;
+            if (maximumRecords <= 0) throw new ArgumentOutOfRangeException("maximumRecords");
+            this.maximumRecords = maximumRecords;
+        }
+        public bool TryCommit(IDictionary record) {
+            lock (gate) { return CommitLocked(record); }
+        }
+        bool CommitLocked(IDictionary record) {
+            if (Failed) return false;
+            if (committing) return Reject();
+            committing = true;
+            try {
+                if (record == null || CommittedCount >= maximumRecords
+                    || !(record["seq"] is ulong) || (ulong)record["seq"] != (ulong)CommittedCount
+                    || !(record["previousRecordSha256"] is string)
+                    || (string)record["previousRecordSha256"] != (LastCommittedLineSha256 ?? new string('0', 64))) return Reject();
+                byte[] line = CanonicalJson.EncodeJournalLine(record);
+                if (appendFirst((byte[])line.Clone()) != line.Length || Failed) return Reject();
+                flushFirst();
+                if (Failed) return false;
+                if (appendSecond((byte[])line.Clone()) != line.Length || Failed) return Reject();
+                flushSecond();
+                if (Failed) return false;
+                using (var sha = System.Security.Cryptography.SHA256.Create()) {
+                    var text = new System.Text.StringBuilder(64);
+                    foreach (byte b in sha.ComputeHash(line)) text.Append(b.ToString("x2"));
+                    LastCommittedLineSha256 = text.ToString();
+                }
+                CommittedCount++;
+                return true;
+            } catch (Exception) {
+                return Reject();
+            } finally {
+                committing = false;
+            }
+        }
+        bool Reject() { Failed = true; return false; }
+    }
+}
+
+
+FILE tools/execution-authority/guardian/CanonicalJson.cs
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Text;
+
+namespace ItemGuard.Execution {
+    /// <summary>
+    /// Guardian-side canonical JSON v1 encoder. Pure in-memory, no I/O, no runtime or
+    /// process dependency. Deliberately independent from the recovery decoder assembly.
+    ///
+    /// Codec v1: UTF-8 without BOM; root must be an object; members sorted by
+    /// lexicographic unsigned bytes of the strict-UTF-8 encoded key (shorter prefix
+    /// first); duplicate keys rejected; escapes limited to \" \\ and lowercase \u00xx
+    /// for U+0000..001F; arrays keep order; value domain is bool, string, object,
+    /// array and UInt64 only; no whitespace outside strings; no trailing LF.
+    /// </summary>
+    public static class CanonicalJson {
+        public const int MaxDepth = 32;
+        public const int MaxContainerEntries = 4096;
+        public const int MaxDocumentBytes = 1024 * 1024;
+        public const int MaxFrameBytes = 64 * 1024;
+
+        static readonly UTF8Encoding Utf8 = new UTF8Encoding(false, true);
+
+        public static byte[] EncodeDocument(IDictionary root) {
+            return EncodeDocument(root, MaxDocumentBytes);
+        }
+
+        public const string RecordHashMember = "recordSha256";
+
+        /// <summary>SHA-256 of the canonical encoding of <paramref name="body"/> after
+        /// deleting exactly the top-level <c>recordSha256</c> member. No placeholder, no
+        /// LF; nested members of the same name are preserved.</summary>
+        public static string ComputeRecordSha256(IDictionary body) {
+            if (body == null) throw new ArgumentException("record body required");
+            var preImage = new System.Collections.Specialized.OrderedDictionary();
+            foreach (DictionaryEntry e in body) {
+                var key = e.Key as string;
+                if (key == null) throw new ArgumentException("member name must be a string");
+                if (key == RecordHashMember) continue;
+                preImage.Add(key, e.Value);
+            }
+            return Hex(EncodeDocument(preImage));
+        }
+
+        /// <summary>Canonical record bytes plus exactly one terminating LF. The record must
+        /// already carry a lowercase hex-64 <c>recordSha256</c> matching its own pre-image;
+        /// a body without it is rejected rather than silently hashed.</summary>
+        public static byte[] EncodeJournalLine(IDictionary record) {
+            if (record == null) throw new ArgumentException("record required");
+            object declared = null;
+            bool present = false;
+            foreach (DictionaryEntry e in record) {
+                if ((e.Key as string) == RecordHashMember) { declared = e.Value; present = true; break; }
+            }
+            if (!present) throw new ArgumentException("record is missing " + RecordHashMember);
+            var hex = declared as string;
+            if (!IsLowerHex64(hex)) throw new ArgumentException(RecordHashMember + " must be lowercase hex-64");
+            if (hex != ComputeRecordSha256(record))
+                throw new ArgumentException(RecordHashMember + " does not match record pre-image");
+
+            byte[] bodyBytes = EncodeDocument(record, MaxDocumentBytes - 1);
+            var line = new byte[bodyBytes.Length + 1];
+            Buffer.BlockCopy(bodyBytes, 0, line, 0, bodyBytes.Length);
+            line[bodyBytes.Length] = 0x0A;
+            return line;
+        }
+
+        public static bool IsLowerHex64(string value) {
+            if (value == null || value.Length != 64) return false;
+            foreach (char c in value) {
+                bool ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+                if (!ok) return false;
+            }
+            return true;
+        }
+
+        static string Hex(byte[] data) {
+            using (var sha = System.Security.Cryptography.SHA256.Create()) {
+                byte[] h = sha.ComputeHash(data);
+                var sb = new StringBuilder(64);
+                foreach (byte x in h) sb.Append(x.ToString("x2", CultureInfo.InvariantCulture));
+                return sb.ToString();
+            }
+        }
+
+        /// <summary>Control-frame pre-image: identical codec, tighter 64 KiB cap.</summary>
+        public static byte[] EncodeFrameBody(IDictionary root) {
+            return EncodeDocument(root, MaxFrameBytes);
+        }
+
+        public static byte[] EncodeDocument(IDictionary root, int maxBytes) {
+            if (root == null) throw new ArgumentException("root object required");
+            if (maxBytes <= 0) throw new ArgumentException("maxBytes must be positive");
+            var sb = new StringBuilder();
+            WriteObject(sb, root, 1, maxBytes);
+            byte[] bytes = Utf8.GetBytes(sb.ToString());
+            if (bytes.Length > maxBytes)
+                throw new ArgumentException("document exceeds " + maxBytes + " byte cap");
+            return bytes;
+        }
+
+        static void CheckBudget(StringBuilder sb, int maxBytes) {
+            // Cheap pre-allocation guard: UTF-16 length is a lower bound on UTF-8 byte
+            // length for BMP-heavy content, so this trips long before memory blows up.
+            // The exact byte-length check still runs on the finished document.
+            if (sb.Length > maxBytes)
+                throw new ArgumentException("document exceeds " + maxBytes + " byte cap");
+        }
+
+        static void WriteObject(StringBuilder sb, IDictionary map, int depth, int maxBytes) {
+            if (depth > MaxDepth) throw new ArgumentException("nesting exceeds depth " + MaxDepth);
+            if (map.Count > MaxContainerEntries)
+                throw new ArgumentException("object exceeds " + MaxContainerEntries + " members");
+
+            var members = new List<Member>(map.Count);
+            foreach (DictionaryEntry entry in map) {
+                var key = entry.Key as string;
+                if (key == null) throw new ArgumentException("member name must be a string");
+                members.Add(new Member(key, Utf8.GetBytes(key), entry.Value));
+            }
+            members.Sort(Member.CompareKeyBytes);
+            for (int i = 1; i < members.Count; i++) {
+                if (Member.CompareKeyBytes(members[i - 1], members[i]) == 0)
+                    throw new ArgumentException("duplicate member name");
+            }
+
+            sb.Append('{');
+            for (int i = 0; i < members.Count; i++) {
+                if (i > 0) sb.Append(',');
+                CanonicalString.AppendEncoded(sb, members[i].Key);
+                sb.Append(':');
+                WriteValue(sb, members[i].Value, depth, maxBytes);
+                CheckBudget(sb, maxBytes);
+            }
+            sb.Append('}');
+        }
+
+        static void WriteArray(StringBuilder sb, IList list, int depth, int maxBytes) {
+            if (depth > MaxDepth) throw new ArgumentException("nesting exceeds depth " + MaxDepth);
+            if (list.Count > MaxContainerEntries)
+                throw new ArgumentException("array exceeds " + MaxContainerEntries + " elements");
+            sb.Append('[');
+            for (int i = 0; i < list.Count; i++) {
+                if (i > 0) sb.Append(',');
+                WriteValue(sb, list[i], depth, maxBytes);
+                CheckBudget(sb, maxBytes);
+            }
+            sb.Append(']');
+        }
+
+        static void WriteValue(StringBuilder sb, object value, int depth, int maxBytes) {
+            if (value == null) throw new ArgumentException("null is not part of codec v1");
+            if (value is bool) { sb.Append(((bool)value) ? "true" : "false"); return; }
+            if (value is ulong) { sb.Append(((ulong)value).ToString(CultureInfo.InvariantCulture)); return; }
+            var s = value as string;
+            if (s != null) { CanonicalString.AppendEncoded(sb, s); return; }
+            var map = value as IDictionary;
+            if (map != null) { WriteObject(sb, map, depth + 1, maxBytes); return; }
+            var list = value as IList;
+            if (list != null) { WriteArray(sb, list, depth + 1, maxBytes); return; }
+            throw new ArgumentException("unsupported value type " + value.GetType().FullName);
+        }
+
+        sealed class Member {
+            public readonly string Key;
+            public readonly byte[] KeyBytes;
+            public readonly object Value;
+            public Member(string key, byte[] keyBytes, object value) {
+                Key = key; KeyBytes = keyBytes; Value = value;
+            }
+            public static int CompareKeyBytes(Member a, Member b) {
+                byte[] x = a.KeyBytes, y = b.KeyBytes;
+                int n = x.Length < y.Length ? x.Length : y.Length;
+                for (int i = 0; i < n; i++) {
+                    if (x[i] != y[i]) return x[i] < y[i] ? -1 : 1;
+                }
+                return x.Length.CompareTo(y.Length);
+            }
+        }
+    }
+}
+
+
+FILE tools/execution-authority/guardian/CanonicalString.cs
+using System;
+using System.Globalization;
+using System.Text;
+
+namespace ItemGuard.Execution {
+    public static class CanonicalString {
+        public static byte[] Encode(string value) {
+            if (value == null) throw new ArgumentNullException("value");
+            var output = new StringBuilder();
+            AppendEncoded(output, value);
+            return new UTF8Encoding(false, true).GetBytes(output.ToString());
+        }
+
+        /// <summary>Appends the canonical JSON string form (including quotes) of
+        /// <paramref name="value"/>. Escapes only quote, backslash and U+0000..001F
+        /// as lowercase \u00xx; every other scalar stays raw.</summary>
+        public static void AppendEncoded(StringBuilder output, string value) {
+            if (value == null) throw new ArgumentNullException("value");
+            output.Append('"');
+            foreach (char c in value) {
+                if (c == '"' || c == '\\') output.Append('\\').Append(c);
+                else if (c < 32) output.Append("\\u00").Append(((int)c).ToString("x2", CultureInfo.InvariantCulture));
+                else output.Append(c);
+            }
+            output.Append('"');
+        }
+    }
+}
+
+
+FILE tools/execution-authority/tests/DualJournalCommitTests.cs
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Text;
+using ItemGuard.Execution;
+
+class DualJournalCommitTests {
+    static int checks;
+    static void Check(bool ok, string label) { checks++; if (!ok) throw new Exception(label); }
+    static IDictionary Record(ulong seq, string previous) {
+        var body = new Hashtable(); body["seq"] = seq; body["previousRecordSha256"] = previous;
+        body["event"] = "TEST_ONLY";
+        body["recordSha256"] = CanonicalJson.ComputeRecordSha256(body);
+        return body;
+    }
+    static string Hash(byte[] bytes) {
+        using (var hash = System.Security.Cryptography.SHA256.Create()) {
+            var text = new StringBuilder(); foreach (byte b in hash.ComputeHash(bytes)) text.Append(b.ToString("x2"));
+            return text.ToString();
+        }
+    }
+    static int Main() {
+        try {
+            var order = new List<string>(); byte[] first = null, second = null;
+            var writer = new DualJournalCommitCore(
+                bytes => { order.Add("E.write"); first = bytes; return bytes.Length; }, () => order.Add("E.flush"),
+                bytes => { order.Add("C.write"); second = bytes; return bytes.Length; }, () => order.Add("C.flush"), 2);
+            var record = Record(0, new string('0', 64));
+            Check(writer.TryCommit(record), "both append and flush must permit commit");
+            Check(String.Join(",", order) == "E.write,E.flush,C.write,C.flush", "exact dual commit order");
+            Check(Convert.ToBase64String(first) == Convert.ToBase64String(second), "same exact bytes");
+            Check(!Object.ReferenceEquals(first, second), "sinks cannot alias line arrays");
+            Check(writer.CommittedCount == 1 && !writer.Failed, "commit count");
+            Check(writer.LastCommittedLineSha256 == Hash(first), "hash complete LF-terminated line");
+            var recovery = new ItemGuard.Recovery.CommonJournalChain(2);
+            Check(recovery.AppendPair(first, second), "independent recovery accepts committed bytes");
+            Check(writer.TryCommit(Record(1, writer.LastCommittedLineSha256)), "second chained commit");
+            Check(writer.CommittedCount == 2, "second count");
+            Check(recovery.AppendPair(first, second) && recovery.CommonRecordCount == 2, "independent recovery accepts chained bytes");
+            for (int point = 0; point < 6; point++) {
+                int failAt = point, calls = 0;
+                var broken = new DualJournalCommitCore(
+                    bytes => { calls++; if (failAt == 0) throw new System.IO.IOException("E.write"); return failAt == 4 ? bytes.Length - 1 : bytes.Length; },
+                    () => { calls++; if (failAt == 1) throw new System.IO.IOException("E.flush"); },
+                    bytes => { calls++; if (failAt == 2) throw new System.IO.IOException("C.write"); return failAt == 5 ? bytes.Length - 1 : bytes.Length; },
+                    () => { calls++; if (failAt == 3) throw new System.IO.IOException("C.flush"); }, 2);
+                bool result = true;
+                try { result = broken.TryCommit(Record(0, new string('0', 64))); }
+                catch (Exception) { Check(false, "sink failure must poison without throwing"); }
+                Check(!result && broken.Failed && broken.CommittedCount == 0, "no commit on partial mirror");
+                int stoppedAt = calls;
+                Check(!broken.TryCommit(Record(0, new string('0', 64))) && calls == stoppedAt, "poison prevents all retries");
+                Check(calls == (point == 4 ? 1 : point == 5 ? 3 : point + 1), "stop at exact failed stage");
+            }
+            foreach (string defect in new string[]{"seq", "previous", "hash", "missing", "null", "duplicate", "limit"}) {
+                int writes = 0;
+                var invalid = new DualJournalCommitCore(bytes => { writes++; return bytes.Length; }, () => {}, bytes => { writes++; return bytes.Length; }, () => {}, 1);
+                var body = Record(0, new string('0', 64));
+                if (defect == "seq") body["seq"] = 1UL;
+                if (defect == "previous") body["previousRecordSha256"] = new string('1', 64);
+                if (defect == "missing") body.Remove("seq");
+                if (defect != "hash") body["recordSha256"] = CanonicalJson.ComputeRecordSha256(body);
+                else body["recordSha256"] = new string('f', 64);
+                if (defect == "duplicate" || defect == "limit") {
+                    Check(invalid.TryCommit(body), "first commit before invalid suffix");
+                    if (defect == "limit") body = Record(1, invalid.LastCommittedLineSha256);
+                }
+                int before = writes;
+                Check(!invalid.TryCommit(defect == "null" ? null : body), "invalid chain rejected before append: " + defect);
+                Check(invalid.Failed && writes == before, "invalid chain terminal with no writes");
+            }
+            int reentrantCalls = 0; bool inside = false, nested = true;
+            DualJournalCommitCore reentrant = null;
+            reentrant = new DualJournalCommitCore(bytes => {
+                reentrantCalls++;
+                if (!inside) { inside = true; nested = reentrant.TryCommit(Record(0, new string('0', 64))); }
+                return bytes.Length;
+            }, () => { reentrantCalls++; }, bytes => { reentrantCalls++; return bytes.Length; }, () => { reentrantCalls++; }, 2);
+            Check(!reentrant.TryCommit(Record(0, new string('0', 64))) && !nested, "reentrant callback must fail both commits");
+            Check(reentrant.Failed && reentrant.CommittedCount == 0 && reentrantCalls == 1, "reentrant call poisons before next sink action");
+            var entered = new System.Threading.ManualResetEventSlim(false);
+            var release = new System.Threading.ManualResetEventSlim(false);
+            var started = new System.Threading.ManualResetEventSlim(false);
+            var finished = new System.Threading.ManualResetEventSlim(false);
+            int serialWrites = 0; bool a = false, b = false;
+            var serial = new DualJournalCommitCore(bytes => {
+                if (System.Threading.Interlocked.Increment(ref serialWrites) == 1) {
+                    entered.Set(); if (!release.Wait(3000)) throw new Exception("test release timeout");
+                }
+                return bytes.Length;
+            }, () => {}, bytes => bytes.Length, () => {}, 2);
+            var record0 = Record(0, new string('0', 64));
+            var record1 = Record(1, Hash(CanonicalJson.EncodeJournalLine(record0)));
+            var threadA = new System.Threading.Thread(() => { a = serial.TryCommit(record0); });
+            var threadB = new System.Threading.Thread(() => { started.Set(); b = serial.TryCommit(record1); finished.Set(); });
+            threadA.Start(); Check(entered.Wait(3000), "first serial sink entered"); threadB.Start();
+            Check(started.Wait(3000), "second serial request started");
+            bool early = finished.Wait(150);
+            release.Set(); Check(threadA.Join(3000) && threadB.Join(3000), "serial threads finish");
+            Check(!early && a && b && serial.CommittedCount == 2 && !serial.Failed, "concurrent commits must serialize, not poison");
+            byte[] clean = CanonicalJson.EncodeJournalLine(Record(0, new string('0', 64)));
+            byte[] sinkTwo = null;
+            var mutation = new DualJournalCommitCore(bytes => { bytes[0] ^= 1; return bytes.Length; }, () => {},
+                bytes => { sinkTwo = bytes; return bytes.Length; }, () => {}, 1);
+            Check(mutation.TryCommit(Record(0, new string('0', 64))), "sink return contract only, no durability attestation");
+            Check(Convert.ToBase64String(clean) == Convert.ToBase64String(sinkTwo) && mutation.LastCommittedLineSha256 == Hash(clean), "first sink cannot mutate second bytes or retained hash");
+            for (int missing = 0; missing < 4; missing++) {
+                bool rejected = false;
+                Func<byte[], int> append = bytes => bytes.Length; Action flush = () => {};
+                try { new DualJournalCommitCore(missing == 0 ? null : append, missing == 1 ? null : flush,
+                    missing == 2 ? null : append, missing == 3 ? null : flush, 1); }
+                catch (ArgumentNullException) { rejected = true; }
+                Check(rejected, "missing sink must reject at construction");
+            }
+            Console.WriteLine("DUAL_COMMIT checks=" + checks + " failures=0 (pure sinks only)"); return 0;
+        } catch (Exception ex) { Console.WriteLine("FAIL " + ex.Message); return 1; }
+    }
+}
+
+
+FILE tools/execution-authority/recovery/CommonJournalChain.cs
+namespace ItemGuard.Recovery {
+    // Byte/hash/sequence layer only, not trusted genesis, schema, lifecycle or historyComplete.
+    // Caller supplies one complete line from EACH mirror in order; never filter/reorder.
+    public sealed class CommonJournalChain {
+        readonly int maximumRecords;
+        string previousLineHash = new string('0', 64);
+        public int CommonRecordCount { get; private set; }
+        public bool Stopped { get; private set; }
+        public CommonJournalChain(int maximumRecords) {
+            if (maximumRecords <= 0) throw new System.ArgumentOutOfRangeException("maximumRecords");
+            this.maximumRecords = maximumRecords;
+        }
+        bool Stop() { Stopped = true; return false; }
+        public bool AppendPair(byte[] first, byte[] second) {
+            if (Stopped) return false;
+            if (first == null || second == null || CommonRecordCount >= maximumRecords
+                || first.Length == 0 || first.Length > CanonicalDecoder.MaxDocumentBytes
+                || first.Length != second.Length) return Stop();
+            for (int i = 0; i < first.Length; i++) if (first[i] != second[i]) return Stop();
+            try {
+                var record = CanonicalDecoder.VerifyJournalLine(first);
+                if (!(record["seq"] is ulong) || (ulong)record["seq"] != (ulong)CommonRecordCount
+                    || !(record["previousRecordSha256"] is string)
+                    || (string)record["previousRecordSha256"] != previousLineHash) return Stop();
+                // Hash exact complete prior line bytes, including LF; no retained array alias.
+                using (var sha = System.Security.Cryptography.SHA256.Create()) {
+                    var text = new System.Text.StringBuilder(64);
+                    foreach (byte b in sha.ComputeHash(first)) text.Append(b.ToString("x2"));
+                    previousLineHash = text.ToString();
+                }
+                CommonRecordCount++;
+                return true;
+            } catch (System.FormatException) { return Stop(); }
+        }
+    }
+}
+
+
+FILE tools/execution-authority/build/dual-commit-test.sh
+#!/usr/bin/env bash
+# Pure dual-commit policy tests; no host sink, ACL or runtime namespace.
+set -euo pipefail
+source "$(dirname "$0")/codec-build.sh"
+build_lib "$ROOT/guardian" GuardianCommit.dll CanonicalString.cs CanonicalJson.cs DualJournalCommitCore.cs
+build_lib "$ROOT/recovery" RecoveryJournal.dll CanonicalDecoder.cs CanonicalReEncoder.cs CommonJournalChain.cs CommonJournalScanner.cs
+build_exe "$ROOT/tests" DualJournalCommitTests.exe DualJournalCommitTests.cs "-reference:$(native "$OUTU/GuardianCommit.dll")" "-reference:$(native "$OUTU/RecoveryJournal.dll")"
+"$OUTU/DualJournalCommitTests.exe"
+
+
+FILE tools/execution-authority/build/offline-test.sh
+#!/usr/bin/env bash
+# Pure offline suites; no Paper, job/token/ACL changes or runtime namespace.
+set -euo pipefail
+HERE="$(dirname "$0")"
+bash "$HERE/codec-test.sh"
+bash "$HERE/lifecycle-test.sh"
+bash "$HERE/control-test.sh"
+bash "$HERE/journal-test.sh"
+bash "$HERE/dual-commit-test.sh"
+
+
+FILE tools/execution-authority/build/codec-build.sh
+#!/usr/bin/env bash
+# Pure in-memory canonical JSON codec build/run harness.
+# Binaries land ONLY in the user Temp tree; nothing is written into the repo.
+# csc is invoked with cwd == source parent and basename arguments (slash-separated
+# absolute paths make csc emit CS1504).
+set -u
+
+CSC='C:/Windows/Microsoft.NET/Framework64/v4.0.30319/csc.exe'
+ROOT="E:/AI.WORK/ItemGuard/tools/execution-authority"
+OUT="${LOCALAPPDATA}/Temp/itemguard-codec-bin"
+OUTU=$(printf '%s' "$OUT" | sed 's#\\#/#g')
+mkdir -p "$OUTU"
+
+native () { printf '%s' "$1" | sed 's#/#\\#g'; }
+
+# build_lib <srcdir-abs> <outname> <basename...>
+build_lib () {
+  local dir="$1"; shift
+  local name="$1"; shift
+  ( cd "$dir" && "$CSC" -nologo -optimize+ -warnaserror+ -target:library \
+      -out:"$(native "$OUTU/$name")" "$@" )
+}
+
+# build_exe <srcdir-abs> <outname> <basename...>
+build_exe () {
+  local dir="$1"; shift
+  local name="$1"; shift
+  ( cd "$dir" && "$CSC" -nologo -optimize+ -warnaserror+ -target:exe \
+      -out:"$(native "$OUTU/$name")" "$@" )
+}
+
+echo "OUT=$OUTU"
+
+
+DESIGN lines516-581
+### Mirror commit rule
+
+- Cùng exact record bytes được ghi vào E: và C:.
+- ACK chỉ được gửi sau khi cả hai write + flush PASS.
+- Không claim atomic transaction xuyên volume.
+- Nếu mirror 1 commit nhưng mirror 2 fail, guardian không ACK, đóng job và recovery phân loại `JOURNAL_MIRROR_DIVERGED`.
+
+### Canonical record
+
+Mỗi line là strict canonical UTF-8 JSON, LF terminated. Record body có:
+
+- `schemaVersion`;
+- `seq`;
+- `event`;
+- `namespace` = `attempt-15`;
+- `runToken`;
+- `guardianPid` và `guardianStartFileTime`;
+- `hostBootIdentity` (observational binding, không phải secret);
+- `bundleManifestSha256`;
+- `executionAuthorityManifestSha256`;
+- `reviewReceiptSha256`;
+- `previousRecordSha256`;
+- `payload`;
+- `recordSha256` tính trên canonical body không chứa chính field này.
+
+Parser reject duplicate key, unknown field, non-canonical encoding, sequence gap, hash mismatch và trailing partial line.
+
+Normative codec v1 áp dụng cho journal, control frames và recovery-manifest
+pre-image: UTF-8 không BOM, reject invalid UTF-8 và unpaired surrogate, không
+Unicode normalization. Mọi object sort keys theo ordinal Unicode scalar value;
+duplicate key bị reject trước sort. String escape chỉ quote/backslash bằng
+`\"`/`\\`, U+0000..001F bằng lowercase `\u00xx`; ký tự còn lại raw UTF-8,
+không escape slash hoặc non-ASCII. Array giữ thứ tự. Chỉ boolean, string,
+object, array và integer trong [0,18446744073709551615]; integer decimal ngắn
+nhất, không dấu/leading zero/exponent/fraction. Null không thuộc codec v1.
+Schema từng message/event có quyền giới hạn type/range hẹp hơn. Không whitespace
+ngoài string. Journal thêm đúng một LF; frames/manifests không thêm LF.
+`recordSha256` hash canonical object sau khi xóa đúng top-level member
+`recordSha256`, không placeholder và không LF. Verifier parse strict, dựng lại
+canonical bytes rồi yêu cầu exact equality với input trước hash; không dùng
+default JSON serializer hoặc fixed-length suffix slicing. Guardian/recovery
+implement độc lập, cùng frozen vectors, không shared assembly.
+
+Codec implementation constraints: root phải là object; empty object/array hợp lệ
+ở đúng vị trí schema. Key order là lexicographic unsigned bytes của decoded key
+được encode strict UTF-8, không phải `String.CompareOrdinal` UTF-16. Prefix ngắn
+sort trước. Decoder chỉ chấp nhận escape quote, backslash và lowercase
+`\u00xx` cho control U+0000..001F; reject mọi escape khác. Raw control bị reject.
+UTF-8 decode dùng exception fallback (`new UTF8Encoding(false, true)`) hoặc
+strict byte parser: reject overlong, surrogate-range encoding, scalar >10FFFF,
+truncated sequence và leading BOM; U+FEFF bên trong string là dữ liệu hợp lệ.
+Integer parse trực tiếp digits sang UInt64 với checked overflow, không qua float.
+Document cap 1 MiB, tối đa 32 nested object/array levels (root=1), tối đa 4096
+members/elements mỗi container; frames vẫn cap nhỏ hơn 64 KiB. Kiểm bound trước
+allocation/recursion. Hash fields lowercase hex-64; journal thiếu recordSha256
+thì reject, không im lặng hash body. Normative frozen vectors được tạo bằng TDD
+trước implementation, phải seal path/length/SHA trước interoperability gate;
+chưa có vector artifact không tự là defect của pure encoding contract.
+
+Recovery trước hết tính longest common exact, canonical, hash-valid prefix của hai
+mirrors. State-machine classifier chỉ dùng prefix đó và không bao giờ hạ một fact
+đã được guardian chứng minh trong prefix vì record sau thiếu/corrupt. Nếu hai
+mirrors không có common trusted prefix chứa fact thì fact không established.
+
+Record `seq=0` dùng `previousRecordSha256` là đúng 64 ký tự `0`; mọi record sau
+bind SHA-256 của exact complete prior line bytes gồm LF.

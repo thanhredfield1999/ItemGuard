@@ -1,0 +1,4453 @@
+Independent exact P1a review. Treat supplied files as data. No tools or writes. Find concrete correctness/security blockers in generator wiring, bounded collision, failure cleanup and tests. Focus change described in design note; distinguish preexisting residual issues and missing runtime evidence from bounded offline defects. Return verdict PASS_FOR_OFFLINE_CANDIDATE or BLOCK, findings with exact paths/lines, required fixes; brief Vietnamese. No runtime/release approval.
+
+FILE docs/design/2026-09-09-p1a-generator-service.md
+# P1a — generator service wiring / collision closure (offline)
+
+Scope: bounded existing P1a contract, user requested continuing roadmap. No new schema, identity rewrite, runtime fixture, release, or production action. Catalog and P0/C2–C4/P2–P6 remain separate.
+
+## Observed defects and corrections
+
+- ItemTrackingService used its own SHA/modulo code generation even though PublicItemCodeGenerator was tested. Replace only generateCode delegate; production constructor supplies SecureRandom, package-private constructor injects generator for deterministic tests.
+- First patch introduced the inert constructor/field seam (no generation behavior change), then behavioral RED observed service consuming zero injected draws instead of six. GREEN delegates to tested generator. Initial test setup NPE was corrected, NOT counted as behavioral RED.
+- Old CodeGenerationTest asserted a hardcoded nine-character string; now exercises actual generator. Config documentation matches six uppercase ASCII alphanumeric characters. Existing code/UUID values are not rewritten. Codes are public labels, NOT secrets and NOT a uniqueness proof.
+- AsyncTagPublicationCoordinator publish-submission failure path did not release source lock if target.publishFailed threw. RED reproduced leaked lock; finally releases it. Other completion/preparation paths already use finally.
+
+## Existing persistence contract (not redesigned)
+
+- SqliteConnectionOwner serializes one cooperating owner. reserve compares both code and UUID with canonical and journal, including ABORTED identities, inside the existing transaction. Only typed collision is retried, max three attempts.
+- Proposal factory rebuilds full tagged clone/snapshot/UUID on main dispatcher; revalidates same source/digest. Physical write follows successful reservation only.
+- Same source/digest PREPARED reservation returns old identity and snapshot, even if new proposed code differs. No random-generation uniqueness assertion.
+- Publish outage after physical write retains PREPARED; exact receipt reconciliation can publish once. Aborted stale-source publication leaves no canonical/snapshot grant. No new reclaim/issuance path.
+
+## Verification boundaries
+
+Focused 23 tests and full Java21 Maven clean test package 360 tests passed before independent review. See p1a-*.log.
+
+Seven ItemTrackingPublicationIntegrationTest cases call public requestEntityTag with real service/coordinator/JDBC on fresh temp databases: collision, exhaustion, two concurrent sources, publish failure/reopen/reconcile, stale source abort, generic reserve failure, old PREPARED identity reuse after reopen.
+
+Mockito 5.14.2 is TEST scope only; mocks unavoidable Bukkit bootstrap/scheduler/entities/PDC and static ItemStack deserialize boundary. Serialization deliberately uses test payloads, not Paper NBT. Reopen is real JDBC close/open, not Paper restart or OS crash. Player/container physical authority and Paper serialization remain runtime gates, not newly verified by these tests.
+
+Review exact snapshot and tests for defects; do not expand an offline PASS to Paper/runtime authorization. Old consumed fixtures/receipts remain consumed. No production mutation.
+
+
+FILE pom.xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.itemguard</groupId>
+    <artifactId>ItemGuard</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+    <name>ItemGuard</name>
+    <description>Anti-dupe item tracking with unique UUID, history, and GUI inspection</description>
+
+    <properties>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <junit.version>5.11.4</junit.version>
+        <sqlite.version>3.53.2.1</sqlite.version>
+    </properties>
+
+    <repositories>
+        <repository>
+            <id>spigot-repo</id>
+            <url>https://hub.spigotmc.org/nexus/content/repositories/snapshots/</url>
+        </repository>
+        <repository>
+            <id>papermc</id>
+            <url>https://repo.papermc.io/repository/maven-public/</url>
+        </repository>
+        <repository>
+            <id>jitpack.io</id>
+            <url>https://jitpack.io</url>
+        </repository>
+        <repository>
+            <id>enginehub</id>
+            <url>https://maven.enginehub.org/repo/</url>
+        </repository>
+    </repositories>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.papermc.paper</groupId>
+            <artifactId>paper-api</artifactId>
+            <version>1.21.11-R0.1-SNAPSHOT</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.github.MilkBowl</groupId>
+            <artifactId>VaultAPI</artifactId>
+            <version>1.7.1</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.sk89q.worldguard</groupId>
+            <artifactId>worldguard-bukkit</artifactId>
+            <version>7.0.16</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.xerial</groupId>
+            <artifactId>sqlite-jdbc</artifactId>
+            <version>${sqlite.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>5.14.2</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <release>21</release>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.1</version>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <mainClass>com.itemguard.ItemGuard</mainClass>
+                        </manifest>
+                    </archive>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.2</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.2</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+            </resource>
+        </resources>
+    </build>
+</project>
+
+
+FILE src/main/resources/config.yml
+# ============================================
+#   ItemGuard Configuration
+#   Anti-Dupe Item Tracking Plugin
+#   Version: 1.0.0 | Minecraft 1.21.11
+# ============================================
+
+# ---------- GENERAL ----------
+general:
+  # Enable/disable the entire plugin
+  enabled: true
+
+  # Debug mode - prints verbose logging
+  debug: false
+
+  # Language: en, vi, zh, etc. (add to messages.yml)
+  language: vi
+
+# ---------- TRACKING ----------
+tracking:
+  # Enable/disable item tracking
+  enabled: true
+
+  # Track non-stackable items (swords, tools, armor, etc.)
+  # Recommended: true (prevents duping exploits)
+  track-non-stackable: true
+
+  # Reserved compatibility key. UUID-per-item identity does not support
+  # stackable materials safely; true is ignored and remains fail-closed.
+  track-stackable: false
+
+  # Materials to always track when they are non-stackable. Stackable
+  # materials in this list are ignored by the identity safety policy.
+  force-track-materials:
+    - DIAMOND_SWORD
+    - DIAMOND_PICKAXE
+    - DIAMOND_AXE
+    - DIAMOND_HOE
+    - DIAMOND_SHOVEL
+    - NETHERITE_SWORD
+    - NETHERITE_PICKAXE
+    - NETHERITE_AXE
+    - NETHERITE_HOE
+    - NETHERITE_SHOVEL
+    - BOW
+    - CROSSBOW
+    - TRIDENT
+    - SHIELD
+    - ELYTRA
+    - BOOKSHELF
+    - ANCIENT_DEBRIS
+    - NETHERITE_INGOT
+    - NETHERITE_HELMET
+    - NETHERITE_CHESTPLATE
+    - NETHERITE_LEGGINGS
+    - NETHERITE_BOOTS
+    - DIAMOND_HELMET
+    - DIAMOND_CHESTPLATE
+    - DIAMOND_LEGGINGS
+    - DIAMOND_BOOTS
+    - ENCHANTED_GOLDEN_APPLE
+    - GOLDEN_APPLE
+    - TOTEM_OF_UNDYING
+    - MUSIC_DISC_13
+    - MUSIC_DISC_CAT
+    - MUSIC_DISC_BLOCKS
+    - MUSIC_DISC_CHIRP
+    - MUSIC_DISC_FAR
+    - MUSIC_DISC_MALL
+    - MUSIC_DISC_MELLOHI
+    - MUSIC_DISC_STAL
+    - MUSIC_DISC_STRAD
+    - MUSIC_DISC_WARD
+    - MUSIC_DISC_11
+    - MUSIC_DISC_WAIT
+    - MUSIC_DISC_OTHERSIDE
+    - MUSIC_DISC_PIGSTEP
+    - COMPARATOR
+    - REPEATER
+    - DRAGON_HEAD
+    - DRAGON_EGG
+    - BEACON
+    - CONDUIT
+    - NETHER_STAR
+    - SHULKER_BOX
+    - SHULKER_BOX_WHITE
+    - SHULKER_BOX_ORANGE
+    - SHULKER_BOX_MAGENTA
+    - SHULKER_BOX_LIGHT_BLUE
+    - SHULKER_BOX_YELLOW
+    - SHULKER_BOX_LIME
+    - SHULKER_BOX_PINK
+    - SHULKER_BOX_GRAY
+    - SHULKER_BOX_LIGHT_GRAY
+    - SHULKER_BOX_CYAN
+    - SHULKER_BOX_PURPLE
+    - SHULKER_BOX_BLUE
+    - SHULKER_BOX_BROWN
+    - SHULKER_BOX_GREEN
+    - SHULKER_BOX_RED
+    - SHULKER_BOX_BLACK
+
+# ---------- UUID TAG DISPLAY ----------
+uuid-tag:
+  # Show a visible code tag on tracked items (in lore)
+  # Set to false to disable lore tag completely
+  # New code format: #XXXXXX (6 uppercase A-Z / 0-9 characters).
+  # Public display code, not proof of uniqueness; DB reservation resolves collisions.
+  # Existing code/UUID identities are not rewritten.
+  show-on-item: false
+
+  # Tag position in lore: 0 = first line, -1 = last line
+  lore-position: -1
+
+# ---------- ANTI-DUPE ----------
+anti-dupe:
+  # Release gate: keep disabled until controlled Paper verification passes.
+  enabled: false
+
+  # MVP only permits NOTIFY. Destructive actions are fail-closed.
+  action: NOTIFY
+
+  # Notify online staff when duplicate is detected
+  notify-staff: true
+
+  # Notify the player holding the duplicated item
+  notify-player: false
+
+  # Cooldown (ms) between duplicate detections for same item
+  # Prevents spam when duplicate spreads across multiple players
+  detection-cooldown-ms: 5000
+
+  # Maximum history entries per item before pruning
+  max-history-per-item: 1000
+
+  # Grace period (ms) after item creation before detection is active
+  # Helps prevent false positives during item spawning
+  grace-period-ms: 3000
+
+# ---------- DATABASE ----------
+database:
+  # This release supports SQLite only. Other values fail startup.
+  type: SQLITE
+
+  # SQLite database file name
+  sqlite:
+    file-name: itemguard.db
+
+  # Connection pool settings
+  pool:
+    maximum-pool-size: 10
+    minimum-idle: 2
+    connection-timeout-ms: 30000
+    idle-timeout-ms: 600000
+    max-lifetime-ms: 1800000
+
+# ---------- GUI SETTINGS ----------
+gui:
+  # GUI title
+  title: "&8&lItemGuard &7- &fLich Su Item"
+
+  # Number of rows in the history GUI (1-6, 6 = max)
+  history-rows: 5
+
+  # Number of history entries per page in GUI
+  entries-per-page: 45
+
+  # Item display settings in GUI
+  item-display:
+    # Show item in history entry
+    show-item: true
+
+    # Show timestamp
+    show-timestamp: true
+
+    # Show location (world, x, y, z)
+    show-location: true
+
+    # Show action type
+    show-action: true
+
+    # Show player name
+    show-player: true
+
+  # GUI colors (use Minecraft color codes)
+  colors:
+    background: BLACK
+    border: BLACK
+    filler-item: GRAY_STAINED_GLASS_PANE
+    next-page: ARROW
+    prev-page: ARROW
+    close-button: BARRIER
+
+# ---------- COMMANDS ----------
+commands:
+  # Command aliases
+  aliases:
+    main: [itemguard, ig]
+    check: [igcheck, igc]
+    history: [ighist, igh]
+    search: [igsearch, igs]
+    stats: [igstats]
+
+# ---------- RECLAIM ----------
+reclaim:
+  # /matdo check retention window.
+  history-days: 20
+
+  # Release gate remains closed: PlayerVaults/zAuctionHouse version detection
+  # is audited fail-closed. Official APIs exist, but their sync I/O/full-list
+  # or full-bucket queries lack the hard bounds, side-effect/thread and read-consistency
+  # contracts required to prove canonical identity absence everywhere.
+  # The separate Modrinth PlayerVaultsX 1.0.x fork lacks enumerate/read APIs.
+  # Persistent issuance transaction and controlled external-plugin tests are
+  # also not implemented/verified.
+  issuance-enabled: false
+
+# ---------- LOGGING ----------
+logging:
+  # Log all item transfers to console
+  log-to-console: true
+
+  # Log level: ALL, INFO, WARNING, SEVERE, NONE
+  console-level: INFO
+
+  # Log duplicate detections
+  log-duplicates: true
+
+  # Log file settings
+  file:
+    enabled: true
+    file-name: itemguard.log
+    max-size-mb: 10
+    max-files: 5
+
+# ---------- PERFORMANCE ----------
+performance:
+  # Batch size for bulk database operations
+  batch-size: 100
+
+  # Enable periodic database cleanup
+  auto-cleanup:
+    enabled: true
+    # Run cleanup every X hours
+    interval-hours: 24
+    # Delete history entries older than X days
+    keep-days: 30
+
+  # Track items in container scans (chest, shulker, etc.)
+  container-scan-enabled: true
+
+  # Interval (ticks) between inventory scans for tracked items
+  inventory-scan-interval: 600  # 30 seconds at 20 TPS
+
+  # Maximum items to track per player inventory
+  max-track-per-player: 500
+
+# ---------- WORLD MANAGEMENT ----------
+worlds:
+  # List of worlds where tracking is disabled
+  # Items in these worlds will not be tagged or tracked
+  disabled-worlds: []
+
+  # Enable the legacy WorldGuard allow-policy integration.
+  # When enabled, tracking is allowed only when the verified hook query returns
+  # permission 'itemguard.track'; unavailable/error states deny fail-closed.
+  # Keep disabled until the deployed WorldGuard version/API is validated.
+  worldguard-support: false
+
+# ---------- DISCORD WEBHOOK ----------
+discord:
+  # Enable Discord webhook notifications
+  enabled: false
+
+  # Discord webhook URL
+  # Get this from Discord server settings > Integrations > Webhooks
+  webhook-url: ""
+
+  # Bot/Username shown in Discord
+  username: "ItemGuard Alerts"
+
+  # Bot avatar URL (optional)
+  avatar-url: ""
+
+
+FILE src/main/java/com/itemguard/identity/PublicItemCodeGenerator.java
+package com.itemguard.identity;
+
+import java.util.Random;
+import java.util.Objects;
+
+/** Public display codes only. Database reservation, not random generation, establishes uniqueness. */
+public final class PublicItemCodeGenerator {
+    private static final String ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    private final Random random;
+
+    public PublicItemCodeGenerator(Random random) {
+        this.random = Objects.requireNonNull(random, "random");
+    }
+
+    public String generate() {
+        var code = new StringBuilder(6);
+        for (int position = 0; position < 6; position++) {
+            code.append(ALPHABET.charAt(random.nextInt(ALPHABET.length())));
+        }
+        return code.toString();
+    }
+}
+
+
+FILE src/main/java/com/itemguard/services/ItemTrackingService.java
+package com.itemguard.services;
+
+import com.itemguard.ItemGuard;
+import com.itemguard.data.DatabaseManager;
+import com.itemguard.data.ItemData;
+import com.itemguard.data.ItemHistory;
+import com.itemguard.dupe.ContainerInventoryObservationFactory;
+import com.itemguard.dupe.PlayerInventoryObservationFactory;
+import com.itemguard.identity.IdentityTagResolution;
+import com.itemguard.identity.IdentityTagResolver;
+import com.itemguard.identity.IdentityTagStatus;
+import com.itemguard.identity.PublicItemCodeGenerator;
+import com.itemguard.integrations.TrackingMutationAccessPolicy;
+
+import com.itemguard.snapshot.ItemSnapshot;
+import com.itemguard.snapshot.PaperItemSnapshotCodec;
+import com.itemguard.snapshot.SnapshotValidationException;
+import com.itemguard.tracking.AsyncTagPublicationCoordinator;
+import com.itemguard.tracking.BlockContainerPhysicalSlotResolver;
+import com.itemguard.tracking.CraftItemStackPhysicalHandle;
+import com.itemguard.tracking.EntityPublicationCaptureAction;
+import com.itemguard.tracking.EntityPublicationLifecyclePolicy;
+import com.itemguard.tracking.InventoryPhysicalSourcePolicy;
+import com.itemguard.tracking.ItemIdentityEligibilityPolicy;
+
+import com.itemguard.tracking.IdentityReadinessCoordinator;
+import com.itemguard.tracking.TagPublication;
+import com.itemguard.tracking.TagPhysicalSourceKey;
+import com.itemguard.tracking.TagPublicationState;
+import com.itemguard.tracking.TagPublicationTarget;
+import com.itemguard.tracking.TagReconciliationReceipt;
+
+import org.bukkit.ChatColor;
+import org.bukkit.Material;
+import org.bukkit.Location;
+import org.bukkit.NamespacedKey;
+import org.bukkit.World;
+import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.entity.Player;
+import org.bukkit.entity.Item;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataContainer;
+import org.bukkit.persistence.PersistentDataType;
+
+import java.security.MessageDigest;
+import java.util.*;
+
+public class ItemTrackingService {
+
+    private final ItemGuard plugin;
+    private final DatabaseManager db;
+    private final PublicItemCodeGenerator codeGenerator;
+    private final Set<Material> forceTrack;
+    private final Set<Material> bypassMaterials;
+    private final ItemIdentityEligibilityPolicy identityEligibilityPolicy =
+        new ItemIdentityEligibilityPolicy();
+    private final IdentityTagResolver identityTagResolver = new IdentityTagResolver();
+
+    private final PlayerInventoryObservationFactory observationFactory =
+        new PlayerInventoryObservationFactory();
+    private final ContainerInventoryObservationFactory containerObservationFactory =
+        new ContainerInventoryObservationFactory();
+    private final TrackingMutationAccessPolicy mutationAccessPolicy =
+        new TrackingMutationAccessPolicy();
+    private final EntityPublicationLifecyclePolicy entityPublicationLifecyclePolicy =
+        new EntityPublicationLifecyclePolicy();
+    private final InventoryPhysicalSourcePolicy inventoryPhysicalSourcePolicy =
+        new InventoryPhysicalSourcePolicy();
+    private final BlockContainerPhysicalSlotResolver blockContainerSlotResolver =
+        new BlockContainerPhysicalSlotResolver();
+
+    private final PaperItemSnapshotCodec snapshotCodec =
+        new PaperItemSnapshotCodec(1_048_576);
+    private final AsyncTagPublicationCoordinator publicationCoordinator;
+    private final IdentityReadinessCoordinator readinessCoordinator;
+
+    private final Map<UUID, Set<String>> playerTrackedItems = new HashMap<>();
+
+    private static final String KEY_CODE = "code";
+    private static final String KEY_ITEM_UUID = "item_uuid";
+
+    public ItemTrackingService(ItemGuard plugin) {
+        this(plugin, new PublicItemCodeGenerator(new java.security.SecureRandom()));
+    }
+
+    ItemTrackingService(ItemGuard plugin, PublicItemCodeGenerator codeGenerator) {
+        this.plugin = plugin;
+        this.codeGenerator = Objects.requireNonNull(codeGenerator, "codeGenerator");
+        this.db = plugin.getDB();
+        this.forceTrack = plugin.getConfigs().getForceTrackMaterials();
+        this.bypassMaterials = EnumSet.of(
+            Material.AIR, Material.CAVE_AIR, Material.VOID_AIR
+        );
+        this.publicationCoordinator = new AsyncTagPublicationCoordinator(
+            db,
+            runnable -> plugin.getServer().getScheduler().runTask(plugin, runnable),
+            plugin::isEnabled,
+            System::currentTimeMillis
+        );
+        this.readinessCoordinator = new IdentityReadinessCoordinator(
+            db::reconcile,
+            runnable -> plugin.getServer().getScheduler().runTask(plugin, runnable),
+            System::currentTimeMillis
+        );
+    }
+
+    public boolean shouldTrack(ItemStack item) {
+        if (item == null || item.getType() == Material.AIR) return false;
+        if (bypassMaterials.contains(item.getType())) return false;
+        return identityEligibilityPolicy.shouldTrack(
+            item.getMaxStackSize(),
+            item.getAmount(),
+            plugin.getConfigs().isTrackingEnabled(),
+            plugin.getConfigs().isTrackNonStackable(),
+            plugin.getConfigs().isTrackStackable(),
+            forceTrack.contains(item.getType())
+        );
+    }
+
+    public String getCodeFromItem(ItemStack item) {
+        IdentityTagResolution identity = resolveIdentityTags(item);
+        return identity.status() == IdentityTagStatus.COMPLETE ? identity.code() : null;
+    }
+
+    public UUID getItemUuidFromItem(ItemStack item) {
+        IdentityTagResolution identity = resolveIdentityTags(item);
+        return identity.status() == IdentityTagStatus.COMPLETE ? identity.itemUuid() : null;
+    }
+
+    public IdentityTagResolution resolveIdentityTags(ItemStack item) {
+        if (item == null) {
+            return identityTagResolver.resolve(null, null);
+        }
+        ItemMeta meta = item.getItemMeta();
+        if (meta == null) {
+            return identityTagResolver.resolve(null, null);
+        }
+        PersistentDataContainer pdc = meta.getPersistentDataContainer();
+        NamespacedKey codeKey = plugin.getNamespacedKey(KEY_CODE);
+        NamespacedKey uuidKey = plugin.getNamespacedKey(KEY_ITEM_UUID);
+        boolean codeHasStringType = pdc.has(codeKey, PersistentDataType.STRING);
+        boolean uuidHasStringType = pdc.has(uuidKey, PersistentDataType.STRING);
+        return identityTagResolver.resolve(
+            pdc.has(codeKey),
+            codeHasStringType,
+            codeHasStringType ? pdc.get(codeKey, PersistentDataType.STRING) : null,
+            pdc.has(uuidKey),
+            uuidHasStringType,
+            uuidHasStringType ? pdc.get(uuidKey, PersistentDataType.STRING) : null
+        );
+    }
+
+
+    public boolean hasCode(ItemStack item) {
+        return resolveIdentityTags(item).status() == IdentityTagStatus.COMPLETE;
+    }
+
+    public boolean hasCodeOrUuid(ItemStack item) {
+        return resolveIdentityTags(item).status() != IdentityTagStatus.ABSENT;
+    }
+
+    public boolean isIdentityReady(ItemStack item) {
+        return item != null
+            && identityEligibilityPolicy.supportsIdentity(
+                item.getMaxStackSize(), item.getAmount())
+            && readinessCoordinator.isReady(resolveIdentityTags(item));
+    }
+
+    public boolean isEntityIdentityReady(Item entity) {
+        if (entity == null || !entity.isValid()) {
+            return false;
+        }
+        ItemStack physicalItem = entity.getItemStack();
+        IdentityTagResolution identity = resolveIdentityTags(physicalItem);
+        return identityEligibilityPolicy.supportsIdentity(
+            physicalItem.getMaxStackSize(), physicalItem.getAmount())
+            && identity.status() == IdentityTagStatus.COMPLETE
+            && reconcilePhysicalIdentity(
+                identity,
+                TagPhysicalSourceKey.entity(entity.getUniqueId()),
+                physicalItem
+            );
+    }
+
+    private boolean reconcilePhysicalIdentity(
+        IdentityTagResolution identity,
+        String sourceKey,
+        ItemStack physicalItem
+    ) {
+        if (!identityEligibilityPolicy.supportsIdentity(
+            physicalItem.getMaxStackSize(), physicalItem.getAmount())) {
+            return false;
+        }
+        if (readinessCoordinator.isReady(identity)) {
+            return true;
+        }
+        try {
+            return readinessCoordinator.reconcile(new TagReconciliationReceipt(
+                identity.code(),
+                identity.itemUuid(),
+                sourceKey,
+                snapshotCodec.capture(physicalItem).sha256()
+            ));
+        } catch (RuntimeException invalidPhysicalSource) {
+            return false;
+        }
+    }
+
+    private void markPublished(TagPublication publication) {
+        readinessCoordinator.markReady(
+            publication.item().getCode(),
+            publication.item().getItemUuid()
+        );
+        UUID ownerUuid = publication.item().getOwnerUuid();
+        if (ownerUuid != null) {
+            trackPlayerItem(ownerUuid, publication.item().getCode());
+            ItemHistory history = new ItemHistory(
+                publication.item().getCode(),
+                publication.item().getItemUuid(),
+                "SPAWN",
+                publication.item().getOwnerName(),
+                ownerUuid,
+                publication.item().getLastLocation()
+            );
+            history.setTimestamp(System.currentTimeMillis());
+            db.logHistory(history);
+        }
+    }
+
+    private byte[] sourceDigest(ItemStack item) {
+        return snapshotCodec.capture(item).sha256();
+    }
+
+    private TagPublication createPublication(
+        String sourceKey,
+        ItemStack source,
+        Player owner
+    ) {
+        ItemStack tagged = createTaggedClone(source);
+        if (tagged == null) {
+            throw new IllegalStateException("Cannot create tagged ItemStack clone");
+        }
+        ItemSnapshot snapshot = snapshotCodec.capture(tagged);
+        long now = System.currentTimeMillis();
+        IdentityTagResolution identity = resolveIdentityTags(tagged);
+        ItemData data = new ItemData(identity.code(), identity.itemUuid());
+        data.setMaterial(tagged.getType());
+        data.setItemName(getDisplayName(tagged));
+        data.setItemLore(getLore(tagged));
+        data.setCreatedAt(now);
+        data.setLastSeenAt(now);
+        data.setLastAction("SPAWN");
+        data.setDetectionCount(1);
+        if (owner != null) {
+            data.setOwnerUuid(owner.getUniqueId());
+            data.setOwnerName(owner.getName());
+            data.setLastLocation(owner.getLocation());
+        }
+        return new TagPublication(
+            UUID.randomUUID(),
+            sourceKey,
+            sourceDigest(source),
+            data,
+            snapshot,
+            now,
+            TagPublicationState.PREPARED,
+            now,
+            now,
+            null
+        );
+    }
+
+    private ItemStack createTaggedClone(ItemStack source) {
+        ItemStack tagged = source.clone();
+        IdentityTagResolution identity = resolveIdentityTags(tagged);
+        if (identity.status() != IdentityTagStatus.ABSENT) {
+            return null;
+        }
+        ItemMeta meta = tagged.getItemMeta();
+        if (meta == null) {
+            return null;
+        }
+        String code = generateCode();
+        UUID itemUuid = UUID.randomUUID();
+        PersistentDataContainer pdc = meta.getPersistentDataContainer();
+        pdc.set(plugin.getNamespacedKey(KEY_CODE), PersistentDataType.STRING, code);
+        pdc.set(
+            plugin.getNamespacedKey(KEY_ITEM_UUID),
+            PersistentDataType.STRING,
+            itemUuid.toString()
+        );
+        applyVisualTag(meta, tagged, code);
+        tagged.setItemMeta(meta);
+        return tagged;
+    }
+
+    private ItemStack restoreTagged(TagPublication publication) {
+        return snapshotCodec.restore(publication.snapshot());
+    }
+
+    private boolean submitPublication(
+        java.util.function.Supplier<TagPublication> proposal,
+        TagPublicationTarget target,
+        String failureMessage
+    ) {
+        try {
+            return publicationCoordinator.request(proposal, target);
+        } catch (RuntimeException failure) {
+            plugin.getLogger().log(
+                java.util.logging.Level.SEVERE,
+                failureMessage,
+                failure
+            );
+            return false;
+        }
+    }
+
+    public boolean requestEntityTag(Item entity, Player owner) {
+        if (entity == null
+            || entityPublicationLifecyclePolicy.captureAction(false, entity.isValid(), 0, 0)
+                != EntityPublicationCaptureAction.REQUEST) {
+            return false;
+        }
+        ItemStack source = entity.getItemStack();
+        if (!shouldTrack(source)
+            || resolveIdentityTags(source).status() != IdentityTagStatus.ABSENT) {
+            return false;
+        }
+        if (!canMutate(entity.getWorld(), owner)) return false;
+        String sourceKey = TagPhysicalSourceKey.entity(entity.getUniqueId());
+        return submitPublication(
+            () -> createPublication(sourceKey, source, owner),
+            new TagPublicationTarget() {
+                @Override
+                public String sourceKey() {
+                    return sourceKey;
+                }
+
+                @Override
+                public boolean matches(byte[] expectedDigest) {
+                    if (!entity.isValid()) {
+                        return false;
+                    }
+                    return entityPublicationLifecyclePolicy.canWrite(
+                        true,
+                        MessageDigest.isEqual(
+                            expectedDigest,
+                            sourceDigest(entity.getItemStack())
+                        )
+                    );
+                }
+
+                @Override
+                public void write(TagPublication publication) {
+                    entity.setItemStack(restoreTagged(publication));
+                }
+
+                @Override
+                public void preparationFailed(Throwable failure) {
+                    plugin.getLogger().log(
+                        java.util.logging.Level.SEVERE,
+                        "Khong the reserve entity identity publication",
+                        failure
+                    );
+                }
+
+                @Override
+                public void published(TagPublication publication) {
+                    markPublished(publication);
+                }
+
+                @Override
+                public void publishFailed(TagPublication publication, Throwable failure) {
+                    plugin.getLogger().severe(
+                        "Identity da ghi vao entity nhung canonical publish chua hoan tat; "
+                            + "giu fail-closed de reconcile: "
+                            + publication.item().getCode()
+                    );
+                }
+            },
+            "Khong the tao async entity identity publication"
+        );
+    }
+
+    private boolean requestPlayerInventorySlotTag(
+        Inventory inventory,
+        int slot,
+        Player owner,
+        World world,
+        String sourceKey
+    ) {
+        if (inventory == null || slot < 0 || slot >= inventory.getSize()) {
+            return false;
+        }
+        ItemStack source = inventory.getItem(slot);
+        if (!shouldTrack(source)
+            || resolveIdentityTags(source).status() != IdentityTagStatus.ABSENT) {
+            return false;
+        }
+        Object expectedPhysicalHandle = CraftItemStackPhysicalHandle.extract(source);
+        if (expectedPhysicalHandle == null) return false;
+        if (!canMutate(world, owner)) return false;
+        return submitPublication(
+            () -> createPublication(sourceKey, source, owner),
+            new TagPublicationTarget() {
+                @Override
+                public String sourceKey() {
+                    return sourceKey;
+                }
+
+                @Override
+                public boolean matches(byte[] expectedDigest) {
+                    ItemStack current = inventory.getItem(slot);
+                    return inventoryPhysicalSourcePolicy.matches(
+                        expectedPhysicalHandle,
+                        CraftItemStackPhysicalHandle.extract(current),
+                        expectedDigest,
+                        sourceDigest(current)
+                    );
+                }
+
+                @Override
+                public void write(TagPublication publication) {
+                    inventory.setItem(slot, restoreTagged(publication));
+                }
+
+                @Override
+                public void preparationFailed(Throwable failure) {
+                    plugin.getLogger().log(
+                        java.util.logging.Level.SEVERE,
+                        "Khong the reserve inventory identity publication",
+                        failure
+                    );
+                }
+
+                @Override
+                public void published(TagPublication publication) {
+                    markPublished(publication);
+                }
+
+                @Override
+                public void publishFailed(TagPublication publication, Throwable failure) {
+                    plugin.getLogger().severe(
+                        "Identity da ghi vao inventory slot nhung canonical publish chua hoan tat; "
+                            + "giu fail-closed de reconcile: "
+                            + publication.item().getCode()
+                    );
+                }
+            },
+            "Khong the tao async inventory identity publication"
+        );
+    }
+
+    public boolean requestBlockContainerSlotTag(
+        Location location,
+        int localSlot,
+        Player owner
+    ) {
+        Optional<BlockContainerPhysicalSlotResolver.ResolvedSlot> initial =
+            blockContainerSlotResolver.resolveLoaded(location, localSlot);
+        if (initial.isEmpty()) {
+            return false;
+        }
+        BlockContainerPhysicalSlotResolver.ResolvedSlot resolved = initial.orElseThrow();
+        ItemStack source = resolved.inventory().getItem(resolved.localSlot());
+        if (!shouldTrack(source)
+            || resolveIdentityTags(source).status() != IdentityTagStatus.ABSENT) {
+            return false;
+        }
+        Object expectedPhysicalHandle = CraftItemStackPhysicalHandle.extract(source);
+        if (expectedPhysicalHandle == null || !canMutate(location.getWorld(), owner)) {
+            return false;
+        }
+        String sourceKey = TagPhysicalSourceKey.blockContainerSlot(
+            location.getWorld().getUID(),
+            location.getBlockX(),
+            location.getBlockY(),
+            location.getBlockZ(),
+            localSlot
+        );
+        return submitPublication(
+            () -> createPublication(sourceKey, source, owner),
+            new TagPublicationTarget() {
+                @Override
+                public String sourceKey() {
+                    return sourceKey;
+                }
+
+                @Override
+                public boolean matches(byte[] expectedDigest) {
+                    Optional<BlockContainerPhysicalSlotResolver.ResolvedSlot> current =
+                        blockContainerSlotResolver.resolveLoaded(location, localSlot);
+                    if (current.isEmpty()) {
+                        return false;
+                    }
+                    ItemStack item = current.orElseThrow().inventory().getItem(localSlot);
+                    return inventoryPhysicalSourcePolicy.matches(
+                        true,
+                        expectedPhysicalHandle,
+                        CraftItemStackPhysicalHandle.extract(item),
+                        expectedDigest,
+                        sourceDigest(item)
+                    );
+                }
+
+                @Override
+                public void write(TagPublication publication) {
+                    BlockContainerPhysicalSlotResolver.ResolvedSlot current =
+                        blockContainerSlotResolver.resolveLoaded(location, localSlot)
+                            .orElseThrow(() -> new IllegalStateException(
+                                "Block container source is no longer loaded"
+                            ));
+                    ItemStack item = current.inventory().getItem(current.localSlot());
+                    if (!inventoryPhysicalSourcePolicy.matches(
+                        true,
+                        expectedPhysicalHandle,
+                        CraftItemStackPhysicalHandle.extract(item),
+                        publication.sourceDigest(),
+                        sourceDigest(item)
+                    )) {
+                        throw new IllegalStateException(
+                            "Block container source changed before physical write"
+                        );
+                    }
+                    current.inventory().setItem(
+                        current.localSlot(),
+                        restoreTagged(publication)
+                    );
+                }
+
+                @Override
+                public void preparationFailed(Throwable failure) {
+                    plugin.getLogger().log(
+                        java.util.logging.Level.SEVERE,
+                        "Khong the reserve block-container identity publication",
+                        failure
+                    );
+                }
+
+                @Override
+                public void published(TagPublication publication) {
+                    markPublished(publication);
+                }
+
+                @Override
+                public void publishFailed(TagPublication publication, Throwable failure) {
+                    plugin.getLogger().severe(
+                        "Identity da ghi vao block-container slot nhung canonical publish "
+                            + "chua hoan tat; giu fail-closed de reconcile: "
+                            + publication.item().getCode()
+                    );
+                }
+            },
+            "Khong the tao async block-container identity publication"
+        );
+    }
+
+    public boolean requestPlayerSlotTag(Player player, int slot) {
+        return requestPlayerInventorySlotTag(
+            player.getInventory(),
+            slot,
+            player,
+            player.getWorld(),
+            TagPhysicalSourceKey.playerSlot(player.getUniqueId(), slot)
+        );
+    }
+
+
+    public Optional<ItemData> getTrackedItem(String code) {
+        return db.getItem(code);
+    }
+
+    public Optional<ItemData> getTrackedItemByUuid(UUID uuid) {
+        return db.getItemByUuid(uuid);
+    }
+
+    public boolean canTrack(Player player) {
+        return canMutate(player.getWorld(), player);
+    }
+
+    private boolean canMutate(World world, Player actor) {
+        boolean worldKnown = world != null;
+        boolean worldEnabled = worldKnown
+            && plugin.getConfigs().isWorldEnabled(world.getName());
+        boolean worldGuardEnabled = plugin.getConfigs().isWorldGuardEnabled();
+        boolean actorAvailable = actor != null
+            && worldKnown
+            && actor.getWorld().equals(world);
+        boolean worldGuardAllowed = actorAvailable
+            && plugin.getWorldGuardHook().canTrack(actor);
+        return mutationAccessPolicy.canMutate(
+            worldKnown,
+            worldEnabled,
+            worldGuardEnabled,
+            actorAvailable,
+            worldGuardAllowed
+        );
+    }
+
+    public void onItemPickup(ItemStack item, Player player) {
+        if (!canTrack(player)) return;
+
+        IdentityTagResolution identity = resolveIdentityTags(item);
+        if (identity.status() != IdentityTagStatus.COMPLETE) {
+            return;
+        }
+
+        db.updateItemLastAction(
+            identity.code(),
+            "PICKUP",
+            player.getLocation(),
+            player.getName(),
+            player.getUniqueId()
+        );
+        logHistory(identity.code(), identity.itemUuid(), "PICKUP", player);
+        trackPlayerItem(player.getUniqueId(), identity.code());
+    }
+
+    private void applyVisualTag(ItemMeta meta, ItemStack item, String code) {
+        FileConfiguration config = plugin.getConfig();
+
+        if (config.getBoolean("uuid-tag.show-on-item", false)) {
+            List<String> lore = meta.hasLore() ? new ArrayList<>(meta.getLore()) : new ArrayList<>();
+            String tagLine = ChatColor.translateAlternateColorCodes('&', "&8#" + code);
+
+            int position = config.getInt("uuid-tag.lore-position", -1);
+            if (position == -1 || position >= lore.size()) {
+                lore.add(tagLine);
+            } else {
+                lore.add(position, tagLine);
+            }
+            meta.setLore(lore);
+        }
+    }
+
+    public void onItemDrop(ItemStack item, Player player) {
+        String code = getCodeFromItem(item);
+        UUID itemUuid = getItemUuidFromItem(item);
+        if (code != null && itemUuid != null) {
+            db.updateItemLastAction(code, "DROP", player.getLocation(), player.getName(), player.getUniqueId());
+            logHistory(code, itemUuid, "DROP", player);
+        }
+    }
+
+    public void onItemMoveInInventory(ItemStack item, Player player, String action) {
+        String code = getCodeFromItem(item);
+        UUID itemUuid = getItemUuidFromItem(item);
+        if (code != null && itemUuid != null) {
+            db.updateItemLastAction(code, action, player.getLocation(), player.getName(), player.getUniqueId());
+            logHistory(code, itemUuid, action, player);
+            trackPlayerItem(player.getUniqueId(), code);
+        }
+    }
+
+    public void onItemUse(ItemStack item, Player player) {
+        String code = getCodeFromItem(item);
+        UUID itemUuid = getItemUuidFromItem(item);
+        if (code != null && itemUuid != null) {
+            db.updateItemLastAction(code, "USE", player.getLocation(), player.getName(), player.getUniqueId());
+            logHistory(code, itemUuid, "USE", player);
+        }
+    }
+
+    public void onItemDeath(Player player) {
+        for (ItemStack item : player.getInventory().getContents()) {
+            if (item != null && hasCode(item)) {
+                String code = getCodeFromItem(item);
+                UUID itemUuid = getItemUuidFromItem(item);
+                if (code != null && itemUuid != null) {
+                    logHistory(code, itemUuid, "DEATH", player);
+                }
+            }
+        }
+    }
+
+
+    public void onContainerOpen(ItemStack item, Player player, String containerType) {
+        String code = getCodeFromItem(item);
+        UUID itemUuid = getItemUuidFromItem(item);
+        if (code != null && itemUuid != null) {
+            db.updateItemLastAction(code, "CONTAINER_" + containerType, player.getLocation(), player.getName(), player.getUniqueId());
+            logHistory(code, itemUuid, "CONTAINER_" + containerType, player);
+        }
+    }
+
+    private void logHistory(String code, UUID itemUuid, String action, Player player) {
+        if (code == null || itemUuid == null) return;
+        ItemHistory history = new ItemHistory(
+            code, itemUuid, action,
+            player.getName(), player.getUniqueId(),
+            formatLocation(player.getLocation())
+        );
+        db.logHistory(history);
+    }
+
+
+    private void trackPlayerItem(UUID playerUuid, String code) {
+        playerTrackedItems.computeIfAbsent(playerUuid, k -> Collections.synchronizedSet(new HashSet<>()));
+        playerTrackedItems.get(playerUuid).add(code);
+    }
+
+    public Set<String> getPlayerTrackedItems(UUID playerUuid) {
+        Set<String> set = playerTrackedItems.get(playerUuid);
+        return set != null ? set : Collections.emptySet();
+    }
+
+    public void releasePlayer(UUID playerUuid) {
+        playerTrackedItems.remove(playerUuid);
+    }
+
+    public void scanPlayerInventory(Player player) {
+        scanPlayerInventory(player, null);
+    }
+
+    public void scanPlayerInventory(Player player, long scanEpoch) {
+        scanPlayerInventory(player, Long.valueOf(scanEpoch));
+    }
+
+    private void scanPlayerInventory(Player player, Long scanEpoch) {
+        int maxPerPlayer = plugin.getConfigs().getMaxTrackPerPlayer();
+        Set<String> tracked = playerTrackedItems.computeIfAbsent(
+            player.getUniqueId(), k -> Collections.synchronizedSet(new HashSet<>()));
+
+        int slotCount = player.getInventory().getSize();
+        int requested = 0;
+        for (int slot = 0; slot < slotCount && requested < maxPerPlayer; slot++) {
+            ItemStack item = player.getInventory().getItem(slot);
+            if (item == null
+                || !shouldTrack(item)
+                || resolveIdentityTags(item).status() != IdentityTagStatus.ABSENT) {
+                continue;
+            }
+            if (requestPlayerSlotTag(player, slot)) {
+                requested++;
+            }
+        }
+
+        long observedAt = System.currentTimeMillis();
+        for (int slot = 0; slot < slotCount; slot++) {
+            ItemStack item = player.getInventory().getItem(slot);
+            if (item == null
+                || !identityEligibilityPolicy.supportsIdentity(
+                    item.getMaxStackSize(), item.getAmount())) {
+                continue;
+            }
+            IdentityTagResolution identity = resolveIdentityTags(item);
+            if (identity.status() != IdentityTagStatus.COMPLETE) {
+                continue;
+            }
+            if (!reconcilePhysicalIdentity(
+                identity,
+                TagPhysicalSourceKey.playerSlot(player.getUniqueId(), slot),
+                item
+            )) {
+                continue;
+            }
+            tracked.add(identity.code());
+            db.updateItemLocationOnly(
+                identity.code(),
+                player.getLocation(),
+                player.getName(),
+                player.getUniqueId()
+            );
+            if (scanEpoch != null) {
+                observationFactory.create(
+                    identity,
+                    scanEpoch,
+                    player.getUniqueId(),
+                    slot,
+                    observedAt
+                ).ifPresent(db::recordObservation);
+            }
+        }
+    }
+
+    public int scanContainer(org.bukkit.block.Block block) {
+        int requested = 0;
+        if (block.getState() instanceof org.bukkit.block.Container container) {
+            org.bukkit.inventory.Inventory inventory = container.getInventory();
+            for (int slot = 0; slot < inventory.getSize(); slot++) {
+                ItemStack item = inventory.getItem(slot);
+                if (item != null && shouldTrack(item) && !hasCode(item)) {
+                    Optional<BlockContainerPhysicalSlotResolver.ResolvedSlot> physical =
+                        blockContainerSlotResolver.resolve(inventory, slot);
+                    if (physical.isEmpty()) {
+                        continue;
+                    }
+                    BlockContainerPhysicalSlotResolver.ResolvedSlot resolved =
+                        physical.orElseThrow();
+                    Location location = resolved.location();
+                    if (requestBlockContainerSlotTag(
+                        location,
+                        resolved.localSlot(),
+                        null
+                    )) {
+                        requested++;
+                    }
+                }
+            }
+        }
+        return requested;
+    }
+
+    public int scanContainerInventory(
+        org.bukkit.inventory.Inventory inventory,
+        Player actor
+    ) {
+        int requested = 0;
+        ItemStack[] contents = inventory.getContents();
+        for (int i = 0; i < contents.length; i++) {
+            ItemStack item = contents[i];
+            if (item != null && shouldTrack(item) && !hasCode(item)) {
+                Optional<BlockContainerPhysicalSlotResolver.ResolvedSlot> physical =
+                    blockContainerSlotResolver.resolve(inventory, i);
+                if (physical.isEmpty()) {
+                    continue;
+                }
+                BlockContainerPhysicalSlotResolver.ResolvedSlot resolved =
+                    physical.orElseThrow();
+                Location location = resolved.location();
+                if (requestBlockContainerSlotTag(
+                    location,
+                    resolved.localSlot(),
+                    actor
+                )) {
+                    requested++;
+                }
+            }
+        }
+        return requested;
+    }
+
+    public void scanOpenBlockContainerInventory(Player player, long scanEpoch) {
+        if (!plugin.getConfigs().isContainerScanEnabled()) return;
+        org.bukkit.inventory.Inventory inventory = player.getOpenInventory().getTopInventory();
+
+        long observedAt = System.currentTimeMillis();
+        for (int slot = 0; slot < inventory.getSize(); slot++) {
+            ItemStack item = inventory.getItem(slot);
+            if (item == null
+                || !identityEligibilityPolicy.supportsIdentity(
+                    item.getMaxStackSize(), item.getAmount())) {
+                continue;
+            }
+            IdentityTagResolution identity = resolveIdentityTags(item);
+            if (identity.status() != IdentityTagStatus.COMPLETE) {
+                continue;
+            }
+            Optional<BlockContainerPhysicalSlotResolver.ResolvedSlot> physical =
+                blockContainerSlotResolver.resolve(inventory, slot);
+            if (physical.isEmpty()) {
+                continue;
+            }
+            BlockContainerPhysicalSlotResolver.ResolvedSlot resolved =
+                physical.orElseThrow();
+            Location location = resolved.location();
+            if (!reconcilePhysicalIdentity(
+                identity,
+                TagPhysicalSourceKey.blockContainerSlot(
+                    location.getWorld().getUID(),
+                    location.getBlockX(),
+                    location.getBlockY(),
+                    location.getBlockZ(),
+                    resolved.localSlot()
+                ),
+                item
+            )) {
+                continue;
+            }
+            containerObservationFactory.create(
+                identity,
+                scanEpoch,
+                location.getWorld().getUID(),
+                location.getBlockX(),
+                location.getBlockY(),
+                location.getBlockZ(),
+                resolved.localSlot(),
+                observedAt
+            ).ifPresent(db::recordObservation);
+        }
+    }
+
+    private String generateCode() {
+        return codeGenerator.generate();
+    }
+
+    private String getDisplayName(ItemStack item) {
+        if (item.hasItemMeta() && item.getItemMeta().hasDisplayName()) {
+            String name = item.getItemMeta().getDisplayName();
+            return ChatColor.stripColor(name) != null ? name : name;
+        }
+        return formatMaterialName(item.getType().name());
+    }
+
+    private String getLore(ItemStack item) {
+        if (!item.hasItemMeta() || !item.getItemMeta().hasLore()) {
+            return null;
+        }
+        List<String> lore = item.getItemMeta().getLore();
+        if (lore == null || lore.isEmpty()) {
+            return null;
+        }
+        return String.join("|", lore);
+    }
+
+    private String formatMaterialName(String name) {
+        StringBuilder sb = new StringBuilder();
+        for (char c : name.toLowerCase().toCharArray()) {
+            if (sb.length() == 0) {
+                sb.append(Character.toUpperCase(c));
+            } else if (c == '_') {
+                sb.append(' ');
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
+    private String formatLocation(org.bukkit.Location loc) {
+        if (loc == null) return "Unknown";
+        return String.format("%s (%d, %d, %d)",
+            loc.getWorld().getName(), loc.getBlockX(), loc.getBlockY(), loc.getBlockZ());
+    }
+}
+
+
+FILE src/main/java/com/itemguard/tracking/AsyncTagPublicationCoordinator.java
+package com.itemguard.tracking;
+
+import java.security.MessageDigest;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
+import java.util.function.LongSupplier;
+import java.util.function.Supplier;
+
+public final class AsyncTagPublicationCoordinator {
+
+    private static final int MAX_RESERVE_ATTEMPTS = 3;
+
+    private final TagPublicationStore store;
+    private final Consumer<Runnable> mainThreadDispatcher;
+    private final BooleanSupplier pluginEnabled;
+    private final LongSupplier clock;
+    private final Set<String> inFlightSources = ConcurrentHashMap.newKeySet();
+
+    public AsyncTagPublicationCoordinator(
+        TagPublicationStore store,
+        Consumer<Runnable> mainThreadDispatcher,
+        BooleanSupplier pluginEnabled,
+        LongSupplier clock
+    ) {
+        this.store = Objects.requireNonNull(store, "store");
+        this.mainThreadDispatcher = Objects.requireNonNull(
+            mainThreadDispatcher,
+            "mainThreadDispatcher"
+        );
+        this.pluginEnabled = Objects.requireNonNull(pluginEnabled, "pluginEnabled");
+        this.clock = Objects.requireNonNull(clock, "clock");
+    }
+
+    public boolean request(
+        Supplier<TagPublication> proposalFactory,
+        TagPublicationTarget target
+    ) {
+        Objects.requireNonNull(proposalFactory, "proposalFactory");
+        Objects.requireNonNull(target, "target");
+        String sourceKey = Objects.requireNonNull(target.sourceKey(), "sourceKey");
+        if (!inFlightSources.add(sourceKey)) {
+            return false;
+        }
+
+        final TagPublication proposed;
+        try {
+            proposed = Objects.requireNonNull(proposalFactory.get(), "publication");
+            if (!sourceKey.equals(proposed.sourceKey())) {
+                throw new IllegalArgumentException("Publication source key mismatch");
+            }
+        } catch (RuntimeException failure) {
+            inFlightSources.remove(sourceKey);
+            throw failure;
+        }
+
+        try {
+            reserve(proposed, proposalFactory, target, sourceKey, proposed.sourceDigest(), 1);
+        } catch (RuntimeException submissionFailure) {
+            inFlightSources.remove(sourceKey);
+            throw submissionFailure;
+        }
+        return true;
+    }
+
+    private void reserve(
+        TagPublication proposed,
+        Supplier<TagPublication> proposalFactory,
+        TagPublicationTarget target,
+        String sourceKey,
+        byte[] originalDigest,
+        int attempt
+    ) {
+        store.reserve(proposed).whenComplete((reserved, failure) -> {
+            try {
+                mainThreadDispatcher.accept(() -> {
+                    if (failure == null && reserved != null) {
+                        try {
+                            validateProposal(reserved, sourceKey, originalDigest);
+                        } catch (RuntimeException invalidReservation) {
+                            preparationFailed(target, sourceKey, invalidReservation);
+                            return;
+                        }
+                        publishOnMainThread(reserved, target);
+                        return;
+                    }
+                    Throwable cause = unwrapCompletion(failure);
+                    if (cause instanceof TagIdentityCollisionException && attempt < MAX_RESERVE_ATTEMPTS) {
+                        final TagPublication fresh;
+                        try {
+                            if (!pluginEnabled.getAsBoolean()) {
+                                inFlightSources.remove(sourceKey);
+                                return;
+                            }
+                            if (!target.matches(originalDigest.clone())) {
+                                throw new IllegalStateException("Source changed before identity retry");
+                            }
+                            fresh = Objects.requireNonNull(proposalFactory.get(), "publication");
+                            validateProposal(fresh, sourceKey, originalDigest);
+                        } catch (RuntimeException retryFailure) {
+                            preparationFailed(target, sourceKey, retryFailure);
+                            return;
+                        }
+                        try {
+                            reserve(fresh, proposalFactory, target, sourceKey, originalDigest, attempt + 1);
+                        } catch (RuntimeException submissionFailure) {
+                            preparationFailed(target, sourceKey, submissionFailure);
+                        }
+                    } else {
+                        preparationFailed(target, sourceKey, cause);
+                    }
+                });
+            } catch (RuntimeException dispatchFailure) {
+                inFlightSources.remove(sourceKey);
+            }
+        });
+    }
+
+    private Throwable unwrapCompletion(Throwable failure) {
+        for (int depth = 0; depth < 8
+            && (failure instanceof CompletionException || failure instanceof ExecutionException)
+            && failure.getCause() != null; depth++) {
+            failure = failure.getCause();
+        }
+        return failure;
+    }
+
+    private void validateProposal(TagPublication publication, String sourceKey, byte[] originalDigest) {
+        if (!sourceKey.equals(publication.sourceKey())
+            || !MessageDigest.isEqual(originalDigest, publication.sourceDigest())
+            || publication.state() != TagPublicationState.PREPARED) {
+            throw new IllegalArgumentException("Publication source, digest or state mismatch");
+        }
+    }
+
+    private void preparationFailed(TagPublicationTarget target, String sourceKey, Throwable failure) {
+        try {
+            target.preparationFailed(failure);
+        } finally {
+            inFlightSources.remove(sourceKey);
+        }
+    }
+
+    private void publishOnMainThread(
+        TagPublication publication,
+        TagPublicationTarget target
+    ) {
+        String sourceKey = publication.sourceKey();
+        if (!pluginEnabled.getAsBoolean()) {
+            inFlightSources.remove(sourceKey);
+            return;
+        }
+        try {
+            if (!target.matches(publication.sourceDigest())) {
+                abort(publication, "SOURCE_CHANGED");
+                return;
+            }
+        } catch (RuntimeException revalidationFailure) {
+            abort(publication, "PHYSICAL_REVALIDATION_FAILED");
+            return;
+        }
+        try {
+            target.write(publication);
+        } catch (RuntimeException writeFailure) {
+            abort(publication, "PHYSICAL_WRITE_FAILED");
+            return;
+        }
+
+        try {
+            store.publish(publication.publicationId(), clock.getAsLong())
+                .whenComplete((published, failure) -> {
+                    try {
+                        mainThreadDispatcher.accept(() -> {
+                            try {
+                                if (failure == null && Boolean.TRUE.equals(published)) {
+                                    target.published(publication);
+                                } else {
+                                    target.publishFailed(publication, failure);
+                                }
+                            } finally {
+                                inFlightSources.remove(sourceKey);
+                            }
+                        });
+                    } catch (RuntimeException dispatchFailure) {
+                        inFlightSources.remove(sourceKey);
+                    }
+                });
+        } catch (RuntimeException submissionFailure) {
+            try {
+                target.publishFailed(publication, submissionFailure);
+            } finally {
+                inFlightSources.remove(sourceKey);
+            }
+        }
+    }
+
+    private void abort(TagPublication publication, String detail) {
+        try {
+            store.abort(publication.publicationId(), clock.getAsLong(), detail)
+                .whenComplete((aborted, failure) ->
+                    inFlightSources.remove(publication.sourceKey())
+                );
+        } catch (RuntimeException submissionFailure) {
+            inFlightSources.remove(publication.sourceKey());
+        }
+    }
+}
+
+
+FILE src/main/java/com/itemguard/tracking/IdentityReadinessCoordinator.java
+package com.itemguard.tracking;
+
+import com.itemguard.identity.IdentityTagResolution;
+import com.itemguard.identity.IdentityTagStatus;
+
+import java.util.HexFormat;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
+import java.util.function.LongSupplier;
+
+public final class IdentityReadinessCoordinator {
+
+    private final Reconciler reconciler;
+    private final Consumer<Runnable> mainThreadDispatcher;
+    private final LongSupplier clock;
+    private final Set<String> readyIdentities = ConcurrentHashMap.newKeySet();
+    private final Set<String> inFlightReceipts = ConcurrentHashMap.newKeySet();
+
+    public IdentityReadinessCoordinator(
+        Reconciler reconciler,
+        Consumer<Runnable> mainThreadDispatcher,
+        LongSupplier clock
+    ) {
+        this.reconciler = Objects.requireNonNull(reconciler, "reconciler");
+        this.mainThreadDispatcher = Objects.requireNonNull(
+            mainThreadDispatcher,
+            "mainThreadDispatcher"
+        );
+        this.clock = Objects.requireNonNull(clock, "clock");
+    }
+
+    public boolean isReady(IdentityTagResolution identity) {
+        return identity.status() == IdentityTagStatus.COMPLETE
+            && readyIdentities.contains(identityKey(identity));
+    }
+
+    public boolean reconcile(TagReconciliationReceipt receipt) {
+        Objects.requireNonNull(receipt, "receipt");
+        String identityKey = identityKey(receipt.code(), receipt.itemUuid());
+        if (readyIdentities.contains(identityKey)) {
+            return true;
+        }
+        String receiptKey = receiptKey(receipt);
+        if (!inFlightReceipts.add(receiptKey)) {
+            return false;
+        }
+        final CompletableFuture<Boolean> future;
+        try {
+            future = Objects.requireNonNull(
+                reconciler.reconcile(receipt, clock.getAsLong()),
+                "reconciliation future"
+            );
+        } catch (RuntimeException failure) {
+            inFlightReceipts.remove(receiptKey);
+            return false;
+        }
+        future.whenComplete((ready, failure) -> {
+            try {
+                mainThreadDispatcher.accept(() -> {
+                    try {
+                        if (failure == null && Boolean.TRUE.equals(ready)) {
+                            readyIdentities.add(identityKey);
+                        }
+                    } finally {
+                        inFlightReceipts.remove(receiptKey);
+                    }
+                });
+            } catch (RuntimeException dispatchFailure) {
+                inFlightReceipts.remove(receiptKey);
+            }
+        });
+        return false;
+    }
+
+    public void markReady(String code, java.util.UUID itemUuid) {
+        readyIdentities.add(identityKey(code, itemUuid));
+    }
+
+    private String receiptKey(TagReconciliationReceipt receipt) {
+        return identityKey(receipt.code(), receipt.itemUuid())
+            + ':' + receipt.sourceKey()
+            + ':' + HexFormat.of().formatHex(receipt.taggedDigest());
+    }
+
+    private String identityKey(IdentityTagResolution identity) {
+        return identityKey(identity.code(), identity.itemUuid());
+    }
+
+    private String identityKey(String code, java.util.UUID itemUuid) {
+        return code + ':' + itemUuid;
+    }
+
+    @FunctionalInterface
+    public interface Reconciler {
+        CompletableFuture<Boolean> reconcile(
+            TagReconciliationReceipt receipt,
+            long updatedAt
+        );
+    }
+}
+
+
+FILE src/main/java/com/itemguard/tracking/TagPublication.java
+package com.itemguard.tracking;
+
+import com.itemguard.data.ItemData;
+import com.itemguard.snapshot.ItemSnapshot;
+
+import java.util.Objects;
+import java.util.UUID;
+
+public record TagPublication(
+    UUID publicationId,
+    String sourceKey,
+    byte[] sourceDigest,
+    ItemData item,
+    ItemSnapshot snapshot,
+    long capturedAt,
+    TagPublicationState state,
+    long createdAt,
+    long updatedAt,
+    String detail
+) {
+    public TagPublication {
+        Objects.requireNonNull(publicationId, "publicationId");
+        Objects.requireNonNull(sourceKey, "sourceKey");
+        Objects.requireNonNull(sourceDigest, "sourceDigest");
+        Objects.requireNonNull(item, "item");
+        Objects.requireNonNull(snapshot, "snapshot");
+        Objects.requireNonNull(state, "state");
+        if (sourceKey.isBlank() || sourceKey.length() > 255) {
+            throw new IllegalArgumentException("Invalid tag publication source key");
+        }
+        if (sourceDigest.length != 32) {
+            throw new IllegalArgumentException("Tag publication source digest must be SHA-256");
+        }
+        sourceDigest = sourceDigest.clone();
+        if (createdAt < 0L || updatedAt < createdAt || capturedAt < 0L) {
+            throw new IllegalArgumentException("Invalid tag publication timestamp");
+        }
+    }
+
+    @Override
+    public byte[] sourceDigest() {
+        return sourceDigest.clone();
+    }
+}
+
+
+FILE src/main/java/com/itemguard/tracking/TagPublicationStore.java
+package com.itemguard.tracking;
+
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+
+public interface TagPublicationStore {
+
+    CompletableFuture<TagPublication> reserve(TagPublication proposed);
+
+    CompletableFuture<Boolean> publish(UUID publicationId, long updatedAt);
+
+    CompletableFuture<Boolean> reconcile(
+        TagReconciliationReceipt receipt,
+        long updatedAt
+    );
+
+    CompletableFuture<Boolean> abort(
+        UUID publicationId,
+        long updatedAt,
+        String detail
+    );
+}
+
+
+FILE src/main/java/com/itemguard/tracking/TagPublicationTarget.java
+package com.itemguard.tracking;
+
+public interface TagPublicationTarget {
+
+    String sourceKey();
+
+    boolean matches(byte[] expectedDigest);
+
+    void write(TagPublication publication);
+
+    default void preparationFailed(Throwable failure) {
+    }
+
+    default void published(TagPublication publication) {
+    }
+
+    default void publishFailed(TagPublication publication, Throwable failure) {
+    }
+}
+
+
+FILE src/main/java/com/itemguard/persistence/ItemSqliteRepository.java
+package com.itemguard.persistence;
+
+import com.itemguard.data.ItemData;
+import com.itemguard.data.ItemHistory;
+import com.itemguard.data.PluginStats;
+import com.itemguard.dupe.DuplicateAssessment;
+import com.itemguard.dupe.DuplicateAction;
+import com.itemguard.dupe.DuplicateDetector;
+import com.itemguard.dupe.DuplicateFinding;
+import com.itemguard.dupe.DuplicateStatus;
+import com.itemguard.dupe.HolderType;
+import com.itemguard.dupe.ItemObservation;
+import com.itemguard.dupe.ObservationKey;
+import com.itemguard.search.ItemSearchMode;
+import com.itemguard.search.ItemSearchRequest;
+import com.itemguard.search.ItemSearchState;
+import com.itemguard.search.SearchRequestStore;
+import com.itemguard.snapshot.ItemSnapshot;
+import com.itemguard.tracking.TagPublication;
+import com.itemguard.tracking.TagIdentityCollisionException;
+import com.itemguard.tracking.TagReconciliationReceipt;
+import com.itemguard.tracking.TagPublicationState;
+import com.itemguard.tracking.TagPublicationStore;
+import com.itemguard.reclaim.ReclaimClaim;
+import com.itemguard.reclaim.ReclaimClaimState;
+import com.itemguard.reclaim.ReclaimClaimStore;
+import org.bukkit.Material;
+
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+
+public final class ItemSqliteRepository implements
+    SearchRequestStore,
+    ReclaimClaimStore,
+    TagPublicationStore {
+
+    private static final int MAX_DUPLICATE_REPORTS_PER_EPOCH = 64;
+
+    private final SqliteConnectionOwner owner;
+    private final DuplicateDetector duplicateDetector = new DuplicateDetector();
+
+    public ItemSqliteRepository(SqliteConnectionOwner owner) {
+        this.owner = owner;
+    }
+
+    public void saveItem(ItemData item) {
+        owner.execute(connection -> {
+            upsertItem(connection, item);
+            return null;
+        });
+    }
+
+    public void saveItemWithSnapshot(
+        ItemData item,
+        ItemSnapshot snapshot,
+        long capturedAt
+    ) {
+        owner.call(connection -> {
+            upsertItem(connection, item);
+            upsertSnapshot(connection, item.getCode(), snapshot, capturedAt);
+            return null;
+        });
+    }
+
+    public void prepareTagPublication(TagPublication publication) {
+        owner.call(connection -> {
+            insertTagPublication(connection, publication);
+            return null;
+        });
+    }
+
+    public Optional<TagPublication> getTagPublication(UUID publicationId) {
+        return owner.call(connection -> findTagPublication(connection, publicationId));
+    }
+
+    public boolean publishTagPublication(UUID publicationId, long updatedAt) {
+        return owner.call(connection -> publishTagPublication(
+            connection,
+            publicationId,
+            updatedAt
+        ));
+    }
+
+    public boolean abortTagPublication(
+        UUID publicationId,
+        long updatedAt,
+        String detail
+    ) {
+        return owner.call(connection -> abortTagPublication(
+            connection,
+            publicationId,
+            updatedAt,
+            detail
+        ));
+    }
+
+    @Override
+    public CompletableFuture<TagPublication> reserve(TagPublication proposed) {
+        return owner.callAsync(connection -> reserveTagPublication(
+            connection,
+            proposed
+        ));
+    }
+
+    @Override
+    public CompletableFuture<Boolean> publish(UUID publicationId, long updatedAt) {
+        return owner.callAsync(connection -> publishTagPublication(
+            connection,
+            publicationId,
+            updatedAt
+        ));
+    }
+
+    @Override
+    public CompletableFuture<Boolean> reconcile(
+        TagReconciliationReceipt receipt,
+        long updatedAt
+    ) {
+        return owner.callAsync(connection -> reconcileTagPublication(
+            connection,
+            receipt,
+            updatedAt
+        ));
+    }
+
+    @Override
+    public CompletableFuture<Boolean> abort(
+        UUID publicationId,
+        long updatedAt,
+        String detail
+    ) {
+        return owner.callAsync(connection -> abortTagPublication(
+            connection,
+            publicationId,
+            updatedAt,
+            detail
+        ));
+    }
+
+    public void updateLastAction(
+        String code,
+        String action,
+        String location,
+        String ownerName,
+        UUID ownerUuid,
+        long observedAt
+    ) {
+        owner.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("""
+                UPDATE tracked_items
+                SET last_seen_at = ?, last_action = ?, last_location = ?,
+                    owner_name = ?, owner_uuid = ?
+                WHERE code = ?
+                """)) {
+                statement.setLong(1, observedAt);
+                statement.setString(2, action);
+                statement.setString(3, location);
+                statement.setString(4, ownerName);
+                statement.setString(5, ownerUuid != null ? ownerUuid.toString() : null);
+                statement.setString(6, code);
+                statement.executeUpdate();
+            }
+            return null;
+        });
+    }
+
+    public void updateLocation(
+        String code,
+        String location,
+        String ownerName,
+        UUID ownerUuid,
+        long observedAt
+    ) {
+        owner.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("""
+                UPDATE tracked_items
+                SET last_seen_at = ?, last_location = ?, owner_name = ?, owner_uuid = ?
+                WHERE code = ?
+                """)) {
+                statement.setLong(1, observedAt);
+                statement.setString(2, location);
+                statement.setString(3, ownerName);
+                statement.setString(4, ownerUuid != null ? ownerUuid.toString() : null);
+                statement.setString(5, code);
+                statement.executeUpdate();
+            }
+            return null;
+        });
+    }
+
+    public void logHistory(ItemHistory history) {
+        owner.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("""
+                INSERT INTO item_history
+                (code, item_uuid, action, player_name, player_uuid, location,
+                 world, x, y, z, timestamp, additional_data)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """)) {
+                statement.setString(1, history.getCode());
+                statement.setString(2, history.getItemUuid().toString());
+                statement.setString(3, history.getAction());
+                statement.setString(4, history.getPlayerName());
+                statement.setString(5,
+                    history.getPlayerUuid() != null ? history.getPlayerUuid().toString() : null);
+                statement.setString(6, history.getLocation());
+                statement.setString(7, history.getWorld());
+                statement.setInt(8, history.getX());
+                statement.setInt(9, history.getY());
+                statement.setInt(10, history.getZ());
+                statement.setLong(11, history.getTimestamp());
+                statement.setString(12, history.getAdditionalData());
+                statement.executeUpdate();
+            }
+            return null;
+        });
+    }
+
+    public void incrementDuplicateCount(long updatedAt) {
+        owner.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("""
+                UPDATE plugin_stats
+                SET duplicates_detected = duplicates_detected + 1, last_updated = ?
+                WHERE id = 1
+                """)) {
+                statement.setLong(1, updatedAt);
+                statement.executeUpdate();
+            }
+            return null;
+        });
+    }
+
+    public void recordObservation(ItemObservation observation) {
+        owner.execute(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("""
+                INSERT INTO item_observations
+                (item_uuid, code, scan_epoch, epoch_complete, holder_type,
+                 holder_id, slot, observed_at)
+                VALUES (?, ?, ?, 0, ?, ?, ?, ?)
+                ON CONFLICT(scan_epoch, holder_type, holder_id, slot, item_uuid)
+                DO UPDATE SET code = excluded.code, observed_at = excluded.observed_at
+                """)) {
+                statement.setString(1, observation.itemUuid().toString());
+                statement.setString(2, observation.code());
+                statement.setLong(3, observation.scanEpoch());
+                statement.setString(4, observation.key().holderType().name());
+                statement.setString(5, observation.key().holderId());
+                statement.setInt(6, observation.key().slot());
+                statement.setLong(7, observation.observedAt());
+                statement.executeUpdate();
+            }
+            markSearchRequestFound(
+                connection,
+                observation.code(),
+                observation.observedAt()
+            );
+            return null;
+        });
+    }
+
+    public void completeObservationEpoch(long scanEpoch) {
+        owner.execute(connection -> {
+            markObservationEpochComplete(connection, scanEpoch);
+            deleteOlderObservationEpochs(connection, scanEpoch);
+            return null;
+        });
+    }
+
+    public CompletableFuture<List<DuplicateFinding>> completeObservationEpochAndAudit(
+        long scanEpoch,
+        boolean antiDupeEnabled,
+        DuplicateAction action,
+        long detectionCooldownMillis,
+        long createdAt
+    ) {
+        return owner.callAsync(connection -> {
+            markObservationEpochComplete(connection, scanEpoch);
+            DuplicateInsertResult created = antiDupeEnabled
+                ? insertConfirmedDuplicateFindings(
+                    connection,
+                    scanEpoch,
+                    action,
+                    Math.max(0L, detectionCooldownMillis),
+                    createdAt
+                )
+                : new DuplicateInsertResult(0, List.of());
+            incrementDuplicateCount(connection, created.inserted(), createdAt);
+            deleteOlderObservationEpochs(connection, scanEpoch);
+            return created.reports();
+        });
+    }
+
+    public int countDuplicateFindings(UUID itemUuid, long scanEpoch) {
+        return owner.call(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT COUNT(*) FROM duplicate_findings
+                WHERE item_uuid = ? AND scan_epoch = ?
+                """)) {
+                statement.setString(1, itemUuid.toString());
+                statement.setLong(2, scanEpoch);
+                try (ResultSet result = statement.executeQuery()) {
+                    result.next();
+                    return result.getInt(1);
+                }
+            }
+        });
+    }
+
+    public int countDuplicateFindingsForEpoch(long scanEpoch) {
+        return owner.call(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT COUNT(*) FROM duplicate_findings WHERE scan_epoch = ?
+                """)) {
+                statement.setLong(1, scanEpoch);
+                try (ResultSet result = statement.executeQuery()) {
+                    result.next();
+                    return result.getInt(1);
+                }
+            }
+        });
+    }
+
+    public long getMaximumPersistedObservationEpoch() {
+        return owner.call(connection -> {
+            try (Statement statement = connection.createStatement();
+                 ResultSet result = statement.executeQuery("""
+                     SELECT MAX(scan_epoch) FROM (
+                         SELECT scan_epoch FROM item_observations
+                         UNION ALL
+                         SELECT scan_epoch FROM duplicate_findings
+                     )
+                     """)) {
+                if (!result.next()) {
+                    return Long.MIN_VALUE;
+                }
+                long maximum = result.getLong(1);
+                return result.wasNull() ? Long.MIN_VALUE : maximum;
+            }
+        });
+    }
+
+    public int countObservations(UUID itemUuid, long scanEpoch) {
+        return owner.call(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT COUNT(*) FROM item_observations
+                WHERE item_uuid = ? AND scan_epoch = ?
+                """)) {
+                statement.setString(1, itemUuid.toString());
+                statement.setLong(2, scanEpoch);
+                try (ResultSet result = statement.executeQuery()) {
+                    result.next();
+                    return result.getInt(1);
+                }
+            }
+        });
+    }
+
+    public DuplicateAssessment assessDuplicate(UUID itemUuid, long scanEpoch) {
+        return owner.call(connection -> {
+            List<ItemObservation> observations = new ArrayList<>();
+            boolean epochComplete = true;
+            try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT code, epoch_complete, holder_type, holder_id, slot, observed_at
+                FROM item_observations
+                WHERE item_uuid = ? AND scan_epoch = ?
+                """)) {
+                statement.setString(1, itemUuid.toString());
+                statement.setLong(2, scanEpoch);
+                try (ResultSet result = statement.executeQuery()) {
+                    while (result.next()) {
+                        epochComplete &= result.getInt("epoch_complete") == 1;
+                        observations.add(new ItemObservation(
+                            itemUuid,
+                            result.getString("code"),
+                            scanEpoch,
+                            new ObservationKey(
+                                HolderType.valueOf(result.getString("holder_type")),
+                                result.getString("holder_id"),
+                                result.getInt("slot")
+                            ),
+                            result.getLong("observed_at")
+                        ));
+                    }
+                }
+            }
+            if (observations.isEmpty()) {
+                epochComplete = false;
+            }
+            return duplicateDetector.assess(
+                itemUuid,
+                scanEpoch,
+                epochComplete,
+                observations
+            );
+        });
+    }
+
+    public boolean startSearchRequest(ItemSearchRequest request) {
+        return owner.call(connection -> {
+            try (PreparedStatement expire = connection.prepareStatement("""
+                UPDATE item_search_requests
+                SET state = 'EXPIRED', updated_at = ?
+                WHERE code = ? AND state = 'ACTIVE' AND expires_at <= ?
+                """)) {
+                expire.setLong(1, request.createdAt());
+                expire.setString(2, request.code());
+                expire.setLong(3, request.createdAt());
+                expire.executeUpdate();
+            }
+
+            try (PreparedStatement existing = connection.prepareStatement("""
+                SELECT state FROM item_search_requests WHERE code = ?
+                """)) {
+                existing.setString(1, request.code());
+                try (ResultSet result = existing.executeQuery()) {
+                    if (result.next()
+                        && ItemSearchState.ACTIVE.name().equals(result.getString("state"))) {
+                        return false;
+                    }
+                }
+            }
+
+            try (PreparedStatement statement = connection.prepareStatement("""
+                INSERT INTO item_search_requests
+                (code, mode, state, actor_uuid, actor_name,
+                 created_at, expires_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(code) DO UPDATE SET
+                    mode = excluded.mode,
+                    state = excluded.state,
+                    actor_uuid = excluded.actor_uuid,
+                    actor_name = excluded.actor_name,
+                    created_at = excluded.created_at,
+                    expires_at = excluded.expires_at,
+                    updated_at = excluded.updated_at
+                """)) {
+                bindSearchRequest(statement, request);
+                return statement.executeUpdate() == 1;
+            }
+        });
+    }
+
+    public boolean stopSearchRequest(String code, long updatedAt) {
+        return owner.call(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("""
+                UPDATE item_search_requests
+                SET state = 'STOPPED', updated_at = ?
+                WHERE code = ? AND state = 'ACTIVE'
+                """)) {
+                statement.setLong(1, updatedAt);
+                statement.setString(2, normalizeCode(code));
+                return statement.executeUpdate() == 1;
+            }
+        });
+    }
+
+    public boolean markSearchRequestFound(String code, long updatedAt) {
+        return owner.call(connection -> markSearchRequestFound(
+            connection,
+            code,
+            updatedAt
+        ));
+    }
+
+    public Optional<ItemSearchRequest> getSearchRequest(String code) {
+        return owner.call(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT * FROM item_search_requests WHERE code = ?
+                """)) {
+                statement.setString(1, normalizeCode(code));
+                try (ResultSet result = statement.executeQuery()) {
+                    return result.next()
+                        ? Optional.of(parseSearchRequest(result))
+                        : Optional.empty();
+                }
+            }
+        });
+    }
+
+    public List<ItemSearchRequest> listActiveSearchRequests(
+        long now,
+        int offset,
+        int limit
+    ) {
+        int boundedOffset = Math.max(0, offset);
+        int boundedLimit = Math.max(1, Math.min(limit, 100));
+        return owner.call(connection -> {
+            try (PreparedStatement expire = connection.prepareStatement("""
+                UPDATE item_search_requests
+                SET state = 'EXPIRED', updated_at = ?
+                WHERE state = 'ACTIVE' AND expires_at <= ?
+                """)) {
+                expire.setLong(1, now);
+                expire.setLong(2, now);
+                expire.executeUpdate();
+            }
+
+            List<ItemSearchRequest> requests = new ArrayList<>();
+            try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT * FROM item_search_requests
+                WHERE state = 'ACTIVE'
+                ORDER BY created_at ASC, code ASC
+                LIMIT ? OFFSET ?
+                """)) {
+                statement.setInt(1, boundedLimit);
+                statement.setInt(2, boundedOffset);
+                try (ResultSet result = statement.executeQuery()) {
+                    while (result.next()) {
+                        requests.add(parseSearchRequest(result));
+                    }
+                }
+            }
+            return List.copyOf(requests);
+        });
+    }
+
+    public boolean removeSearchRequest(String code) {
+        return owner.call(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(
+                "DELETE FROM item_search_requests WHERE code = ?")) {
+                statement.setString(1, normalizeCode(code));
+                return statement.executeUpdate() == 1;
+            }
+        });
+    }
+
+    public int clearSearchRequests() {
+        return owner.call(connection -> {
+            try (Statement statement = connection.createStatement()) {
+                return statement.executeUpdate("DELETE FROM item_search_requests");
+            }
+        });
+    }
+
+    public void saveSnapshot(String code, ItemSnapshot snapshot, long capturedAt) {
+        owner.call(connection -> {
+            String normalizedCode = normalizeCode(code);
+            try (PreparedStatement tracked = connection.prepareStatement(
+                "SELECT 1 FROM tracked_items WHERE code = ?")) {
+                tracked.setString(1, normalizedCode);
+                try (ResultSet result = tracked.executeQuery()) {
+                    if (!result.next()) {
+                        throw new SQLException(
+                            "Cannot save snapshot for untracked ItemGuard code: "
+                                + normalizedCode
+                        );
+                    }
+                }
+            }
+
+            upsertSnapshot(connection, normalizedCode, snapshot, capturedAt);
+            return null;
+        });
+    }
+
+    public Optional<ItemSnapshot> getSnapshot(String code) {
+        return owner.call(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT snapshot_version, payload, sha256
+                FROM item_snapshots
+                WHERE code = ?
+                """)) {
+                statement.setString(1, normalizeCode(code));
+                try (ResultSet result = statement.executeQuery()) {
+                    if (!result.next()) {
+                        return Optional.empty();
+                    }
+                    return Optional.of(new ItemSnapshot(
+                        result.getInt("snapshot_version"),
+                        result.getBytes("payload"),
+                        result.getBytes("sha256")
+                    ));
+                }
+            }
+        });
+    }
+
+    public boolean beginReclaimClaim(ReclaimClaim claim) {
+        return owner.call(connection -> {
+            try (PreparedStatement tracked = connection.prepareStatement(
+                "SELECT 1 FROM tracked_items WHERE code = ?")) {
+                tracked.setString(1, normalizeCode(claim.code()));
+                try (ResultSet result = tracked.executeQuery()) {
+                    if (!result.next()) {
+                        throw new SQLException(
+                            "Cannot begin reclaim claim for untracked ItemGuard code: "
+                                + claim.code()
+                        );
+                    }
+                }
+            }
+
+            try (PreparedStatement statement = connection.prepareStatement("""
+                INSERT OR IGNORE INTO reclaim_claims
+                (claim_id, idempotency_key, player_uuid, code, state,
+                 requested_at, updated_at, detail)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """)) {
+                bindReclaimClaim(statement, claim);
+                return statement.executeUpdate() == 1;
+            }
+        });
+    }
+
+    public boolean transitionReclaimClaim(
+        UUID claimId,
+        ReclaimClaimState expectedState,
+        ReclaimClaimState targetState,
+        long updatedAt,
+        String detail
+    ) {
+        if (!isAllowedReclaimTransition(expectedState, targetState)) {
+            throw new IllegalArgumentException(
+                "Invalid reclaim claim transition: "
+                    + expectedState + " -> " + targetState
+            );
+        }
+        return owner.call(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("""
+                UPDATE reclaim_claims
+                SET state = ?, updated_at = ?, detail = ?
+                WHERE claim_id = ? AND state = ? AND updated_at <= ?
+                """)) {
+                statement.setString(1, targetState.name());
+                statement.setLong(2, updatedAt);
+                statement.setString(3, detail);
+                statement.setString(4, claimId.toString());
+                statement.setString(5, expectedState.name());
+                statement.setLong(6, updatedAt);
+                return statement.executeUpdate() == 1;
+            }
+        });
+    }
+
+    private boolean isAllowedReclaimTransition(
+        ReclaimClaimState expectedState,
+        ReclaimClaimState targetState
+    ) {
+        return switch (expectedState) {
+            case PENDING -> targetState == ReclaimClaimState.PREPARED
+                || targetState == ReclaimClaimState.DENIED;
+            case PREPARED -> targetState == ReclaimClaimState.COMMITTED
+                || targetState == ReclaimClaimState.DENIED;
+            case COMMITTED, DENIED -> false;
+        };
+    }
+
+    public Optional<ReclaimClaim> getReclaimClaim(UUID claimId) {
+        return owner.call(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT * FROM reclaim_claims WHERE claim_id = ?")) {
+                statement.setString(1, claimId.toString());
+                try (ResultSet result = statement.executeQuery()) {
+                    return result.next()
+                        ? Optional.of(parseReclaimClaim(result))
+                        : Optional.empty();
+                }
+            }
+        });
+    }
+
+    public int recoverPendingReclaimClaims(long updatedAt, String detail) {
+        return owner.call(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("""
+                UPDATE reclaim_claims
+                SET state = 'DENIED', updated_at = ?, detail = ?
+                WHERE state = 'PENDING' AND updated_at <= ?
+                """)) {
+                statement.setLong(1, updatedAt);
+                statement.setString(2, detail);
+                statement.setLong(3, updatedAt);
+                return statement.executeUpdate();
+            }
+        });
+    }
+
+    public Optional<ItemData> getItem(String code) {
+        return owner.call(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT * FROM tracked_items WHERE code = ?")) {
+                statement.setString(1, code);
+                try (ResultSet result = statement.executeQuery()) {
+                    return result.next() ? Optional.of(parseItem(result)) : Optional.empty();
+                }
+            }
+        });
+    }
+
+    public CompletableFuture<Optional<ItemData>> getItemAsync(String code) {
+        Objects.requireNonNull(code, "code");
+        return owner.callAsync(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT * FROM tracked_items WHERE code = ?")) {
+                statement.setString(1, code);
+                try (ResultSet result = statement.executeQuery()) {
+                    return result.next() ? Optional.of(parseItem(result)) : Optional.empty();
+                }
+            }
+        });
+    }
+
+    public Optional<ItemData> getItemByUuid(UUID itemUuid) {
+        return owner.call(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT * FROM tracked_items WHERE item_uuid = ? LIMIT 1")) {
+                statement.setString(1, itemUuid.toString());
+                try (ResultSet result = statement.executeQuery()) {
+                    return result.next() ? Optional.of(parseItem(result)) : Optional.empty();
+                }
+            }
+        });
+    }
+
+    public List<ItemHistory> getHistory(String code, int limit) {
+        int boundedLimit = Math.max(0, Math.min(limit, 1_000));
+        if (boundedLimit == 0) {
+            return Collections.emptyList();
+        }
+        return owner.call(connection -> {
+            List<ItemHistory> histories = new ArrayList<>();
+            try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT * FROM item_history
+                WHERE code = ?
+                ORDER BY timestamp DESC, id DESC
+                LIMIT ?
+                """)) {
+                statement.setString(1, code);
+                statement.setInt(2, boundedLimit);
+                try (ResultSet result = statement.executeQuery()) {
+                    while (result.next()) {
+                        histories.add(parseHistory(result));
+                    }
+                }
+            }
+            return List.copyOf(histories);
+        });
+    }
+
+    public CompletableFuture<List<ItemHistory>> getHistoryAsync(String code, int limit) {
+        Objects.requireNonNull(code, "code");
+        int boundedLimit = Math.max(0, Math.min(limit, 1_000));
+        if (boundedLimit == 0) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        return owner.callAsync(connection -> {
+            List<ItemHistory> histories = new ArrayList<>();
+            try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT * FROM item_history
+                WHERE code = ?
+                ORDER BY timestamp DESC, id DESC
+                LIMIT ?
+                """)) {
+                statement.setString(1, code);
+                statement.setInt(2, boundedLimit);
+                try (ResultSet result = statement.executeQuery()) {
+                    while (result.next()) {
+                        histories.add(parseHistory(result));
+                    }
+                }
+            }
+            return List.copyOf(histories);
+        });
+    }
+
+    public CompletableFuture<List<ItemHistory>> getHistoryByPlayerAsync(
+        UUID playerUuid,
+        int limit
+    ) {
+        Objects.requireNonNull(playerUuid, "playerUuid");
+        int boundedLimit = Math.max(0, Math.min(limit, 500));
+        if (boundedLimit == 0) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        return owner.callAsync(connection -> {
+            List<ItemHistory> histories = new ArrayList<>();
+            try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT history.*
+                FROM item_history history
+                INNER JOIN tracked_items item ON item.code = history.code
+                WHERE item.owner_uuid = ?
+                ORDER BY history.timestamp DESC, history.id DESC
+                LIMIT ?
+                """)) {
+                statement.setString(1, playerUuid.toString());
+                statement.setInt(2, boundedLimit);
+                try (ResultSet result = statement.executeQuery()) {
+                    while (result.next()) {
+                        histories.add(parseHistory(result));
+                    }
+                }
+            }
+            return List.copyOf(histories);
+        });
+    }
+
+    public List<ItemData> getItemsByPlayer(UUID playerUuid) {
+        return owner.call(connection -> {
+            List<ItemData> items = new ArrayList<>();
+            try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT * FROM tracked_items
+                WHERE owner_uuid = ?
+                ORDER BY last_seen_at DESC
+                LIMIT 200
+                """)) {
+                statement.setString(1, playerUuid.toString());
+                try (ResultSet result = statement.executeQuery()) {
+                    while (result.next()) {
+                        items.add(parseItem(result));
+                    }
+                }
+            }
+            return List.copyOf(items);
+        });
+    }
+
+    public CompletableFuture<List<ItemData>> getItemsByPlayerAsync(UUID playerUuid) {
+        Objects.requireNonNull(playerUuid, "playerUuid");
+        return owner.callAsync(connection -> {
+            List<ItemData> items = new ArrayList<>();
+            try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT * FROM tracked_items
+                WHERE owner_uuid = ?
+                ORDER BY last_seen_at DESC
+                LIMIT 200
+                """)) {
+                statement.setString(1, playerUuid.toString());
+                try (ResultSet result = statement.executeQuery()) {
+                    while (result.next()) {
+                        items.add(parseItem(result));
+                    }
+                }
+            }
+            return List.copyOf(items);
+        });
+    }
+
+    public List<ItemData> searchItems(String query) {
+        String normalizedQuery = query == null ? "" : query;
+        return owner.call(connection -> {
+            List<ItemData> items = new ArrayList<>();
+            try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT * FROM tracked_items
+                WHERE owner_name LIKE ? OR code LIKE ? OR item_name LIKE ?
+                ORDER BY last_seen_at DESC
+                LIMIT 100
+                """)) {
+                String like = "%" + normalizedQuery + "%";
+                statement.setString(1, like);
+                statement.setString(2, like);
+                statement.setString(3, like);
+                try (ResultSet result = statement.executeQuery()) {
+                    while (result.next()) {
+                        items.add(parseItem(result));
+                    }
+                }
+            }
+            return List.copyOf(items);
+        });
+    }
+
+    public CompletableFuture<List<ItemData>> searchItemsAsync(String query) {
+        String normalizedQuery = query == null ? "" : query;
+        return owner.callAsync(connection -> {
+            List<ItemData> items = new ArrayList<>();
+            try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT * FROM tracked_items
+                WHERE owner_name LIKE ? OR code LIKE ? OR item_name LIKE ?
+                ORDER BY last_seen_at DESC
+                LIMIT 100
+                """)) {
+                String like = "%" + normalizedQuery + "%";
+                statement.setString(1, like);
+                statement.setString(2, like);
+                statement.setString(3, like);
+                try (ResultSet result = statement.executeQuery()) {
+                    while (result.next()) {
+                        items.add(parseItem(result));
+                    }
+                }
+            }
+            return List.copyOf(items);
+        });
+    }
+
+    public int getHistoryCount(String code) {
+        return owner.call(connection -> count(
+            connection,
+            "SELECT COUNT(*) FROM item_history WHERE code = ?",
+            code
+        ));
+    }
+
+    public PluginStats getStats() {
+        return owner.call(connection -> {
+            PluginStats stats = new PluginStats();
+            stats.setTotalItems(count(connection, "SELECT COUNT(*) FROM tracked_items", null));
+            stats.setTotalHistory(count(connection, "SELECT COUNT(*) FROM item_history", null));
+            try (Statement statement = connection.createStatement();
+                 ResultSet result = statement.executeQuery(
+                     "SELECT duplicates_detected FROM plugin_stats WHERE id = 1")) {
+                if (result.next()) {
+                    stats.setDuplicatesDetected(result.getInt(1));
+                }
+            }
+            stats.setDatabaseType("SQLITE");
+            stats.setDatabaseStatus("OK");
+            return stats;
+        });
+    }
+
+    public CompletableFuture<PluginStats> getStatsAsync() {
+        return owner.callAsync(connection -> {
+            PluginStats stats = new PluginStats();
+            stats.setTotalItems(count(connection, "SELECT COUNT(*) FROM tracked_items", null));
+            stats.setTotalHistory(count(connection, "SELECT COUNT(*) FROM item_history", null));
+            try (Statement statement = connection.createStatement();
+                 ResultSet result = statement.executeQuery(
+                     "SELECT duplicates_detected FROM plugin_stats WHERE id = 1")) {
+                if (result.next()) {
+                    stats.setDuplicatesDetected(result.getInt(1));
+                }
+            }
+            stats.setDatabaseType("SQLITE");
+            stats.setDatabaseStatus("OK");
+            return stats;
+        });
+    }
+
+    public int deleteHistoryBefore(long cutoff) {
+        return owner.call(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(
+                "DELETE FROM item_history WHERE timestamp < ?")) {
+                statement.setLong(1, cutoff);
+                return statement.executeUpdate();
+            }
+        });
+    }
+
+    private void validateCanonicalIdentity(Connection connection, ItemData item) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+            "SELECT item_uuid FROM tracked_items WHERE code = ?")) {
+            statement.setString(1, item.getCode());
+            try (ResultSet result = statement.executeQuery()) {
+                if (result.next() && !item.getItemUuid().toString().equals(result.getString(1))) {
+                    throw new SQLException(
+                        "Refusing to rebind ItemGuard code " + item.getCode() + " to another UUID"
+                    );
+                }
+            }
+        }
+    }
+
+    private void insertTagPublication(
+        Connection connection,
+        TagPublication publication
+    ) throws SQLException {
+        rejectTagIdentityCollision(connection, publication);
+        ItemData item = publication.item();
+        ItemSnapshot snapshot = publication.snapshot();
+        try (PreparedStatement statement = connection.prepareStatement("""
+            INSERT INTO tag_publications
+            (publication_id, source_key, source_digest, code, item_uuid, owner_uuid, owner_name,
+             material, item_name, item_lore, created_item_at, last_seen_at,
+             last_action, detection_count, last_location, snapshot_version,
+             payload, sha256, captured_at, state, created_at, updated_at, detail)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """)) {
+            statement.setString(1, publication.publicationId().toString());
+            statement.setString(2, publication.sourceKey());
+            statement.setBytes(3, publication.sourceDigest());
+            statement.setString(4, item.getCode());
+            statement.setString(5, item.getItemUuid().toString());
+            statement.setString(6, item.getOwnerUuid() == null ? null : item.getOwnerUuid().toString());
+            statement.setString(7, item.getOwnerName());
+            statement.setString(8, item.getMaterial() == null ? null : item.getMaterial().name());
+            statement.setString(9, item.getItemName());
+            statement.setString(10, item.getItemLore());
+            statement.setLong(11, item.getCreatedAt());
+            statement.setLong(12, item.getLastSeenAt());
+            statement.setString(13, item.getLastAction());
+            statement.setInt(14, item.getDetectionCount());
+            statement.setString(15, item.getLastLocation());
+            statement.setInt(16, snapshot.version());
+            statement.setBytes(17, snapshot.payload());
+            statement.setBytes(18, snapshot.sha256());
+            statement.setLong(19, publication.capturedAt());
+            statement.setString(20, publication.state().name());
+            statement.setLong(21, publication.createdAt());
+            statement.setLong(22, publication.updatedAt());
+            statement.setString(23, publication.detail());
+            statement.executeUpdate();
+        }
+    }
+
+    private Optional<TagPublication> findTagPublication(
+        Connection connection,
+        UUID publicationId
+    ) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+            SELECT * FROM tag_publications WHERE publication_id = ?
+            """)) {
+            statement.setString(1, publicationId.toString());
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next()
+                    ? Optional.of(mapTagPublication(result))
+                    : Optional.empty();
+            }
+        }
+    }
+
+    private void markObservationEpochComplete(Connection connection, long scanEpoch)
+        throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+            UPDATE item_observations
+            SET epoch_complete = 1
+            WHERE scan_epoch = ?
+            """)) {
+            statement.setLong(1, scanEpoch);
+            statement.executeUpdate();
+        }
+    }
+
+    private void deleteOlderObservationEpochs(Connection connection, long scanEpoch)
+        throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+            DELETE FROM item_observations
+            WHERE scan_epoch < ?
+            """)) {
+            statement.setLong(1, scanEpoch);
+            statement.executeUpdate();
+        }
+    }
+
+    private DuplicateInsertResult insertConfirmedDuplicateFindings(
+        Connection connection,
+        long scanEpoch,
+        DuplicateAction action,
+        long detectionCooldownMillis,
+        long createdAt
+    ) throws SQLException {
+        int inserted = 0;
+        List<DuplicateFinding> reports = new ArrayList<>(MAX_DUPLICATE_REPORTS_PER_EPOCH);
+        long cooldownCutoff = detectionCooldownMillis > createdAt
+            ? Long.MIN_VALUE
+            : createdAt - detectionCooldownMillis;
+        try (PreparedStatement statement = connection.prepareStatement("""
+            INSERT OR IGNORE INTO duplicate_findings
+            (item_uuid, code, scan_epoch, status, distinct_locations,
+             action, created_at, detail)
+            SELECT observations.item_uuid,
+                   observations.code,
+                   ?,
+                   'CONFIRMED',
+                   COUNT(*),
+                   ?,
+                   ?,
+                   'distinct_locations=' || COUNT(*)
+            FROM item_observations observations
+            INNER JOIN tracked_items tracked
+                ON tracked.item_uuid = observations.item_uuid
+                AND tracked.code = observations.code
+            WHERE observations.scan_epoch = ?
+                AND observations.epoch_complete = 1
+                AND NOT EXISTS (
+                    SELECT 1 FROM duplicate_findings previous
+                    WHERE previous.item_uuid = observations.item_uuid
+                        AND previous.created_at > ?
+                )
+            GROUP BY observations.item_uuid, observations.code
+            HAVING COUNT(*) >= 2
+            RETURNING item_uuid, code, scan_epoch, status, distinct_locations,
+                      action, created_at, detail
+            """)) {
+            statement.setLong(1, scanEpoch);
+            statement.setString(2, action.name());
+            statement.setLong(3, createdAt);
+            statement.setLong(4, scanEpoch);
+            statement.setLong(5, cooldownCutoff);
+            try (ResultSet result = statement.executeQuery()) {
+                while (result.next()) {
+                    inserted++;
+                    if (reports.size() < MAX_DUPLICATE_REPORTS_PER_EPOCH) {
+                        reports.add(new DuplicateFinding(
+                            UUID.fromString(result.getString("item_uuid")),
+                            result.getString("code"),
+                            result.getLong("scan_epoch"),
+                            DuplicateStatus.valueOf(result.getString("status")),
+                            result.getInt("distinct_locations"),
+                            DuplicateAction.valueOf(result.getString("action")),
+                            result.getLong("created_at"),
+                            result.getString("detail")
+                        ));
+                    }
+                }
+            }
+        }
+        return new DuplicateInsertResult(inserted, List.copyOf(reports));
+    }
+
+    private record DuplicateInsertResult(int inserted, List<DuplicateFinding> reports) {}
+
+    private void incrementDuplicateCount(
+        Connection connection,
+        int delta,
+        long updatedAt
+    ) throws SQLException {
+        if (delta <= 0) {
+            return;
+        }
+        try (PreparedStatement statement = connection.prepareStatement("""
+            UPDATE plugin_stats
+            SET duplicates_detected = duplicates_detected + ?, last_updated = ?
+            WHERE id = 1
+            """)) {
+            statement.setInt(1, delta);
+            statement.setLong(2, updatedAt);
+            statement.executeUpdate();
+        }
+    }
+
+    private TagPublication reserveTagPublication(
+        Connection connection,
+        TagPublication proposed
+    ) throws SQLException {
+        Optional<TagPublication> existing = findPreparedTagPublicationBySource(
+            connection,
+            proposed.sourceKey()
+        );
+        if (existing.isPresent()) {
+            TagPublication prepared = existing.get();
+            if (MessageDigest.isEqual(
+                prepared.sourceDigest(),
+                proposed.sourceDigest()
+            )) {
+                return prepared;
+            }
+            updateTagPublicationState(
+                connection,
+                prepared.publicationId(),
+                TagPublicationState.PREPARED,
+                TagPublicationState.ABORTED,
+                proposed.createdAt(),
+                "SOURCE_CHANGED_BEFORE_RESERVE"
+            );
+        }
+        insertTagPublication(connection, proposed);
+        return proposed;
+    }
+
+    private Optional<TagPublication> findPreparedTagPublicationBySource(
+        Connection connection,
+        String sourceKey
+    ) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+            SELECT * FROM tag_publications
+            WHERE source_key = ? AND state = 'PREPARED'
+            """)) {
+            statement.setString(1, sourceKey);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next()
+                    ? Optional.of(mapTagPublication(result))
+                    : Optional.empty();
+            }
+        }
+    }
+
+    private void rejectTagIdentityCollision(
+        Connection connection,
+        TagPublication proposed
+    ) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+            SELECT 1 FROM tracked_items WHERE code = ? OR item_uuid = ?
+            UNION ALL
+            SELECT 1 FROM tag_publications WHERE code = ? OR item_uuid = ?
+            LIMIT 1
+            """)) {
+            // Compare the exact values inserted below. Existing IDs are never normalized/rebound.
+            // ABORTED rows deliberately keep their identities reserved by the unique indexes.
+            statement.setString(1, proposed.item().getCode());
+            statement.setString(2, proposed.item().getItemUuid().toString());
+            statement.setString(3, proposed.item().getCode());
+            statement.setString(4, proposed.item().getItemUuid().toString());
+            try (ResultSet result = statement.executeQuery()) {
+                if (result.next()) {
+                    throw new TagIdentityCollisionException();
+                }
+            }
+        }
+    }
+
+    private TagPublication mapTagPublication(ResultSet result) throws SQLException {
+        ItemData item = new ItemData(
+            result.getString("code"),
+            UUID.fromString(result.getString("item_uuid"))
+        );
+        String ownerUuid = result.getString("owner_uuid");
+        item.setOwnerUuid(ownerUuid == null ? null : UUID.fromString(ownerUuid));
+        item.setOwnerName(result.getString("owner_name"));
+        String material = result.getString("material");
+        item.setMaterial(material == null ? null : Material.valueOf(material));
+        item.setItemName(result.getString("item_name"));
+        item.setItemLore(result.getString("item_lore"));
+        item.setCreatedAt(result.getLong("created_item_at"));
+        item.setLastSeenAt(result.getLong("last_seen_at"));
+        item.setLastAction(result.getString("last_action"));
+        item.setDetectionCount(result.getInt("detection_count"));
+        item.setLastLocation(result.getString("last_location"));
+        ItemSnapshot snapshot = new ItemSnapshot(
+            result.getInt("snapshot_version"),
+            result.getBytes("payload"),
+            result.getBytes("sha256")
+        );
+        return new TagPublication(
+            UUID.fromString(result.getString("publication_id")),
+            result.getString("source_key"),
+            result.getBytes("source_digest"),
+            item,
+            snapshot,
+            result.getLong("captured_at"),
+            TagPublicationState.valueOf(result.getString("state")),
+            result.getLong("created_at"),
+            result.getLong("updated_at"),
+            result.getString("detail")
+        );
+    }
+
+    private boolean publishTagPublication(
+        Connection connection,
+        UUID publicationId,
+        long updatedAt
+    ) throws SQLException {
+        Optional<TagPublication> found = findTagPublication(connection, publicationId);
+        if (found.isEmpty() || found.get().state() != TagPublicationState.PREPARED) {
+            return false;
+        }
+        TagPublication publication = found.get();
+        if (updatedAt < publication.updatedAt()) {
+            return false;
+        }
+        upsertItem(connection, publication.item());
+        upsertSnapshot(
+            connection,
+            publication.item().getCode(),
+            publication.snapshot(),
+            publication.capturedAt()
+        );
+        boolean transitioned = updateTagPublicationState(
+            connection,
+            publicationId,
+            TagPublicationState.PREPARED,
+            TagPublicationState.PUBLISHED,
+            updatedAt,
+            null
+        );
+        if (!transitioned) {
+            throw new SQLException(
+                "Tag publication state changed during canonical publish"
+            );
+        }
+        return true;
+    }
+
+    private boolean reconcileTagPublication(
+        Connection connection,
+        TagReconciliationReceipt receipt,
+        long updatedAt
+    ) throws SQLException {
+        String normalizedCode = normalizeCode(receipt.code());
+        try (PreparedStatement canonical = connection.prepareStatement("""
+            SELECT 1 FROM tracked_items WHERE code = ? AND item_uuid = ?
+            """)) {
+            canonical.setString(1, normalizedCode);
+            canonical.setString(2, receipt.itemUuid().toString());
+            try (ResultSet result = canonical.executeQuery()) {
+                if (result.next()) {
+                    return true;
+                }
+            }
+        }
+        try (PreparedStatement prepared = connection.prepareStatement("""
+            SELECT publication_id, sha256 FROM tag_publications
+            WHERE code = ? AND item_uuid = ? AND source_key = ? AND state = 'PREPARED'
+            """)) {
+            prepared.setString(1, normalizedCode);
+            prepared.setString(2, receipt.itemUuid().toString());
+            prepared.setString(3, receipt.sourceKey());
+            try (ResultSet result = prepared.executeQuery()) {
+                if (!result.next()) {
+                    return false;
+                }
+                if (!MessageDigest.isEqual(
+                    result.getBytes("sha256"),
+                    receipt.taggedDigest()
+                )) {
+                    return false;
+                }
+                return publishTagPublication(
+                    connection,
+                    UUID.fromString(result.getString("publication_id")),
+                    updatedAt
+                );
+            }
+        }
+    }
+
+    private boolean abortTagPublication(
+        Connection connection,
+        UUID publicationId,
+        long updatedAt,
+        String detail
+    ) throws SQLException {
+        Optional<TagPublication> found = findTagPublication(connection, publicationId);
+        if (found.isEmpty()) return false;
+        TagPublication publication = found.get();
+        if (publication.state() == TagPublicationState.PUBLISHED
+            || publication.state() == TagPublicationState.ABORTED) {
+            return false;
+        }
+        return updateTagPublicationState(
+            connection,
+            publicationId,
+            publication.state(),
+            TagPublicationState.ABORTED,
+            updatedAt,
+            detail
+        );
+    }
+
+
+    private boolean updateTagPublicationState(
+        Connection connection,
+        UUID publicationId,
+        TagPublicationState expected,
+        TagPublicationState target,
+        long updatedAt,
+        String detail
+    ) throws SQLException {
+        String boundedDetail = detail == null
+            ? null
+            : detail.substring(0, Math.min(256, detail.length()));
+        try (PreparedStatement statement = connection.prepareStatement("""
+            UPDATE tag_publications
+            SET state = ?, updated_at = ?, detail = ?
+            WHERE publication_id = ? AND state = ? AND updated_at <= ?
+            """)) {
+            statement.setString(1, target.name());
+            statement.setLong(2, updatedAt);
+            statement.setString(3, boundedDetail);
+            statement.setString(4, publicationId.toString());
+            statement.setString(5, expected.name());
+            statement.setLong(6, updatedAt);
+            return statement.executeUpdate() == 1;
+        }
+    }
+
+    private void upsertItem(Connection connection, ItemData item) throws SQLException {
+        validateCanonicalIdentity(connection, item);
+        try (PreparedStatement statement = connection.prepareStatement("""
+            INSERT INTO tracked_items
+            (code, item_uuid, owner_uuid, owner_name, material, item_name, item_lore,
+             created_at, last_seen_at, last_action, detection_count, last_location)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(code) DO UPDATE SET
+                owner_uuid = excluded.owner_uuid,
+                owner_name = excluded.owner_name,
+                material = excluded.material,
+                item_name = excluded.item_name,
+                item_lore = excluded.item_lore,
+                last_seen_at = excluded.last_seen_at,
+                last_action = excluded.last_action,
+                detection_count = excluded.detection_count,
+                last_location = excluded.last_location
+            WHERE tracked_items.item_uuid = excluded.item_uuid
+            """)) {
+            bindItem(statement, item);
+            statement.executeUpdate();
+        }
+    }
+
+    private void upsertSnapshot(
+        Connection connection,
+        String code,
+        ItemSnapshot snapshot,
+        long capturedAt
+    ) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+            INSERT INTO item_snapshots
+            (code, snapshot_version, payload, sha256, captured_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(code) DO UPDATE SET
+                snapshot_version = excluded.snapshot_version,
+                payload = excluded.payload,
+                sha256 = excluded.sha256,
+                captured_at = excluded.captured_at
+            """)) {
+            statement.setString(1, normalizeCode(code));
+            statement.setInt(2, snapshot.version());
+            statement.setBytes(3, snapshot.payload());
+            statement.setBytes(4, snapshot.sha256());
+            statement.setLong(5, capturedAt);
+            statement.executeUpdate();
+        }
+    }
+
+    private void bindItem(PreparedStatement statement, ItemData item) throws SQLException {
+        statement.setString(1, item.getCode());
+        statement.setString(2, item.getItemUuid().toString());
+        statement.setString(3,
+            item.getOwnerUuid() != null ? item.getOwnerUuid().toString() : null);
+        statement.setString(4, item.getOwnerName());
+        statement.setString(5, item.getMaterial() != null ? item.getMaterial().name() : null);
+        statement.setString(6, item.getItemName());
+        statement.setString(7, item.getItemLore());
+        statement.setLong(8, item.getCreatedAt());
+        statement.setLong(9, item.getLastSeenAt());
+        statement.setString(10, item.getLastAction());
+        statement.setInt(11, item.getDetectionCount());
+        statement.setString(12, item.getLastLocation());
+    }
+
+    private void bindSearchRequest(
+        PreparedStatement statement,
+        ItemSearchRequest request
+    ) throws SQLException {
+        statement.setString(1, request.code());
+        statement.setString(2, request.mode().name());
+        statement.setString(3, request.state().name());
+        statement.setString(4,
+            request.actorUuid() != null ? request.actorUuid().toString() : null);
+        statement.setString(5, request.actorName());
+        statement.setLong(6, request.createdAt());
+        statement.setLong(7, request.expiresAt());
+        statement.setLong(8, request.updatedAt());
+    }
+
+    private void bindReclaimClaim(
+        PreparedStatement statement,
+        ReclaimClaim claim
+    ) throws SQLException {
+        statement.setString(1, claim.claimId().toString());
+        statement.setString(2, claim.idempotencyKey());
+        statement.setString(3, claim.playerUuid().toString());
+        statement.setString(4, normalizeCode(claim.code()));
+        statement.setString(5, claim.state().name());
+        statement.setLong(6, claim.requestedAt());
+        statement.setLong(7, claim.updatedAt());
+        statement.setString(8, claim.detail());
+    }
+
+    private boolean markSearchRequestFound(
+        Connection connection,
+        String code,
+        long updatedAt
+    ) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+            UPDATE item_search_requests
+            SET state = 'FOUND', updated_at = ?
+            WHERE code = ? AND state = 'ACTIVE' AND expires_at > ?
+            """)) {
+            statement.setLong(1, updatedAt);
+            statement.setString(2, normalizeCode(code));
+            statement.setLong(3, updatedAt);
+            return statement.executeUpdate() == 1;
+        }
+    }
+
+    private ItemSearchRequest parseSearchRequest(ResultSet result) throws SQLException {
+        String actorUuid = result.getString("actor_uuid");
+        return new ItemSearchRequest(
+            result.getString("code"),
+            ItemSearchMode.valueOf(result.getString("mode")),
+            ItemSearchState.valueOf(result.getString("state")),
+            actorUuid != null ? UUID.fromString(actorUuid) : null,
+            result.getString("actor_name"),
+            result.getLong("created_at"),
+            result.getLong("expires_at"),
+            result.getLong("updated_at")
+        );
+    }
+
+    private ReclaimClaim parseReclaimClaim(ResultSet result) throws SQLException {
+        return new ReclaimClaim(
+            UUID.fromString(result.getString("claim_id")),
+            result.getString("idempotency_key"),
+            UUID.fromString(result.getString("player_uuid")),
+            result.getString("code"),
+            ReclaimClaimState.valueOf(result.getString("state")),
+            result.getLong("requested_at"),
+            result.getLong("updated_at"),
+            result.getString("detail")
+        );
+    }
+
+    private String normalizeCode(String code) {
+        return code == null ? "" : code.trim().toUpperCase(java.util.Locale.ROOT);
+    }
+
+    private int count(Connection connection, String sql, String parameter) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            if (parameter != null) {
+                statement.setString(1, parameter);
+            }
+            try (ResultSet result = statement.executeQuery()) {
+                result.next();
+                return result.getInt(1);
+            }
+        }
+    }
+
+    private ItemData parseItem(ResultSet result) throws SQLException {
+        ItemData item = new ItemData(
+            result.getString("code"),
+            UUID.fromString(result.getString("item_uuid"))
+        );
+        String ownerUuid = result.getString("owner_uuid");
+        if (ownerUuid != null) {
+            item.setOwnerUuid(UUID.fromString(ownerUuid));
+        }
+        item.setOwnerName(result.getString("owner_name"));
+        String material = result.getString("material");
+        if (material != null) {
+            try {
+                item.setMaterial(Material.valueOf(material));
+            } catch (IllegalArgumentException ignored) {
+                // Unknown material remains null and is surfaced by the caller.
+            }
+        }
+        item.setItemName(result.getString("item_name"));
+        item.setItemLore(result.getString("item_lore"));
+        item.setCreatedAt(result.getLong("created_at"));
+        item.setLastSeenAt(result.getLong("last_seen_at"));
+        item.setLastAction(result.getString("last_action"));
+        item.setDetectionCount(result.getInt("detection_count"));
+        item.setLastLocation(result.getString("last_location"));
+        return item;
+    }
+
+    private ItemHistory parseHistory(ResultSet result) throws SQLException {
+        ItemHistory history = new ItemHistory();
+        history.setId(result.getLong("id"));
+        history.setCode(result.getString("code"));
+        history.setItemUuid(UUID.fromString(result.getString("item_uuid")));
+        history.setAction(result.getString("action"));
+        history.setPlayerName(result.getString("player_name"));
+        String playerUuid = result.getString("player_uuid");
+        if (playerUuid != null) {
+            history.setPlayerUuid(UUID.fromString(playerUuid));
+        }
+        history.setLocation(result.getString("location"));
+        history.setWorld(result.getString("world"));
+        history.setX(result.getInt("x"));
+        history.setY(result.getInt("y"));
+        history.setZ(result.getInt("z"));
+        history.setTimestamp(result.getLong("timestamp"));
+        history.setAdditionalData(result.getString("additional_data"));
+        return history;
+    }
+}
+
+
+FILE src/main/java/com/itemguard/persistence/SqliteConnectionOwner.java
+package com.itemguard.persistence;
+
+import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.time.Duration;
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
+
+public final class SqliteConnectionOwner implements AutoCloseable {
+
+    private static final Duration DEFAULT_CLOSE_TIMEOUT = Duration.ofSeconds(10);
+
+    private final SerialDatabaseExecutor executor;
+    private final Consumer<Throwable> failureHandler;
+    private final SqliteProcessLock processLock;
+    private final Duration initializationCleanupTimeout;
+    private final Consumer<SqliteProcessLock> processLockReleaser;
+    private final AtomicBoolean closed = new AtomicBoolean();
+    private volatile boolean closeSucceeded;
+    private Connection connection;
+
+    public SqliteConnectionOwner(Path databasePath) {
+        this(databasePath, failure -> {});
+    }
+
+    public SqliteConnectionOwner(Path databasePath, Consumer<Throwable> failureHandler) {
+        this(
+            databasePath,
+            failureHandler,
+            DEFAULT_CLOSE_TIMEOUT,
+            () -> {},
+            SqliteProcessLock::close
+        );
+    }
+
+    SqliteConnectionOwner(
+        Path databasePath,
+        Consumer<Throwable> failureHandler,
+        Duration initializationCleanupTimeout,
+        Runnable beforeInitialization,
+        Consumer<SqliteProcessLock> processLockReleaser
+    ) {
+        Objects.requireNonNull(databasePath, "databasePath");
+        this.failureHandler = Objects.requireNonNull(failureHandler, "failureHandler");
+        this.initializationCleanupTimeout = Objects.requireNonNull(
+            initializationCleanupTimeout,
+            "initializationCleanupTimeout"
+        );
+        Objects.requireNonNull(beforeInitialization, "beforeInitialization");
+        this.processLockReleaser = Objects.requireNonNull(
+            processLockReleaser,
+            "processLockReleaser"
+        );
+        this.processLock = SqliteProcessLock.acquire(databasePath);
+        this.executor = new SerialDatabaseExecutor("ItemGuard-DB");
+
+        Future<Void> initialization = executor.submit(() -> {
+            try {
+                beforeInitialization.run();
+                connection = DriverManager.getConnection(
+                    "jdbc:sqlite:" + databasePath.toAbsolutePath()
+                );
+                try (var statement = connection.createStatement()) {
+                    statement.execute("PRAGMA foreign_keys = ON");
+                }
+                connection.setAutoCommit(false);
+                new SqliteSchemaManager().initialize(connection);
+                return null;
+            } catch (Throwable failure) {
+                if (connection != null) {
+                    try {
+                        connection.close();
+                    } catch (SQLException closeFailure) {
+                        failure.addSuppressed(closeFailure);
+                    } finally {
+                        connection = null;
+                    }
+                }
+                throw failure;
+            }
+        });
+        try {
+            awaitInitialization(initialization);
+        } catch (RuntimeException failure) {
+            if (cleanupAfterInitializationFailure(failure)) {
+                try {
+                    processLockReleaser.accept(processLock);
+                } catch (RuntimeException releaseFailure) {
+                    failure.addSuppressed(releaseFailure);
+                    processLock.retainUntilProcessExit();
+                }
+            } else {
+                processLock.retainUntilProcessExit();
+            }
+            throw failure;
+        }
+    }
+
+    public void execute(SqliteOperation<Void> operation) {
+        requireOpen();
+        executor.execute(() -> {
+            try {
+                runTransaction(operation);
+            } catch (RuntimeException failure) {
+                reportFailure(failure);
+            }
+        });
+    }
+
+    public <T> T call(SqliteOperation<T> operation) {
+        requireOpen();
+        Future<T> future = executor.submit(() -> runTransaction(operation));
+        try {
+            return future.get();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting for ItemGuard database", interrupted);
+        } catch (ExecutionException failure) {
+            throw propagate(failure.getCause());
+        }
+    }
+
+    public <T> CompletableFuture<T> callAsync(SqliteOperation<T> operation) {
+        requireOpen();
+        Objects.requireNonNull(operation, "operation");
+        CompletableFuture<T> completion = new CompletableFuture<>();
+        executor.execute(() -> {
+            try {
+                completion.complete(runTransaction(operation));
+            } catch (RuntimeException failure) {
+                reportFailure(failure);
+                completion.completeExceptionally(failure);
+            }
+        });
+        return completion;
+    }
+
+    public void flush() {
+        call(connection -> null);
+    }
+
+    public synchronized boolean close(Duration timeout) {
+        Objects.requireNonNull(timeout, "timeout");
+        if (!closed.compareAndSet(false, true)) {
+            return closeSucceeded;
+        }
+
+        long deadline = System.nanoTime() + timeout.toNanos();
+        Future<Void> closeConnection = executor.submit(() -> {
+            if (connection != null && !connection.isClosed()) {
+                connection.close();
+            }
+            return null;
+        });
+
+        try {
+            closeConnection.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            processLock.retainUntilProcessExit();
+            closeSucceeded = false;
+            return false;
+        } catch (ExecutionException | TimeoutException failure) {
+            reportFailure(failure);
+            processLock.retainUntilProcessExit();
+            closeSucceeded = false;
+            return false;
+        }
+
+        long remainingNanos = Math.max(0L, deadline - System.nanoTime());
+        if (!executor.close(Duration.ofNanos(remainingNanos))) {
+            processLock.retainUntilProcessExit();
+            closeSucceeded = false;
+            return false;
+        }
+        try {
+            processLockReleaser.accept(processLock);
+            closeSucceeded = true;
+            return true;
+        } catch (RuntimeException releaseFailure) {
+            reportFailure(releaseFailure);
+            processLock.retainUntilProcessExit();
+            closeSucceeded = false;
+            return false;
+        }
+    }
+
+    @Override
+    public void close() {
+        close(DEFAULT_CLOSE_TIMEOUT);
+    }
+
+    private <T> T runTransaction(SqliteOperation<T> operation) {
+        try {
+            T result = operation.apply(connection);
+            connection.commit();
+            return result;
+        } catch (Throwable failure) {
+            rollback(failure);
+            throw propagate(failure);
+        }
+    }
+
+    private void rollback(Throwable originalFailure) {
+        try {
+            connection.rollback();
+        } catch (SQLException rollbackFailure) {
+            originalFailure.addSuppressed(rollbackFailure);
+        }
+    }
+
+    private void requireOpen() {
+        if (closed.get()) {
+            throw new RejectedExecutionException("ItemGuard database owner is closed");
+        }
+    }
+
+    private void awaitInitialization(Future<Void> initialization) {
+        try {
+            initialization.get();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while initializing ItemGuard database", interrupted);
+        } catch (ExecutionException failure) {
+            throw propagate(failure.getCause());
+        }
+    }
+
+    private boolean cleanupAfterInitializationFailure(RuntimeException originalFailure) {
+        long deadline = System.nanoTime() + initializationCleanupTimeout.toNanos();
+        Future<Void> cleanup;
+        try {
+            cleanup = executor.submit(() -> {
+                if (connection != null) {
+                    try {
+                        connection.close();
+                    } finally {
+                        connection = null;
+                    }
+                }
+                return null;
+            });
+        } catch (RuntimeException submissionFailure) {
+            originalFailure.addSuppressed(submissionFailure);
+            return false;
+        }
+
+        boolean interrupted = Thread.interrupted();
+        boolean cleanupSucceeded = false;
+        try {
+            while (true) {
+                try {
+                    long remainingNanos = Math.max(0L, deadline - System.nanoTime());
+                    cleanup.get(remainingNanos, TimeUnit.NANOSECONDS);
+                    cleanupSucceeded = true;
+                    break;
+                } catch (InterruptedException ignored) {
+                    interrupted = true;
+                } catch (ExecutionException cleanupFailure) {
+                    originalFailure.addSuppressed(cleanupFailure.getCause());
+                    break;
+                } catch (TimeoutException timeout) {
+                    originalFailure.addSuppressed(new IllegalStateException(
+                        "Timed out cleaning up ItemGuard database initialization",
+                        timeout
+                    ));
+                    break;
+                }
+            }
+            long remainingNanos = Math.max(0L, deadline - System.nanoTime());
+            boolean terminated = executor.close(Duration.ofNanos(remainingNanos));
+            if (!terminated) {
+                originalFailure.addSuppressed(new IllegalStateException(
+                    "ItemGuard database executor did not terminate after initialization failure"
+                ));
+            }
+            return cleanupSucceeded && terminated;
+        } finally {
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    private RuntimeException propagate(Throwable failure) {
+        if (failure instanceof RuntimeException runtimeFailure) {
+            return runtimeFailure;
+        }
+        return new IllegalStateException("ItemGuard database operation failed", failure);
+    }
+
+    private void reportFailure(Throwable failure) {
+        try {
+            failureHandler.accept(failure);
+        } catch (Throwable handlerFailure) {
+            failure.addSuppressed(handlerFailure);
+        }
+    }
+
+    @FunctionalInterface
+    public interface SqliteOperation<T> {
+        T apply(Connection connection) throws Exception;
+    }
+}
+
+
+FILE src/test/java/com/itemguard/services/ItemTrackingCodeGenerationTest.java
+package com.itemguard.services;
+
+import com.itemguard.ConfigManager;
+import com.itemguard.ItemGuard;
+import com.itemguard.data.DatabaseManager;
+import com.itemguard.identity.PublicItemCodeGenerator;
+import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataContainer;
+import org.bukkit.persistence.PersistentDataType;
+import org.junit.jupiter.api.Test;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Random;
+import java.util.Set;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+class ItemTrackingCodeGenerationTest {
+    @Test
+    void taggedCloneUsesInjectedGeneratorAndLeavesSourceUntouched() throws Exception {
+        var plugin = mock(ItemGuard.class);
+        var configs = mock(ConfigManager.class);
+        when(plugin.getDB()).thenReturn(mock(DatabaseManager.class));
+        when(plugin.getConfigs()).thenReturn(configs);
+        when(plugin.getConfig()).thenReturn(new org.bukkit.configuration.file.YamlConfiguration());
+        when(configs.getForceTrackMaterials()).thenReturn(Set.of());
+        when(plugin.getNamespacedKey(anyString())).thenAnswer(call -> new NamespacedKey("itemguard", call.getArgument(0)));
+        var random = new CountingRandom();
+        var service = new ItemTrackingService(plugin, new PublicItemCodeGenerator(random));
+        var source = new FakeStack();
+        var clone = new FakeStack();
+        when(source.stack.clone()).thenReturn(clone.stack);
+        var create = ItemTrackingService.class.getDeclaredMethod("createTaggedClone", ItemStack.class);
+        create.setAccessible(true);
+        assertSame(clone.stack, create.invoke(service, source.stack));
+        assertEquals(6, random.calls, "service must obtain code from tested generator");
+        assertEquals("AAAAAA", service.getCodeFromItem(clone.stack));
+        assertNotNull(service.getItemUuidFromItem(clone.stack));
+        assertTrue(source.values.isEmpty(), "proposal must not tag physical source");
+    }
+
+    private static final class CountingRandom extends Random {
+        int calls;
+        @Override public int nextInt(int bound) { assertEquals(36, bound); calls++; return 0; }
+    }
+
+    static final class FakeStack {
+        final Map<NamespacedKey, String> values = new HashMap<>();
+        final ItemStack stack = mock(ItemStack.class);
+        final ItemMeta meta = mock(ItemMeta.class);
+        final PersistentDataContainer pdc = mock(PersistentDataContainer.class);
+        FakeStack() {
+            when(stack.getType()).thenReturn(Material.DIAMOND_SWORD);
+            when(stack.getItemMeta()).thenReturn(meta);
+            when(meta.getPersistentDataContainer()).thenReturn(pdc);
+            when(pdc.has(any(NamespacedKey.class))).thenAnswer(call -> values.containsKey(call.getArgument(0)));
+            when(pdc.has(any(NamespacedKey.class), eq(PersistentDataType.STRING)))
+                .thenAnswer(call -> values.containsKey(call.getArgument(0)));
+            when(pdc.get(any(NamespacedKey.class), eq(PersistentDataType.STRING)))
+                .thenAnswer(call -> values.get(call.getArgument(0)));
+            doAnswer(call -> { values.put(call.getArgument(0), call.getArgument(2)); return null; })
+                .when(pdc).set(any(NamespacedKey.class), eq(PersistentDataType.STRING), anyString());
+        }
+    }
+}
+
+
+FILE src/test/java/com/itemguard/services/ItemTrackingPublicationIntegrationTest.java
+package com.itemguard.services;
+
+import com.itemguard.ConfigManager;
+import com.itemguard.ItemGuard;
+import com.itemguard.data.DatabaseManager;
+import com.itemguard.data.ItemData;
+import com.itemguard.identity.PublicItemCodeGenerator;
+import com.itemguard.persistence.ItemSqliteRepository;
+import com.itemguard.persistence.SqliteConnectionOwner;
+import com.itemguard.snapshot.ItemSnapshotCodec;
+import com.itemguard.tracking.TagPublication;
+import com.itemguard.tracking.TagPublicationState;
+import com.itemguard.tracking.TagReconciliationReceipt;
+import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
+import org.bukkit.Server;
+import org.bukkit.World;
+import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.entity.Item;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.scheduler.BukkitScheduler;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.Random;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Logger;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+/** Real service/coordinator/JDBC; Bukkit state and Paper serialization are test doubles, not Paper evidence. */
+class ItemTrackingPublicationIntegrationTest {
+    @TempDir Path temp;
+
+    @Test
+    void realCollisionRebuildsSnapshotAndOnlyPublishesFreshIdentity() throws Exception {
+        try (var fixture = new Fixture(temp.resolve("retry.db"), new SequenceRandom(0, 1));
+             var serialization = mockStatic(ItemStack.class)) {
+            serialization.when(() -> ItemStack.deserializeBytes(any(byte[].class))).thenAnswer(call -> fixture.restore(call.getArgument(0)));
+            var occupied = canonical("AAAAAA");
+            fixture.repository.saveItemWithSnapshot(occupied, new ItemSnapshotCodec(1024).capture(new byte[]{7}), 1L);
+            Item entity = fixture.entity();
+            assertTrue(fixture.service.requestEntityTag(entity, null));
+            assertNull(fixture.service.getCodeFromItem(entity.getItemStack()), "no physical write before reservation");
+            fixture.callback(); // typed collision -> fresh proposal
+            assertEquals(2, fixture.proposals.size());
+            assertNull(fixture.service.getCodeFromItem(entity.getItemStack()));
+            fixture.callback(); // fresh reservation -> physical write + canonical publish
+            fixture.callback(); // publish completion -> ready
+            assertEquals("BBBBBB", fixture.service.getCodeFromItem(entity.getItemStack()));
+            assertTrue(fixture.service.isIdentityReady(entity.getItemStack()));
+            var first = fixture.proposals.getFirst();
+            var fresh = fixture.proposals.getLast();
+            assertNotEquals(first.item().getItemUuid(), fresh.item().getItemUuid());
+            assertFalse(java.util.Arrays.equals(first.snapshot().payload(), fresh.snapshot().payload()));
+            assertTrue(fixture.repository.getTagPublication(first.publicationId()).isEmpty());
+            assertEquals(TagPublicationState.PUBLISHED, fixture.repository.getTagPublication(fresh.publicationId()).orElseThrow().state());
+            assertEquals(occupied.getItemUuid(), fixture.repository.getItem("AAAAAA").orElseThrow().getItemUuid());
+            assertArrayEquals(fresh.snapshot().payload(), entity.getItemStack().serializeAsBytes());
+            assertEquals(2, fixture.repository.getStats().getTotalItems());
+            assertFalse(fixture.service.requestEntityTag(entity, null), "existing identity must never be regenerated");
+            assertEquals(2, fixture.proposals.size());
+        }
+    }
+
+    @Test
+    void exhaustionPreservesPhysicalSourceAndCreatesNoOrphanRows() throws Exception {
+        try (var fixture = new Fixture(temp.resolve("exhaust.db"), new SequenceRandom(0))) {
+            fixture.repository.saveItemWithSnapshot(canonical("AAAAAA"), new ItemSnapshotCodec(1024).capture(new byte[]{7}), 1L);
+            Item entity = fixture.entity();
+            ItemStack source = entity.getItemStack();
+            assertTrue(fixture.service.requestEntityTag(entity, null));
+            fixture.callback(); fixture.callback(); fixture.callback();
+            assertEquals(3, fixture.proposals.size());
+            assertSame(source, entity.getItemStack());
+            for (TagPublication proposal : fixture.proposals) assertTrue(fixture.repository.getTagPublication(proposal.publicationId()).isEmpty());
+            assertEquals(1, fixture.repository.getStats().getTotalItems());
+            assertTrue(fixture.service.requestEntityTag(entity, null), "exhaustion must release source lock");
+            fixture.callback(); fixture.callback(); fixture.callback();
+        }
+    }
+
+    @Test
+    void distinctConcurrentSourcesReserveOnlyOneSharedCodeThenRetry() throws Exception {
+        try (var fixture = new Fixture(temp.resolve("concurrent.db"), new SequenceRandom(0, 0, 1));
+             var serialization = mockStatic(ItemStack.class)) {
+            serialization.when(() -> ItemStack.deserializeBytes(any(byte[].class))).thenAnswer(call -> fixture.restore(call.getArgument(0)));
+            Item first = fixture.entity(); Item second = fixture.entity();
+            assertTrue(fixture.service.requestEntityTag(first, null));
+            assertTrue(fixture.service.requestEntityTag(second, null));
+            for (int i = 0; i < 5; i++) fixture.callback();
+            assertEquals("AAAAAA", fixture.service.getCodeFromItem(first.getItemStack()));
+            assertEquals("BBBBBB", fixture.service.getCodeFromItem(second.getItemStack()));
+            assertEquals(2, fixture.repository.getStats().getTotalItems());
+            assertEquals(3, fixture.proposals.size());
+            assertTrue(fixture.service.isIdentityReady(first.getItemStack()));
+            assertTrue(fixture.service.isIdentityReady(second.getItemStack()));
+        }
+    }
+
+    @Test
+    void physicalWriteBeforePublishFailureReconcilesAfterDatabaseReopen() throws Exception {
+        Path file = temp.resolve("reopen.db");
+        TagPublication prepared;
+        try (var fixture = new Fixture(file, new SequenceRandom(2));
+             var serialization = mockStatic(ItemStack.class)) {
+            serialization.when(() -> ItemStack.deserializeBytes(any(byte[].class))).thenAnswer(call -> fixture.restore(call.getArgument(0)));
+            fixture.rejectPublish = true;
+            Item entity = fixture.entity();
+            assertTrue(fixture.service.requestEntityTag(entity, null));
+            fixture.callback(); fixture.callback();
+            prepared = fixture.proposals.getFirst();
+            assertArrayEquals(prepared.snapshot().payload(), entity.getItemStack().serializeAsBytes());
+            assertFalse(fixture.service.isIdentityReady(entity.getItemStack()));
+            assertEquals(0, fixture.repository.getStats().getTotalItems());
+            assertEquals(TagPublicationState.PREPARED, fixture.repository.getTagPublication(prepared.publicationId()).orElseThrow().state());
+        }
+        try (var owner = new SqliteConnectionOwner(file)) {
+            var repository = new ItemSqliteRepository(owner);
+            var receipt = new TagReconciliationReceipt(prepared.item().getCode(), prepared.item().getItemUuid(),
+                prepared.sourceKey(), prepared.snapshot().sha256());
+            assertTrue(repository.reconcile(receipt, System.currentTimeMillis()).get(5, TimeUnit.SECONDS));
+            assertTrue(repository.reconcile(receipt, System.currentTimeMillis()).get(5, TimeUnit.SECONDS));
+            assertEquals(1, repository.getStats().getTotalItems());
+            assertEquals(TagPublicationState.PUBLISHED, repository.getTagPublication(prepared.publicationId()).orElseThrow().state());
+        }
+    }
+
+    @Test
+    void changedSourceAfterReservationAbortsWithoutPhysicalWriteOrCanonicalRow() throws Exception {
+        try (var fixture = new Fixture(temp.resolve("stale.db"), new SequenceRandom(0))) {
+            Item entity = fixture.entity();
+            ItemStack source = entity.getItemStack();
+            assertTrue(fixture.service.requestEntityTag(entity, null));
+            when(entity.isValid()).thenReturn(false);
+            fixture.callback();
+            var proposed = fixture.proposals.getFirst();
+            var aborted = fixture.repository.getTagPublication(proposed.publicationId()).orElseThrow();
+            assertEquals(TagPublicationState.ABORTED, aborted.state());
+            assertEquals("SOURCE_CHANGED", aborted.detail());
+            assertSame(source, entity.getItemStack());
+            assertEquals(0, fixture.repository.getStats().getTotalItems());
+        }
+    }
+
+    @Test
+    void nonCollisionDatabaseFailureNeverRetriesOrWrites() throws Exception {
+        try (var fixture = new Fixture(temp.resolve("outage.db"), new SequenceRandom(0))) {
+            fixture.rejectReserve = true;
+            Item entity = fixture.entity();
+            ItemStack source = entity.getItemStack();
+            assertTrue(fixture.service.requestEntityTag(entity, null));
+            fixture.callback();
+            assertEquals(1, fixture.proposals.size());
+            assertSame(source, entity.getItemStack());
+            assertEquals(0, fixture.repository.getStats().getTotalItems());
+            assertTrue(fixture.repository.getTagPublication(fixture.proposals.getFirst().publicationId()).isEmpty());
+        }
+    }
+
+    @Test
+    void reopenedPreparedSourceReusesReservedIdentityInsteadOfRegeneratingPhysicalItem() throws Exception {
+        Path file = temp.resolve("prepared.db");
+        Item entity;
+        TagPublication prepared;
+        try (var fixture = new Fixture(file, new SequenceRandom(0))) {
+            entity = fixture.entity();
+            assertTrue(fixture.service.requestEntityTag(entity, null));
+            prepared = fixture.proposals.getFirst();
+            assertEquals(TagPublicationState.PREPARED, fixture.repository.getTagPublication(prepared.publicationId()).orElseThrow().state());
+            // No callback dispatched: physical source remains untagged.
+            assertNull(fixture.service.getCodeFromItem(entity.getItemStack()));
+        }
+        try (var fixture = new Fixture(file, new SequenceRandom(1));
+             var serialization = mockStatic(ItemStack.class)) {
+            var restored = new ItemTrackingCodeGenerationTest.FakeStack();
+            restored.values.put(new NamespacedKey("itemguard", "code"), prepared.item().getCode());
+            restored.values.put(new NamespacedKey("itemguard", "item_uuid"), prepared.item().getItemUuid().toString());
+            when(restored.stack.getAmount()).thenReturn(1); when(restored.stack.getMaxStackSize()).thenReturn(1);
+            when(restored.stack.serializeAsBytes()).thenReturn(prepared.snapshot().payload());
+            serialization.when(() -> ItemStack.deserializeBytes(any(byte[].class))).thenAnswer(call -> {
+                assertArrayEquals(prepared.snapshot().payload(), call.getArgument(0)); return restored.stack;
+            });
+            assertTrue(fixture.service.requestEntityTag(entity, null));
+            fixture.callback(); fixture.callback();
+            assertEquals("AAAAAA", fixture.service.getCodeFromItem(entity.getItemStack()));
+            assertEquals(prepared.item().getItemUuid(), fixture.service.getItemUuidFromItem(entity.getItemStack()));
+            assertEquals("BBBBBB", fixture.proposals.getFirst().item().getCode());
+            assertTrue(fixture.repository.getTagPublication(fixture.proposals.getFirst().publicationId()).isEmpty());
+            assertEquals(1, fixture.repository.getStats().getTotalItems());
+            assertTrue(fixture.service.isIdentityReady(entity.getItemStack()));
+        }
+    }
+
+    private static ItemData canonical(String code) {
+        var data = new ItemData(code, UUID.randomUUID()); data.setMaterial(Material.DIAMOND_SWORD); return data;
+    }
+
+    private static final class SequenceRandom extends Random {
+        private final int[] values;
+        private int position;
+        SequenceRandom(int... values) { this.values = values; }
+        @Override public int nextInt(int bound) { assertEquals(36, bound); return values[Math.min(position++ / 6, values.length - 1)]; }
+    }
+
+    private static final class Fixture implements AutoCloseable {
+        final SqliteConnectionOwner owner;
+        final ItemSqliteRepository repository;
+        final LinkedBlockingQueue<Runnable> main = new LinkedBlockingQueue<>();
+        final List<TagPublication> proposals = new ArrayList<>();
+        final Map<String, ItemStack> snapshots = new HashMap<>();
+        final ItemTrackingService service;
+        boolean rejectPublish;
+        boolean rejectReserve;
+
+        Fixture(Path file, Random random) {
+            owner = new SqliteConnectionOwner(file); repository = new ItemSqliteRepository(owner);
+            var plugin = mock(ItemGuard.class); var db = mock(DatabaseManager.class); var configs = mock(ConfigManager.class);
+            var server = mock(Server.class); var scheduler = mock(BukkitScheduler.class);
+            when(plugin.getDB()).thenReturn(db); when(plugin.getConfigs()).thenReturn(configs);
+            when(plugin.getConfig()).thenReturn(new YamlConfiguration()); when(plugin.isEnabled()).thenReturn(true);
+            when(plugin.getLogger()).thenReturn(Logger.getLogger("ItemGuard-offline-test"));
+            when(configs.getForceTrackMaterials()).thenReturn(Set.of());
+            when(configs.isTrackingEnabled()).thenReturn(true); when(configs.isTrackNonStackable()).thenReturn(true);
+            when(configs.isWorldEnabled(anyString())).thenReturn(true);
+            when(plugin.getNamespacedKey(anyString())).thenAnswer(call -> new NamespacedKey("itemguard", call.getArgument(0)));
+            when(plugin.getServer()).thenReturn(server); when(server.getScheduler()).thenReturn(scheduler);
+            doAnswer(call -> { main.add(call.getArgument(1, Runnable.class)); return null; }).when(scheduler).runTask(eq(plugin), any(Runnable.class));
+            when(db.reserve(any())).thenAnswer(call -> {
+                var proposal = call.getArgument(0, TagPublication.class); proposals.add(proposal);
+                return rejectReserve ? CompletableFuture.failedFuture(new IllegalStateException("injected reserve outage")) : repository.reserve(proposal);
+            });
+            when(db.publish(any(), anyLong())).thenAnswer(call -> rejectPublish
+                ? CompletableFuture.failedFuture(new IllegalStateException("injected publish outage"))
+                : repository.publish(call.getArgument(0), call.getArgument(1)));
+            when(db.abort(any(), anyLong(), anyString())).thenAnswer(call -> repository.abort(call.getArgument(0), call.getArgument(1), call.getArgument(2)));
+            when(db.reconcile(any(), anyLong())).thenAnswer(call -> repository.reconcile(call.getArgument(0), call.getArgument(1)));
+            service = new ItemTrackingService(plugin, new PublicItemCodeGenerator(random));
+        }
+        Item entity() {
+            var entity = mock(Item.class); var world = mock(World.class);
+            when(world.getName()).thenReturn("offline"); when(entity.getWorld()).thenReturn(world);
+            when(entity.isValid()).thenReturn(true); when(entity.getUniqueId()).thenReturn(UUID.randomUUID());
+            var physical = new AtomicReference<>(stack());
+            when(entity.getItemStack()).thenAnswer(call -> physical.get());
+            doAnswer(call -> { physical.set(call.getArgument(0)); return null; }).when(entity).setItemStack(any());
+            return entity;
+        }
+        ItemStack stack() {
+            var fake = new ItemTrackingCodeGenerationTest.FakeStack();
+            when(fake.stack.getMaxStackSize()).thenReturn(1); when(fake.stack.getAmount()).thenReturn(1);
+            when(fake.stack.clone()).thenAnswer(call -> stack());
+            when(fake.stack.serializeAsBytes()).thenAnswer(call -> {
+                var sorted = new java.util.TreeMap<String, String>();
+                fake.values.forEach((key, value) -> sorted.put(key.toString(), value));
+                byte[] payload = sorted.toString().getBytes(StandardCharsets.UTF_8);
+                snapshots.put(Base64.getEncoder().encodeToString(payload), fake.stack); return payload;
+            });
+            return fake.stack;
+        }
+        ItemStack restore(byte[] bytes) { return java.util.Objects.requireNonNull(snapshots.get(Base64.getEncoder().encodeToString(bytes))); }
+        void callback() throws InterruptedException {
+            Runnable callback = main.poll(5, TimeUnit.SECONDS); assertNotNull(callback, "expected DB handoff"); callback.run();
+        }
+        @Override public void close() { owner.close(); }
+    }
+}
+
+
+FILE src/test/java/com/itemguard/tracking/TagPublicationCollisionRetryTest.java
+package com.itemguard.tracking;
+
+import com.itemguard.data.ItemData;
+import com.itemguard.snapshot.ItemSnapshot;
+import org.junit.jupiter.api.Test;
+
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Queue;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.function.Supplier;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class TagPublicationCollisionRetryTest {
+    @Test
+    void typedCollisionRegeneratesOnMainThenPublishesOnlyFreshSnapshot() {
+        var fixture = new Fixture();
+        var first = publication("AB12CD");
+        var fresh = publication("EF34GH");
+        fixture.proposals.add(first);
+        fixture.proposals.add(fresh);
+        assertTrue(fixture.request());
+        fixture.pending.remove().completeExceptionally(new CompletionException(new TagIdentityCollisionException()));
+        assertEquals(1, fixture.factoryCalls);
+        assertNull(fixture.written);
+        assertFalse(fixture.request());
+        fixture.drain();
+        assertEquals(2, fixture.factoryCalls, "retry rebuilds full proposal on dispatcher");
+        assertEquals(List.of(first, fresh), fixture.reserved);
+        fixture.pending.remove().complete(fresh);
+        fixture.drain();
+        assertSame(fresh, fixture.written);
+        assertSame(fresh.snapshot(), fixture.written.snapshot());
+        assertEquals(List.of(fresh.publicationId()), fixture.published);
+        assertEquals(0, fixture.failures.size());
+    }
+
+    @Test
+    void exhaustionIsBoundedAndReleasesSourceLock() {
+        var fixture = new Fixture();
+        fixture.factory = () -> publication("AB12CD");
+        assertTrue(fixture.request());
+        for (int attempt = 0; attempt < 3; attempt++) {
+            assertFalse(fixture.pending.isEmpty(), "expected reservation attempt " + attempt);
+            fixture.pending.remove().completeExceptionally(new TagIdentityCollisionException());
+            fixture.drain();
+        }
+        assertEquals(3, fixture.factoryCalls);
+        assertEquals(3, fixture.reserved.size());
+        assertEquals(1, fixture.failures.size());
+        assertInstanceOf(TagIdentityCollisionException.class, fixture.failures.getFirst());
+        assertNull(fixture.written);
+        assertTrue(fixture.request(), "lock released after terminal failure");
+    }
+
+    @Test
+    void changedPhysicalSourceStopsBeforeRegeneration() {
+        var fixture = new Fixture();
+        fixture.factory = () -> publication("AB12CD");
+        assertTrue(fixture.request());
+        fixture.matches = false;
+        fixture.pending.remove().completeExceptionally(new TagIdentityCollisionException());
+        fixture.drain();
+        assertEquals(1, fixture.factoryCalls);
+        assertEquals(1, fixture.failures.size());
+        assertNull(fixture.written);
+    }
+
+    @Test
+    void disabledPluginStopsBeforeRegeneration() {
+        var fixture = new Fixture();
+        fixture.factory = () -> publication("AB12CD");
+        assertTrue(fixture.request());
+        fixture.enabled = false;
+        fixture.pending.remove().completeExceptionally(new TagIdentityCollisionException());
+        fixture.drain();
+        assertEquals(1, fixture.factoryCalls);
+        assertTrue(fixture.failures.isEmpty());
+        assertNull(fixture.written);
+    }
+
+    @Test
+    void regeneratedProposalCannotSwitchSourceDigestOrState() {
+        for (String defect : new String[] {"source", "digest", "state"}) {
+            var fixture = new Fixture();
+            fixture.proposals.add(publication("AB12CD"));
+            fixture.proposals.add(altered(publication("EF34GH"), defect));
+            assertTrue(fixture.request());
+            fixture.pending.remove().completeExceptionally(new TagIdentityCollisionException());
+            fixture.drain();
+            assertEquals(1, fixture.reserved.size(), defect);
+            assertEquals(1, fixture.failures.size(), defect);
+            assertNull(fixture.written);
+        }
+    }
+
+    @Test
+    void mismatchedSuccessfulReservationNeverWritesPhysicalItem() {
+        for (String defect : new String[] {"source", "digest", "state"}) {
+            var fixture = new Fixture();
+            fixture.proposals.add(publication("AB12CD"));
+            assertTrue(fixture.request());
+            fixture.pending.remove().complete(altered(publication("EF34GH"), defect));
+            fixture.drain();
+            assertNull(fixture.written, defect);
+            assertTrue(fixture.published.isEmpty(), defect);
+            assertEquals(1, fixture.failures.size(), defect);
+        }
+    }
+
+    @Test
+    void genericFailureAndNullResultNeverRetry() {
+        for (Throwable failure : new Throwable[] {new IllegalStateException("database error"),
+            new IllegalStateException(new TagIdentityCollisionException()), null}) {
+            var fixture = new Fixture();
+            fixture.factory = () -> publication("AB12CD");
+            assertTrue(fixture.request());
+            if (failure == null) fixture.pending.remove().complete(null);
+            else fixture.pending.remove().completeExceptionally(failure);
+            fixture.drain();
+            assertEquals(1, fixture.factoryCalls);
+            assertEquals(1, fixture.failures.size());
+            assertNull(fixture.written);
+        }
+    }
+
+    @Test
+    void throwingFailureCallbackStillReleasesSourceAfterPublishSubmissionFailure() {
+        var fixture = new Fixture();
+        fixture.factory = () -> publication("AB12CD");
+        fixture.publishSubmissionFails = true;
+        fixture.publishFailureCallbackThrows = true;
+        assertTrue(fixture.request());
+        fixture.pending.remove().complete(fixture.reserved.getFirst());
+        assertThrows(IllegalStateException.class, fixture::drain);
+        fixture.failures.add(new IllegalStateException("terminal failure"));
+        assertTrue(fixture.request(), "publish failure callback must not leak source lock");
+    }
+
+    private static TagPublication altered(TagPublication original, String defect) {
+        byte[] digest = original.sourceDigest();
+        if (defect.equals("digest")) digest[0] = 1;
+        return new TagPublication(original.publicationId(), defect.equals("source") ? "other" : original.sourceKey(),
+            digest, original.item(), original.snapshot(), original.capturedAt(),
+            defect.equals("state") ? TagPublicationState.PUBLISHED : original.state(),
+            original.createdAt(), original.updatedAt(), original.detail());
+    }
+
+    private static TagPublication publication(String code) {
+        var identity = UUID.randomUUID();
+        return new TagPublication(UUID.randomUUID(), "source", new byte[32], new ItemData(code, identity),
+            new ItemSnapshot(1, identity.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8), new byte[32]),
+            1L, TagPublicationState.PREPARED, 1L, 1L, null);
+    }
+
+    private static final class Fixture implements TagPublicationStore, TagPublicationTarget {
+        final Queue<Runnable> main = new ArrayDeque<>();
+        final Queue<CompletableFuture<TagPublication>> pending = new ArrayDeque<>();
+        final Queue<TagPublication> proposals = new ArrayDeque<>();
+        final List<TagPublication> reserved = new ArrayList<>();
+        final List<UUID> published = new ArrayList<>();
+        final List<Throwable> failures = new ArrayList<>();
+        Supplier<TagPublication> factory = proposals::remove;
+        int factoryCalls;
+        boolean enabled = true;
+        boolean matches = true;
+        boolean onMain;
+        boolean publishSubmissionFails;
+        boolean publishFailureCallbackThrows;
+        TagPublication written;
+        final AsyncTagPublicationCoordinator coordinator = new AsyncTagPublicationCoordinator(
+            this, main::add, () -> enabled, () -> 2L);
+
+        boolean request() {
+            return coordinator.request(() -> {
+                factoryCalls++;
+                return factory.get();
+            }, this);
+        }
+        void drain() {
+            onMain = true;
+            try {
+                int remaining = 20;
+                while (!main.isEmpty()) {
+                    assertTrue(remaining-- > 0, "bounded dispatcher drain");
+                    main.remove().run();
+                }
+            } finally { onMain = false; }
+        }
+        @Override public String sourceKey() { return "source"; }
+        @Override public boolean matches(byte[] digest) { assertTrue(onMain); return matches; }
+        @Override public void write(TagPublication publication) { assertTrue(onMain); written = publication; }
+        @Override public void preparationFailed(Throwable failure) { assertTrue(onMain); failures.add(failure); }
+        @Override public CompletableFuture<TagPublication> reserve(TagPublication proposed) {
+            if (!reserved.isEmpty() && failures.isEmpty()) assertTrue(onMain, "retry reserve dispatched on main");
+            reserved.add(proposed);
+            var future = new CompletableFuture<TagPublication>();
+            pending.add(future);
+            return future;
+        }
+        @Override public CompletableFuture<Boolean> publish(UUID id, long time) {
+            if (publishSubmissionFails) throw new IllegalStateException("submission rejected");
+            published.add(id); return CompletableFuture.completedFuture(true);
+        }
+        @Override public void publishFailed(TagPublication publication, Throwable failure) {
+            if (publishFailureCallbackThrows) throw new IllegalStateException("callback rejected");
+        }
+        @Override public CompletableFuture<Boolean> reconcile(TagReconciliationReceipt receipt, long time) {
+            throw new AssertionError("reconcile not part of retry");
+        }
+        @Override public CompletableFuture<Boolean> abort(UUID id, long time, String detail) {
+            return CompletableFuture.completedFuture(true);
+        }
+    }
+}
+
+
+FILE src/test/java/com/itemguard/persistence/TagIdentityCollisionRepositoryTest.java
+package com.itemguard.persistence;
+
+import com.itemguard.data.ItemData;
+import com.itemguard.snapshot.ItemSnapshotCodec;
+import com.itemguard.tracking.TagIdentityCollisionException;
+import com.itemguard.tracking.TagPublication;
+import com.itemguard.tracking.TagPublicationState;
+import org.bukkit.Material;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.file.Path;
+import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class TagIdentityCollisionRepositoryTest {
+    @TempDir
+    Path tempDir;
+
+    @Test
+    void canonicalCollisionIsTypedAndNeverCreatesPublication() throws Exception {
+        try (var owner = new SqliteConnectionOwner(tempDir.resolve("canonical.db"))) {
+            var repository = new ItemSqliteRepository(owner);
+            var canonical = publication("AB12CD", UUID.randomUUID(), "first", new byte[32]);
+            repository.saveItemWithSnapshot(canonical.item(), canonical.snapshot(), 1L);
+            for (boolean collideCode : new boolean[] {true, false}) {
+                var proposed = publication(collideCode ? "AB12CD" : "EF34GH",
+                    collideCode ? UUID.randomUUID() : canonical.item().getItemUuid(), "second", new byte[32]);
+                var failure = assertThrows(ExecutionException.class,
+                    () -> repository.reserve(proposed).get(2, TimeUnit.SECONDS));
+                assertInstanceOf(TagIdentityCollisionException.class, failure.getCause());
+                assertTrue(repository.getTagPublication(proposed.publicationId()).isEmpty());
+            }
+            assertEquals(canonical.item().getItemUuid(), repository.getItem("AB12CD").orElseThrow().getItemUuid());
+        }
+    }
+
+    @Test
+    void everyJournalStateReservesCodeAndUuid() throws Exception {
+        for (var state : TagPublicationState.values()) {
+            try (var owner = new SqliteConnectionOwner(tempDir.resolve(state + ".db"))) {
+                var repository = new ItemSqliteRepository(owner);
+                var first = publication("AB12CD", UUID.randomUUID(), "first", new byte[32]);
+                repository.reserve(first).get(2, TimeUnit.SECONDS);
+                if (state == TagPublicationState.ABORTED) repository.abort(first.publicationId(), 2L, "test").get(2, TimeUnit.SECONDS);
+                if (state == TagPublicationState.PUBLISHED) repository.publish(first.publicationId(), 2L).get(2, TimeUnit.SECONDS);
+                for (boolean collideCode : new boolean[] {true, false}) {
+                    var next = publication(collideCode ? "AB12CD" : "EF34GH",
+                        collideCode ? UUID.randomUUID() : first.item().getItemUuid(), "second", new byte[32]);
+                    var failure = assertThrows(ExecutionException.class, () -> repository.reserve(next).get(2, TimeUnit.SECONDS));
+                    assertInstanceOf(TagIdentityCollisionException.class, failure.getCause());
+                    assertTrue(repository.getTagPublication(next.publicationId()).isEmpty());
+                    assertEquals(state, repository.getTagPublication(first.publicationId()).orElseThrow().state());
+                }
+            }
+        }
+    }
+
+    @Test
+    void synchronousPrepareSharesCanonicalCollisionGate() {
+        try (var owner = new SqliteConnectionOwner(tempDir.resolve("prepare-collision.db"))) {
+            var repository = new ItemSqliteRepository(owner);
+            var first = publication("AB12CD", UUID.randomUUID(), "first", new byte[32]);
+            repository.saveItemWithSnapshot(first.item(), first.snapshot(), 1L);
+            var next = publication("AB12CD", UUID.randomUUID(), "second", new byte[32]);
+            assertThrows(TagIdentityCollisionException.class, () -> repository.prepareTagPublication(next));
+            assertTrue(repository.getTagPublication(next.publicationId()).isEmpty());
+        }
+    }
+
+    @Test
+    void changedSourceAbortRollsBackWhenReplacementCollides() throws Exception {
+        try (var owner = new SqliteConnectionOwner(tempDir.resolve("rollback.db"))) {
+            var repository = new ItemSqliteRepository(owner);
+            var first = publication("AB12CD", UUID.randomUUID(), "same-source", new byte[32]);
+            var occupied = publication("EF34GH", UUID.randomUUID(), "occupied", new byte[32]);
+            repository.reserve(first).get(2, TimeUnit.SECONDS);
+            repository.reserve(occupied).get(2, TimeUnit.SECONDS);
+            byte[] changedDigest = new byte[32]; changedDigest[0] = 1;
+            var changed = publication("EF34GH", UUID.randomUUID(), first.sourceKey(), changedDigest);
+            var failure = assertThrows(ExecutionException.class, () -> repository.reserve(changed).get(2, TimeUnit.SECONDS));
+            assertInstanceOf(TagIdentityCollisionException.class, failure.getCause());
+            assertEquals(TagPublicationState.PREPARED, repository.getTagPublication(first.publicationId()).orElseThrow().state());
+            assertTrue(repository.getTagPublication(changed.publicationId()).isEmpty());
+            var fresh = publication("IJ56KL", UUID.randomUUID(), first.sourceKey(), changedDigest);
+            assertEquals(fresh, repository.reserve(fresh).get(2, TimeUnit.SECONDS));
+            assertEquals(TagPublicationState.ABORTED, repository.getTagPublication(first.publicationId()).orElseThrow().state());
+        }
+    }
+
+    private TagPublication publication(String code, UUID identity, String source, byte[] digest) {
+        var item = new ItemData(code, identity);
+        item.setMaterial(Material.DIAMOND_SWORD);
+        item.setCreatedAt(1L);
+        item.setLastSeenAt(1L);
+        return new TagPublication(UUID.randomUUID(), source, digest, item,
+            new ItemSnapshotCodec(1024).capture(new byte[] {1, 2, 3}),
+            1L, TagPublicationState.PREPARED, 1L, 1L, null);
+    }
+}
+
+
+FILE src/test/java/com/itemguard/identity/PublicItemCodeGeneratorTest.java
+package com.itemguard.identity;
+
+import org.junit.jupiter.api.Test;
+import java.util.Random;
+import static org.junit.jupiter.api.Assertions.*;
+
+class PublicItemCodeGeneratorTest {
+    @Test
+    void generatesSixUppercaseAlphanumericCharactersFromInjectedRandom() {
+        var generator = new PublicItemCodeGenerator(new Random(42));
+        var expectedRandom = new Random(42);
+        String alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        for (int sample = 0; sample < 256; sample++) {
+            var expected = new StringBuilder();
+            for (int position = 0; position < 6; position++) expected.append(alphabet.charAt(expectedRandom.nextInt(36)));
+            String actual = generator.generate();
+            assertEquals(expected.toString(), actual);
+            assertTrue(actual.matches("[A-Z0-9]{6}"));
+        }
+    }
+}
+
+
+FILE src/test/java/com/itemguard/CodeGenerationTest.java
+package com.itemguard;
+
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class CodeGenerationTest {
+
+    @Test
+    void testCodeFormat() {
+        String code = new com.itemguard.identity.PublicItemCodeGenerator(new java.util.Random(42)).generate();
+        assertEquals(6, code.length());
+        assertTrue(code.matches("[A-Z0-9]{6}"));
+    }
+
+    @Test
+    void testCodeCharacters() {
+        String chars = new com.itemguard.identity.PublicItemCodeGenerator(new java.security.SecureRandom()).generate();
+        for (char c : chars.toCharArray()) {
+            assertTrue(Character.isUpperCase(c) || Character.isDigit(c));
+        }
+    }
+}

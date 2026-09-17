@@ -1,0 +1,15 @@
+{
+  "files": {
+    "docs/design/2026-09-09-dual-journal-commit-core.md": "db52817024c78e48b838f8ab3e88b8182b667b3a59b0425098d6b9a08dbe20d3",
+    "tools/execution-authority/guardian/DualJournalCommitCore.cs": "c2434216985a6a312f9093429071c015aec88446b3b0f710719aa5f20bfbc218",
+    "tools/execution-authority/guardian/CanonicalJson.cs": "6ec56107673903083bfe4812ae233436be3b71ece2964394e2ce38cb2025f2ed",
+    "tools/execution-authority/guardian/CanonicalString.cs": "1341268bca440e475c72c52e4d953fdf2de1c82b5a6446bedfbb4a9510ff230b",
+    "tools/execution-authority/tests/DualJournalCommitTests.cs": "7c45139e53d65cfb05f4c7b67fc04209dd9e81ff556cf4a891561fe1f9b83116",
+    "tools/execution-authority/recovery/CommonJournalChain.cs": "ea88b7c9f63efee96c62be8c01f15e078740eb75751966f15044c76f0461adee",
+    "tools/execution-authority/build/dual-commit-test.sh": "dc7c926f5ef67648b7f04e0d45c2b8d9286d5ed712cdee7960c0c3722e787860",
+    "tools/execution-authority/build/offline-test.sh": "f18e86815052d22cc1784cc0e336f965983bccf43a276d57c920d7201ab02ec0",
+    "tools/execution-authority/build/codec-build.sh": "200cc11c71f0d8d78494bb9a7bb20e9f4f0d6719105be8eabec00f1efc339b2e",
+    "docs/design/2026-09-01-natural-break-successor-35-execution-authority.md": "ce257d0a6fe2ee456c21c3fbb8d6e36e0e2aa9c6df8c33619d4cbc65058b8cb0"
+  },
+  "input_sha256": "e7df5eef5d51441d9a85cf17d853c0da449992a0ead1cf7c31679fa432afd719"
+}

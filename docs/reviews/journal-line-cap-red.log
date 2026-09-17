@@ -1,0 +1,4 @@
+OUT=C:/Users/thanh/AppData/Local/Temp/itemguard-codec-bin
+CHAIN cases=23 failures=0
+FAIL JournalLineBoundaryTests: line cap includes LF: decoder must reject max+1
+EXIT_CODE=1

@@ -1,0 +1,1206 @@
+You have NO tools. Perform static review NOW using supplied full source. Do not announce future work or output shell commands. Return ONLY JSON {"verdict":"PASS_FOR_OFFLINE_CANDIDATE" or "BLOCK","findings":[{"severity":"HIGH|MEDIUM|LOW","file":"...","issue":"...","trigger":"..."}],"boundaries":["..."]}. Scope ONLY new observations read DTO/query/controller loadObservations/list/detail and UI wiring. Existing baseline find/history/shared gate not a redesign. User approved observation-first not current custody; no schema/writer/adapter change. Full prior 374 tests passed, new flow test added. First reviewer ended without verdict so invalid. Exact source below. Context repository.recordObservation upserts physical key+epoch; finalization marks epoch_complete then DELETE scan_epoch < completed epoch (same owner transaction); actual scanner online player identity-eligible inventories and open physical block containers if enabled, not exhaustive all contents. index(item_uuid,scan_epoch) with implicit rowid sorts observation_id DESC. SQLite owner one executor/transaction, async callback main dispatch. Test base Data and Port allow controllable futures/permissions/queued main callbacks. Review any missing-context issue explicitly, do not invent APIs. No Paper proof expected.
+
+FILE docs/design/2026-09-09-retained-observations-browser.md
+# Retained observations browser — bounded C3 slice
+
+User approved observation-first with visible gaps in clarify; server/artifact path remains unanswered. No new schema, writer, scan, adapter, custody inference or ownership authority. Existing catalog profile navigation extended, not redesigned.
+
+## Exact-current semantics
+- ItemSqliteRepository.recordObservation upserts same epoch/physical key/item identity, queues on owner. completeObservationEpoch deletes ALL earlier epochs; this table is not durable movement history.
+- InventoryScanTask scans online player inventories + open physical block containers. epoch_complete only describes completion of that bounded scan, never global completeness/offline inventories/external storage.
+- SELECT exact code AND item_uuid, descending scan_epoch then observation_id (compatible identity/epoch index), LIMIT101 to return100 + truncation flag. Shared owner/ProgressHandler/admission retained; failures remain errors, not empty. No schema change or increased budgets. Holder ID preview capped255 with explicit shortened marker; raw type capped64, unknown types displayed as unknown.
+- Immutable scalar DTO only. No item deserialization, player UUID/name lookup, world access, container contents view, or write.
+
+## UX/security
+- Profile slot24 becomes Nơi đã quan sát; loading, list36/page (max100 retained rows), detail, back profile/catalog preserving filters. Each row shows recorded physical type/id/slot, time, scan epoch and completion flag.
+- Require existing history + history.others in addition to gui/search before submit, after completion and every action, matching retained-history privacy.
+- Explicit no-current-holder/no-absence/no-transfer claims, observation cache pruning and HavenBags unsupported. Empty != absent; completed epoch != globally complete; time invalid/nonpositive displayed unknown.
+- Async failure/retry exact selected identity, no catalog filters on observation errors. Shared gate one inflight/1s. Revocation, foreign UI/close/quit/disable/stale callback covered offline, not Paper evidence.
+
+## Gates
+TDD JDBC query actual rows/isolation/order/cap/partial/retention/budget recovery; controller navigation/error/retry/paging/permissions; actual CatalogUi host boundary. Full Java21 package and exact reviewer/artifact match. GUI visual/Paper, HavenBags version-specific integration, durable custody and whole C3 remain OPEN.
+
+
+FILE src/main/java/com/itemguard/catalog/CatalogObservation.java
+package com.itemguard.catalog;
+
+/** Recorded physical key, not ownership/current custody evidence. */
+public record CatalogObservation(long id, long epoch, boolean epochComplete,
+                                 String holderType, String holderId, int slot, long observedAt) {}
+
+
+FILE src/main/java/com/itemguard/catalog/CatalogObservations.java
+package com.itemguard.catalog;
+
+import java.util.List;
+
+public record CatalogObservations(List<CatalogObservation> rows, boolean hasMore) {
+    public CatalogObservations { rows = List.copyOf(rows); }
+}
+
+
+FILE src/main/java/com/itemguard/catalog/CatalogRepository.java
+package com.itemguard.catalog;
+
+import com.itemguard.persistence.SqliteConnectionOwner;
+import java.util.ArrayList;
+import java.util.concurrent.CompletableFuture;
+import org.sqlite.ProgressHandler;
+
+/** Bounded SELECT-only catalog; no world scan or item mutation. */
+public final class CatalogRepository {
+    private final SqliteConnectionOwner owner;
+    private final int progressLimit;
+    public CatalogRepository(SqliteConnectionOwner owner) { this(owner, 2000); }
+    CatalogRepository(SqliteConnectionOwner owner, int progressLimit) {
+        this.owner = java.util.Objects.requireNonNull(owner);
+        if (progressLimit < 1) throw new IllegalArgumentException("progressLimit");
+        this.progressLimit = progressLimit;
+    }
+    public CompletableFuture<java.util.List<CatalogEvent>> history(String code, String itemUuid) {
+        java.util.Objects.requireNonNull(code);
+        java.util.Objects.requireNonNull(itemUuid);
+        return bounded(connection -> {
+            var events = new ArrayList<CatalogEvent>();
+            try (var statement = connection.prepareStatement("""
+                SELECT id,action,player_name,player_uuid,location,timestamp,additional_data
+                FROM item_history WHERE code = ? AND item_uuid = ?
+                ORDER BY timestamp DESC, id DESC LIMIT 100
+                """)) {
+                statement.setString(1, code);
+                statement.setString(2, itemUuid);
+                try (var result = statement.executeQuery()) {
+                    while (result.next()) events.add(new CatalogEvent(result.getLong(1), result.getString(2),
+                        result.getString(3), result.getString(4), result.getString(5), result.getLong(6), result.getString(7)));
+                }
+            }
+            return java.util.List.copyOf(events);
+        });
+    }
+
+    public CompletableFuture<CatalogObservations> observations(String code, String itemUuid) {
+        java.util.Objects.requireNonNull(code);
+        java.util.Objects.requireNonNull(itemUuid);
+        return bounded(connection -> {
+            var rows = new ArrayList<CatalogObservation>();
+            try (var statement = connection.prepareStatement("""
+                SELECT observation_id,scan_epoch,epoch_complete,
+                    substr(holder_type,1,64) || CASE WHEN length(holder_type)>64 THEN '… [rút gọn]' ELSE '' END,
+                    substr(holder_id,1,255) || CASE WHEN length(holder_id)>255 THEN '… [rút gọn]' ELSE '' END,
+                    slot,observed_at
+                FROM item_observations WHERE item_uuid = ? AND code = ?
+                ORDER BY scan_epoch DESC, observation_id DESC LIMIT 101
+                """)) {
+                statement.setString(1, itemUuid); statement.setString(2, code);
+                try (var result = statement.executeQuery()) {
+                    while (result.next()) rows.add(new CatalogObservation(result.getLong(1), result.getLong(2),
+                        result.getInt(3) == 1, result.getString(4), result.getString(5), result.getInt(6), result.getLong(7)));
+                }
+            }
+            boolean more = rows.size() > 100;
+            if (more) rows.removeLast();
+            return new CatalogObservations(rows, more);
+        });
+    }
+
+    public CompletableFuture<CatalogPage> find(CatalogQuery query) {
+        java.util.Objects.requireNonNull(query);
+        return bounded(connection -> {
+            var rows = new ArrayList<CatalogRow>();
+            String sql = """
+                SELECT code,item_uuid,material,item_name,owner_name,last_location,last_seen_at
+                FROM tracked_items WHERE code > ?
+                AND (? = '' OR instr(ig_catalog_fold(COALESCE(item_name,'')), ig_catalog_fold(?)) > 0
+                    OR instr(ig_catalog_fold(code),ig_catalog_fold(?)) > 0 OR instr(ig_catalog_fold(COALESCE(material,'')),ig_catalog_fold(?)) > 0)
+                AND (? = '' OR owner_name = ? COLLATE NOCASE)
+                AND %s ORDER BY code ASC LIMIT 37
+                """.formatted(query.category().predicate());
+            try (var statement = connection.prepareStatement(sql)) {
+                statement.setString(1, query.afterCode());
+                for (int i = 2; i <= 5; i++) statement.setString(i, query.text());
+                statement.setString(6, query.ownerName());
+                statement.setString(7, query.ownerName());
+                try (var result = statement.executeQuery()) {
+                    while (result.next()) rows.add(new CatalogRow(
+                        result.getString(1), result.getString(2), result.getString(3),
+                        result.getString(4), result.getString(5), result.getString(6), result.getLong(7)));
+                }
+            }
+            boolean more = rows.size() > 36;
+            if (more) rows.removeLast();
+            return new CatalogPage(rows, more);
+        });
+    }
+
+    @FunctionalInterface
+    interface Cleanup { void run() throws java.sql.SQLException; }
+
+    static void cleanup(Throwable original, Cleanup... actions) throws java.sql.SQLException {
+        Throwable first = original;
+        for (var action : actions) {
+            try { action.run(); }
+            catch (java.sql.SQLException failure) {
+                if (first == null) first = failure;
+                else if (first != failure) first.addSuppressed(failure);
+            }
+        }
+        if (original == null && first != null) throw (java.sql.SQLException) first;
+    }
+
+    private <T> CompletableFuture<T> bounded(SqliteConnectionOwner.SqliteOperation<T> operation) {
+        return owner.callAsync(connection -> {
+            long started = System.nanoTime();
+            org.sqlite.Function.create(connection, "ig_catalog_fold", new org.sqlite.Function() {
+                @Override protected void xFunc() throws java.sql.SQLException {
+                    String value=value_text(0);
+                    result(java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFC).toLowerCase(java.util.Locale.ROOT));
+                }
+            }, 1, org.sqlite.Function.FLAG_DETERMINISTIC);
+            Throwable original = null;
+            try {
+                ProgressHandler.setHandler(connection, 1000, new ProgressHandler() {
+                    private int calls;
+                    @Override protected int progress() {
+                        return ++calls >= progressLimit || System.nanoTime() - started > 250_000_000L ? 1 : 0;
+                    }
+                });
+                return operation.apply(connection);
+            } catch (Exception | Error failure) {
+                original = failure; throw failure;
+            } finally {
+                cleanup(original, () -> ProgressHandler.clearHandler(connection),
+                    () -> org.sqlite.Function.destroy(connection, "ig_catalog_fold", 1));
+            }
+        });
+    }
+}
+
+
+FILE src/main/java/com/itemguard/catalog/CatalogController.java
+package com.itemguard.catalog;
+
+import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+
+/** All methods except future completion execute through the main-thread port. */
+public final class CatalogController {
+    public interface Data {
+        CompletableFuture<CatalogPage> find(CatalogQuery query);
+        CompletableFuture<List<CatalogEvent>> history(String code, String itemUuid);
+        CompletableFuture<CatalogObservations> observations(String code, String itemUuid);
+    }
+    public interface Port {
+        boolean allowed(boolean history);
+        void main(Runnable action);
+        void show(CatalogScreen screen);
+        void close();
+        void prompt(boolean owner, java.util.function.Consumer<String> completion);
+        void message(String message);
+    }
+    private final Data data;
+    private final Port port;
+    private final CatalogSession session = new CatalogSession();
+    private CatalogPage page = new CatalogPage(List.of(), false);
+    private CatalogRow selected;
+    private List<CatalogEvent> events = List.of();
+    private CatalogObservations observations = new CatalogObservations(List.of(), false);
+    private final Map<Integer, CatalogScreen.Icon> icons = new HashMap<>();
+    private String text = "", owner = "", cursor = "";
+    private CatalogCategory category = CatalogCategory.ALL;
+    private final java.util.ArrayList<String> previous = new java.util.ArrayList<>();
+    private int historyPage;
+    private int observationPage;
+    private long viewGeneration;
+    private boolean hasPage, historyFailure;
+    private Runnable retry = this::open;
+    private record Request(CatalogQuery query, List<String> previous) {
+        Request { previous = List.copyOf(previous); }
+    }
+
+    public CatalogController(Data data, Port port) { this.data = data; this.port = port; }
+    public void open() {
+        load(new Request(new CatalogQuery(text, owner, category, cursor), previous));
+    }
+    private void load(Request request) {
+        if (!permit(false)) return;
+        historyFailure = false; retry = () -> load(request);
+        base(); icon(22, "CLOCK", "Đang tải…", List.of(), null); show("Kho tra cứu");
+        if (!session.accepts(viewGeneration) || !permit(false)) return;
+        long generation = viewGeneration;
+        try {
+            data.find(request.query()).whenComplete((result, failure) ->
+                port.main(() -> {
+                    if (!session.accepts(generation) || !permit(false)) return;
+                    if (failure != null) { error(); return; }
+                    text = request.query().text(); owner = request.query().ownerName();
+                    category = request.query().category(); cursor = request.query().afterCode();
+                    previous.clear(); previous.addAll(request.previous());
+                    page = result; hasPage = true; catalog();
+                }));
+        } catch (RuntimeException failure) { error(); }
+    }
+    public void close() { session.close(); }
+
+    private boolean permit(boolean history) {
+        if (port.allowed(history)) return true;
+        close(); port.close(); return false;
+    }
+    private void base() {
+        viewGeneration = session.begin(); icons.clear();
+        icon(53, "BARRIER", "Đóng", List.of(), () -> { close(); port.close(); });
+        icon(0, "BOOK", "Chỉ dữ liệu đã ghi nhận", List.of(
+            "Chưa phải toàn bộ item trên hệ thống", "HavenBags/kho ngoài: chưa hỗ trợ", "Chỉ xem — không lấy hoặc xóa đồ"), null);
+    }
+    private void icon(int slot, String material, String title, List<String> lore, Runnable action) {
+        icons.put(slot, new CatalogScreen.Icon(material, title, lore, action));
+    }
+    private void show(String title) { show(title, false); }
+    private void show(String title, boolean historyRequired) {
+        if (!permit(historyRequired)) return;
+        long generation = viewGeneration;
+        var guarded = new HashMap<Integer, CatalogScreen.Icon>();
+        icons.forEach((slot, icon) -> guarded.put(slot, new CatalogScreen.Icon(icon.material(), icon.title(), icon.lore(),
+            icon.action() == null ? null : () -> {
+                if (session.accepts(generation) && permit(historyRequired)) icon.action().run();
+            })));
+        port.show(new CatalogScreen(title, guarded));
+    }
+    private void catalog() {
+        if (!hasPage) { error(); return; }
+        base();
+        filters();
+        for (int i=0; i<page.items().size(); i++) {
+            var row = page.items().get(i);
+            icon(i+9, row.material(), text(row.name()), List.of(row.code(),
+                "Người liên quan (bản ghi): " + text(row.ownerName()),
+                "Nguồn plugin: chưa xác định", "Bấm xem hồ sơ"), () -> { selected = row; profile(); });
+        }
+        if (page.items().isEmpty()) icon(22, "PAPER", "Không có bản ghi phù hợp", List.of("Không chứng minh item không tồn tại"), null);
+        if (!previous.isEmpty()) icon(48, "ARROW", "Trang trước", List.of(), () -> {
+            var stack = new java.util.ArrayList<>(previous);
+            String target = stack.removeLast();
+            load(new Request(new CatalogQuery(text, owner, category, target), stack));
+        });
+        if (page.hasMore() && !page.items().isEmpty()) {
+            if (previous.size() < 127) icon(50, "ARROW", "Trang sau", List.of(), () -> {
+                var stack = new java.util.ArrayList<>(previous); stack.add(cursor);
+                load(new Request(new CatalogQuery(text, owner, category, page.items().getLast().code()), stack));
+            });
+            else icon(50, "BARRIER", "Đã tới giới hạn 128 trang", List.of("Thu hẹp bộ lọc để tra tiếp"), null);
+        }
+        icon(49, "PAPER", "Trang " + (previous.size()+1), List.of("Xếp theo mã; không phải snapshot DB", "Dữ liệu mới có thể cần làm mới"), null);
+        show("Kho tra cứu · " + (previous.size()+1));
+    }
+    private void filters() {
+        icon(2, "NAME_TAG", "Tìm tên / mã / material", List.of(text.isEmpty() ? "Chưa lọc" : text), () -> input(false));
+        icon(3, "PLAYER_HEAD", "Người liên quan", List.of(owner.isEmpty() ? "Chưa lọc" : owner, "Theo tên trong bản ghi, không phải custody"), () -> input(true));
+        icon(4, "HOPPER", "Loại đồ: " + categoryName(category), List.of("Suy từ material; không phải loại custom"), this::categories);
+        icon(6, "SUNFLOWER", "Làm mới từ đầu", List.of(), () -> first(text, owner, category));
+        icon(7, "MILK_BUCKET", "Xóa bộ lọc", List.of(), () -> first("", "", CatalogCategory.ALL));
+    }
+    private void first(String search, String related, CatalogCategory kind) {
+        load(new Request(new CatalogQuery(search, related, kind, ""), List.of()));
+    }
+    private void input(boolean byOwner) {
+        long generation = session.begin();
+        port.prompt(byOwner, value -> {
+            if (!session.accepts(generation) || !permit(false)) return;
+            if (value.equalsIgnoreCase("huy") || value.equalsIgnoreCase("hủy")) { catalog(); return; }
+            String input = value.equals("*") ? "" : value;
+            try {
+                first(byOwner ? text : input, byOwner ? input : owner, category);
+            } catch (IllegalArgumentException invalid) {
+                port.message("Nội dung không hợp lệ: tên tối đa 16, tìm kiếm tối đa 64 ký tự."); catalog();
+            }
+        });
+    }
+    private void categories() {
+        base();
+        String[] materials={"CHEST","DIAMOND_SWORD","DIAMOND_CHESTPLATE","DIAMOND_PICKAXE","BOW","PAPER"};
+        for (var value : CatalogCategory.values()) {
+            icon(18+value.ordinal(), materials[value.ordinal()], categoryName(value), List.of("Phân loại theo material"), () -> first(text, owner, value));
+        }
+        icon(45, "ARROW", "Về kho", List.of(), this::catalog); show("Chọn loại đồ");
+    }
+    private static String categoryName(CatalogCategory value) {
+        return switch(value) { case ALL -> "Tất cả"; case SWORD -> "Kiếm"; case ARMOR -> "Giáp";
+            case TOOLS -> "Công cụ"; case RANGED -> "Tầm xa"; case OTHER -> "Khác / chưa phân loại"; };
+    }
+    private void profile() {
+        base();
+        icon(4, selected.material(), text(selected.name()), List.of(selected.code(), "UUID: " + text(selected.itemUuid()),
+            "Người liên quan (bản ghi): " + text(selected.ownerName()), "Nguồn plugin: chưa xác định"), null);
+        icon(20, "CLOCK", "Lịch sử", List.of("Tối đa 100 sự kiện còn lưu", "Không đầy đủ: giới hạn + retention"), this::loadHistory);
+        icon(22, "PLAYER_HEAD", "Qua tay ai — chưa hỗ trợ", List.of("Actor lịch sử không phải chuỗi chuyển tay"), null);
+        icon(24, "CHEST", "Nơi đã quan sát", List.of(text(selected.location()), time(selected.lastSeenAt()),
+            "Bấm xem các quan sát còn lưu", "Không xác minh tồn tại hiện tại"), this::loadObservations);
+        icon(45, "ARROW", "Về kho", List.of(), this::catalog);
+        show("Hồ sơ · " + selected.code());
+    }
+    private void loadObservations() {
+        if (!permit(true)) return;
+        historyFailure = true; retry = this::loadObservations;
+        base(); icon(22, "CLOCK", "Đang tải quan sát…", List.of(), null); show("Quan sát", true);
+        if (!session.accepts(viewGeneration) || !permit(true)) return;
+        long generation = viewGeneration;
+        try {
+            data.observations(selected.code(), selected.itemUuid()).whenComplete((result, failure) -> port.main(() -> {
+                if (!session.accepts(generation) || !permit(true)) return;
+                if (failure != null) { error(); return; }
+                observations = result; observationPage=0; observations();
+            }));
+        } catch (RuntimeException failure) { error(); }
+    }
+    private void observations() {
+        base();
+        int start = observationPage*36;
+        for (int i=0; i<Math.min(36, observations.rows().size()-start); i++) {
+            var row = observations.rows().get(start+i);
+            icon(i+9, "PAPER", holderName(row.holderType()), List.of(time(row.observedAt()),
+                text(row.holderId()), "Ô: " + row.slot(), epochStatus(row)), () -> observationDetail(row));
+        }
+        icon(4, "BOOK", "Quan sát còn lưu — không phải chuyển tay", List.of(
+            "Không xác minh người giữ hiện tại", "Đợt cũ bị xóa khi đợt mới hoàn tất",
+            "Chỉ túi người online + rương đang mở", "Đợt hoàn tất không phải toàn hệ thống",
+            observations.hasMore() ? "Đã cắt: chỉ 100 quan sát đầu" : "Chỉ các quan sát còn lưu", "HavenBags/kho ngoài: chưa hỗ trợ"), null);
+        icon(45, "ARROW", "Về hồ sơ", List.of(), this::profile);
+        if (observationPage>0) icon(48,"ARROW","Trang trước",List.of(),()->{observationPage--;observations();});
+        if (start+36<observations.rows().size()) icon(50,"ARROW","Trang sau",List.of(),()->{observationPage++;observations();});
+        if (observations.rows().isEmpty()) icon(22,"PAPER","Chưa có quan sát còn lưu",List.of("Không chứng minh item không tồn tại"),null);
+        show("Quan sát · " + selected.code() + " · " + (observationPage+1), true);
+    }
+    private void observationDetail(CatalogObservation row) {
+        base();
+        icon(22,"PAPER",holderName(row.holderType()),List.of("Quan sát #" + row.id(), time(row.observedAt()),
+            "Khóa vị trí: " + text(row.holderId()), "Ô: " + row.slot(), "Đợt quét: " + row.epoch(), epochStatus(row),
+            "Đây là nơi thấy tại thời điểm ghi", "Không chứng minh chuyển tay hoặc sở hữu"),null);
+        icon(45,"ARROW","Về quan sát",List.of(),this::observations);
+        show("Chi tiết quan sát · " + selected.code(), true);
+    }
+    private static String epochStatus(CatalogObservation row) {
+        return row.epochComplete() ? "Đợt quét đã hoàn tất (phạm vi hẹp)" : "Đợt quét chưa hoàn tất";
+    }
+    private static String holderName(String type) {
+        if (type == null) return "Loại vị trí chưa xác định";
+        return switch(type) { case "PLAYER" -> "Túi người chơi (đã quan sát)";
+            case "CONTAINER" -> "Rương / khối chứa (đã quan sát)";
+            default -> "Loại vị trí chưa hỗ trợ: " + text(type); };
+    }
+    private void loadHistory() {
+        if (!permit(true)) return;
+        historyFailure = true; retry = this::loadHistory;
+        base(); icon(22, "CLOCK", "Đang tải lịch sử…", List.of(), null); show("Lịch sử");
+        if (!session.accepts(viewGeneration) || !permit(true)) return;
+        long generation = viewGeneration;
+        try {
+            data.history(selected.code(), selected.itemUuid()).whenComplete((result, failure) -> port.main(() -> {
+                if (!session.accepts(generation) || !permit(true)) return;
+                if (failure != null) { error(); return; }
+                events = List.copyOf(result); historyPage=0; history();
+            }));
+        } catch (RuntimeException failure) { error(); }
+    }
+    private void history() {
+        base();
+        int start = historyPage*36;
+        for (int i=0; i<Math.min(36, events.size()-start); i++) {
+            var event = events.get(start+i);
+            icon(i+9, "PAPER", text(event.action()), List.of(time(event.timestamp()),
+                "Người thực hiện: " + text(event.actor()), text(event.location())), () -> detail(event));
+        }
+        icon(4, "BOOK", "Lịch sử không đầy đủ", List.of("Tối đa 100 sự kiện còn lưu; retention", "Người thực hiện không đồng nghĩa người giữ"), null);
+        icon(45, "ARROW", "Về hồ sơ", List.of(), this::profile);
+        if (historyPage>0) icon(48,"ARROW","Trang trước",List.of(),()->{historyPage--;history();});
+        if (start+36<events.size()) icon(50,"ARROW","Trang sau",List.of(),()->{historyPage++;history();});
+        if (events.isEmpty()) icon(22,"PAPER","Chưa có sự kiện còn lưu",List.of("Không đồng nghĩa chưa từng xảy ra"),null);
+        show("Lịch sử · " + selected.code() + " · " + (historyPage+1), true);
+    }
+    private void detail(CatalogEvent event) {
+        base();
+        icon(22, "PAPER", text(event.action()), List.of("Sự kiện #" + event.id(), time(event.timestamp()),
+            "Người thực hiện: " + text(event.actor()), "UUID: " + text(event.actorUuid()),
+            text(event.location()), text(event.detail()), "Không phải bằng chứng chuyển quyền sở hữu"), null);
+        icon(45, "ARROW", "Về lịch sử", List.of(), this::history);
+        show("Sự kiện · " + selected.code(), true);
+    }
+    private void error() {
+        base(); icon(22, "BARRIER", "Không thể tải dữ liệu", List.of("DB đang bận, lỗi hoặc vượt giới hạn", "Đợi ít nhất 1 giây rồi thử lại", "Không coi là kết quả rỗng"), null);
+        icon(49, "CLOCK", "Thử lại", List.of("Giữ nguyên yêu cầu vừa lỗi"), retry);
+        if (historyFailure && selected != null) icon(45,"ARROW","Về hồ sơ",List.of(),this::profile);
+        else if (hasPage) icon(45,"ARROW","Về trang trước đó",List.of("Giữ trang và bộ lọc đã tải thành công"),this::catalog);
+        if (!historyFailure) filters();
+        show("ItemGuard · Lỗi truy vấn");
+    }
+    private static String text(String value) { return value == null || value.isBlank() ? "Chưa ghi nhận" : value; }
+    private static String time(long value) {
+        return value <= 0 ? "Chưa ghi thời gian" : java.time.format.DateTimeFormatter.ofPattern("dd/MM/uuuu HH:mm:ss XXX")
+            .withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.ofEpochMilli(value));
+    }
+}
+
+
+FILE src/main/java/com/itemguard/catalog/CatalogUi.java
+package com.itemguard.catalog;
+
+import com.itemguard.ItemGuard;
+import com.itemguard.gui.UiMainThreadHandoff;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
+import org.bukkit.Bukkit;
+import org.bukkit.Material;
+import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
+import org.bukkit.event.Listener;
+import org.bukkit.event.inventory.*;
+import org.bukkit.event.player.AsyncPlayerChatEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerCommandPreprocessEvent;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.scheduler.BukkitTask;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
+
+public final class CatalogUi implements Listener {
+    interface Host {
+        boolean enabled();
+        CatalogController.Data data();
+        CatalogInventory render(Player player, CatalogScreen screen);
+        BukkitTask later(Runnable action, long ticks);
+        void releaseLegacy(UUID id);
+    }
+    private final Host host;
+    private final Consumer<Runnable> schedule;
+    private final Map<UUID, View> views = new HashMap<>();
+    private final Map<UUID, Prompt> prompts = new ConcurrentHashMap<>();
+    private final CatalogReadGate readGate = new CatalogReadGate(System::nanoTime);
+
+    public CatalogUi(ItemGuard plugin) { this(plugin, action -> UiMainThreadHandoff.dispatch(plugin, action)); }
+    CatalogUi(ItemGuard plugin, Consumer<Runnable> schedule) { this(new Host() {
+        public boolean enabled() { return plugin.isEnabled(); }
+        public CatalogController.Data data() {
+            var repository=plugin.getDB().getCatalog();
+            return new CatalogController.Data() {
+                public java.util.concurrent.CompletableFuture<CatalogPage> find(CatalogQuery query) { return repository.find(query); }
+                public java.util.concurrent.CompletableFuture<List<CatalogEvent>> history(String code,String uuid) { return repository.history(code,uuid); }
+                public java.util.concurrent.CompletableFuture<CatalogObservations> observations(String code,String uuid) { return repository.observations(code,uuid); }
+            };
+        }
+        public CatalogInventory render(Player player, CatalogScreen screen) {
+            var next=new CatalogInventory(player.getUniqueId(),screen,holder -> Bukkit.createInventory(holder,54,Component.text(display(screen.title()))));
+            for (int slot=0;slot<54;slot++) next.getInventory().setItem(slot,preview(new CatalogScreen.Icon("GRAY_STAINED_GLASS_PANE"," ",List.of(),null)));
+            screen.icons().forEach((slot,icon)->next.getInventory().setItem(slot,preview(icon)));
+            return next;
+        }
+        public BukkitTask later(Runnable action,long ticks) { return Bukkit.getScheduler().runTaskLater(plugin,action,ticks); }
+        public void releaseLegacy(UUID id) { plugin.getGuiListener().releasePlayer(id); }
+    }, schedule); }
+    CatalogUi(Host host, Consumer<Runnable> schedule) { this.host=host; this.schedule=schedule; }
+
+    public void open(Player player) {
+        if (!player.hasPermission("itemguard.gui") || !player.hasPermission("itemguard.search")) {
+            player.sendMessage(Component.text("Bạn cần quyền itemguard.gui và itemguard.search.", NamedTextColor.RED)); return;
+        }
+        release(player.getUniqueId());
+        host.releaseLegacy(player.getUniqueId());
+        var view = new View(player); views.put(player.getUniqueId(), view); view.controller.open();
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onClick(InventoryClickEvent event) {
+        if (!(event.getView().getTopInventory().getHolder() instanceof CatalogInventory holder)) return;
+        Runnable action = holder.cancelAndResolve(event);
+        if (action == null) return;
+        UUID id = event.getWhoClicked().getUniqueId();
+        schedule.accept(() -> {
+            View view=views.get(id);
+            if (view != null && view.current == holder && view.allowed(false)) action.run();
+        });
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onDrag(InventoryDragEvent event) {
+        if (event.getView().getTopInventory().getHolder() instanceof CatalogInventory) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onClose(InventoryCloseEvent event) {
+        View view=views.get(event.getPlayer().getUniqueId());
+        if (view != null && !view.switching && view.current != null
+            && event.getInventory() == view.current.getInventory()) release(event.getPlayer().getUniqueId());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onOpen(InventoryOpenEvent event) {
+        View view=views.get(event.getPlayer().getUniqueId());
+        if (view != null && (view.current == null || event.getInventory() != view.current.getInventory())) {
+            release(event.getPlayer().getUniqueId());
+        }
+    }
+
+    @EventHandler public void onQuit(PlayerQuitEvent event) { release(event.getPlayer().getUniqueId()); }
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onCommand(PlayerCommandPreprocessEvent event) {
+        View view=views.get(event.getPlayer().getUniqueId());
+        if (view != null && view.prompt != null) release(event.getPlayer().getUniqueId());
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onChat(AsyncPlayerChatEvent event) {
+        UUID id=event.getPlayer().getUniqueId();
+        Prompt prompt=prompts.remove(id);
+        if (prompt == null) return;
+        event.setCancelled(true);
+        String value=event.getMessage();
+        schedule.accept(() -> {
+            View view=views.get(id);
+            if (view == null || view.prompt != prompt || !view.allowed(false)) return;
+            view.cancelPrompt(); prompt.completion.accept(value);
+        });
+    }
+
+    private void release(UUID id) {
+        View view=views.remove(id);
+        if (view != null) { view.controller.close(); view.cancelPrompt(); }
+        prompts.remove(id);
+    }
+    public void clear() {
+        for (View view : List.copyOf(views.values())) {
+            boolean ours=view.current != null && view.player.getOpenInventory().getTopInventory() == view.current.getInventory();
+            release(view.player.getUniqueId());
+            if (ours) view.player.closeInventory();
+        }
+    }
+    private record Prompt(Consumer<String> completion) {}
+
+    private final class View implements CatalogController.Port {
+        private final Player player;
+        private final CatalogController controller;
+        private CatalogInventory current;
+        private boolean switching;
+        private Prompt prompt;
+        private BukkitTask timeout;
+
+        private View(Player player) {
+            this.player=player;
+            var repository=host.data();
+            controller=new CatalogController(new CatalogController.Data() {
+                public java.util.concurrent.CompletableFuture<CatalogPage> find(CatalogQuery query) { return readGate.submit(() -> repository.find(query)); }
+                public java.util.concurrent.CompletableFuture<List<CatalogEvent>> history(String code,String uuid) { return readGate.submit(() -> repository.history(code,uuid)); }
+                public java.util.concurrent.CompletableFuture<CatalogObservations> observations(String code,String uuid) { return readGate.submit(() -> repository.observations(code,uuid)); }
+            },this);
+        }
+        @Override public boolean allowed(boolean history) {
+            return views.get(player.getUniqueId()) == this && host.enabled() && player.isOnline()
+                && player.hasPermission("itemguard.gui") && player.hasPermission("itemguard.search")
+                && (!history || (player.hasPermission("itemguard.history") && player.hasPermission("itemguard.history.others")))
+                && (current == null || switching || player.getOpenInventory().getTopInventory() == current.getInventory());
+        }
+        @Override public void main(Runnable action) { schedule.accept(action); }
+        @Override public void show(CatalogScreen screen) {
+            if (!allowed(false)) { close(); return; }
+            cancelPrompt();
+            var next=host.render(player,screen);
+            var inventory=next.getInventory();
+            switching=true; current=next;
+            try { player.openInventory(inventory); }
+            finally { switching=false; }
+            if (player.getOpenInventory().getTopInventory() != inventory) release(player.getUniqueId());
+        }
+        @Override public void close() {
+            boolean ours=current != null && player.getOpenInventory().getTopInventory() == current.getInventory();
+            release(player.getUniqueId()); if (ours) player.closeInventory();
+        }
+        @Override public void prompt(boolean owner, Consumer<String> completion) {
+            cancelPrompt();
+            switching=true;
+            try { player.closeInventory(); current=null; } finally { switching=false; }
+            prompt=new Prompt(completion); Prompt captured=prompt;
+            prompts.put(player.getUniqueId(), captured);
+            message(owner ? "Nhập tên trong bản ghi (tối đa 16 ký tự). * để bỏ lọc; Hủy để quay lại."
+                : "Nhập tên / mã / material (tối đa 64 ký tự). * để bỏ lọc; Hủy để quay lại.");
+            timeout=host.later(()->{
+                if (views.get(player.getUniqueId()) == this && prompt == captured) {
+                    release(player.getUniqueId()); message("Đã hết thời gian nhập. Mở lại /ig browser.");
+                }
+            },600L);
+        }
+        private void cancelPrompt() {
+            if (prompt != null) prompts.remove(player.getUniqueId(),prompt);
+            prompt=null;
+            if (timeout != null) { timeout.cancel(); timeout=null; }
+        }
+        @Override public void message(String message) { player.sendMessage(Component.text(message,NamedTextColor.YELLOW)); }
+    }
+
+    private static ItemStack preview(CatalogScreen.Icon icon) {
+        Material material=icon.material() == null ? null : Material.matchMaterial(icon.material());
+        if (material == null || material.isAir() || !material.isItem()) material=Material.PAPER;
+        var item=new ItemStack(material);
+        var meta=item.getItemMeta();
+        if (meta != null) {
+            meta.displayName(Component.text(display(icon.title()),NamedTextColor.GOLD).decoration(TextDecoration.ITALIC,false));
+            meta.lore(icon.lore().stream().map(line->Component.text(display(line),NamedTextColor.GRAY).decoration(TextDecoration.ITALIC,false)).toList());
+            item.setItemMeta(meta);
+        }
+        return item;
+    }
+    static String display(String value) {
+        if (value == null) return "Chưa ghi nhận";
+        String safe=value.replaceAll("§[0-9a-fk-orxA-FK-ORX]","").replaceAll("[\\p{Cntrl}\\p{Cf}]"," ");
+        int end=Math.min(safe.length(),160);
+        if (end<safe.length() && end>0 && Character.isHighSurrogate(safe.charAt(end-1))) end--;
+        return end<safe.length() ? safe.substring(0,end)+"…" : safe;
+    }
+}
+
+
+FILE src/main/java/com/itemguard/catalog/CatalogReadGate.java
+package com.itemguard.catalog;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
+import java.util.function.LongSupplier;
+
+/** Shared admission across all catalog viewers, independent of tracking writes. */
+public final class CatalogReadGate {
+    private final LongSupplier clock;
+    private boolean busy, used;
+    private long lastStart;
+    public CatalogReadGate(LongSupplier clock) { this.clock=java.util.Objects.requireNonNull(clock); }
+    public synchronized <T> CompletableFuture<T> submit(Supplier<CompletableFuture<T>> operation) {
+        long now=clock.getAsLong();
+        if (busy || (used && now-lastStart<1_000_000_000L)) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Catalog busy; try again shortly"));
+        }
+        busy=true; used=true; lastStart=now;
+        try {
+            CompletableFuture<T> result=operation.get();
+            result.whenComplete((value,failure)->release());
+            return result;
+        } catch (RuntimeException failure) {
+            busy=false; return CompletableFuture.failedFuture(failure);
+        }
+    }
+    private synchronized void release() { busy=false; }
+}
+
+
+FILE src/test/java/com/itemguard/catalog/CatalogObservationRepositoryTest.java
+package com.itemguard.catalog;
+
+import com.itemguard.persistence.SqliteConnectionOwner;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import java.nio.file.Path;
+import static org.junit.jupiter.api.Assertions.*;
+
+class CatalogObservationRepositoryTest {
+    @TempDir Path dir;
+
+    @Test void returnsExactIdentityInNewestScanOrderWithExplicitTruncation() throws Exception {
+        try (var owner = new SqliteConnectionOwner(dir.resolve("observations.db"))) {
+            seed(owner, 121);
+            var result = new CatalogRepository(owner).observations("ABC123", "identity").get();
+            assertEquals(100, result.rows().size(), "retained physical observations must be available");
+            assertTrue(result.hasMore());
+            assertEquals(121, result.rows().getFirst().id());
+            assertEquals(22, result.rows().getLast().id());
+            assertFalse(result.rows().getFirst().epochComplete());
+            assertTrue(result.rows().stream().anyMatch(CatalogObservation::epochComplete));
+            assertEquals("holder120", result.rows().getFirst().holderId());
+            assertEquals(120, result.rows().getFirst().slot());
+            assertEquals(9880, result.rows().getFirst().observedAt(), "order is scan/id, not mutable wall clock");
+            assertThrows(UnsupportedOperationException.class, () -> result.rows().clear());
+            assertTrue(new CatalogRepository(owner).observations("missing", "identity").get().rows().isEmpty());
+        }
+    }
+
+    @Test void oversizedScalarKeysAreExplicitlyShortenedBeforeReturning() throws Exception {
+        try (var owner = new SqliteConnectionOwner(dir.resolve("scalar.db"))) {
+            seed(owner, 1);
+            owner.call(c -> { try(var s=c.prepareStatement("UPDATE item_observations SET holder_id=?,holder_type=? WHERE observation_id=1")) {
+                s.setString(1,"x".repeat(20000)); s.setString(2,"UNKNOWN".repeat(100)); s.executeUpdate();
+            } return null; });
+            var row=new CatalogRepository(owner).observations("ABC123","identity").get().rows().getFirst();
+            assertTrue(row.holderId().length()<280,"holder key preview must be bounded");
+            assertTrue(row.holderId().endsWith("… [rút gọn]"));
+            assertTrue(row.holderType().length()<90);
+        }
+    }
+
+    @Test void pruningAndBudgetErrorsNeverBecomeFalsePresenceOrAbsence() throws Exception {
+        try(var owner=new SqliteConnectionOwner(dir.resolve("budget.db"))) {
+            seed(owner,2000);
+            var limited=new CatalogRepository(owner,1);
+            assertThrows(java.util.concurrent.ExecutionException.class,()->limited.observations("ABC123","identity").get());
+            var repository=new com.itemguard.persistence.ItemSqliteRepository(owner);
+            repository.completeObservationEpoch(2000);
+            assertTrue(new CatalogRepository(owner).observations("ABC123","identity").get().rows().isEmpty());
+            int remaining=owner.call(c->{try(var s=c.createStatement();var r=s.executeQuery("SELECT COUNT(*) FROM item_observations")) {r.next();return r.getInt(1);}});
+            assertEquals(0,remaining);
+            assertThrows(NullPointerException.class,()->limited.observations(null,"identity"));
+        }
+    }
+
+    static void seed(SqliteConnectionOwner owner, int count) {
+        seed(owner, count, false);
+    }
+
+    @Test void indexedReadSurvivesLargeUnrelatedPopulationAndReopen() throws Exception {
+        Path db=dir.resolve("scale.db");
+        try(var owner=new SqliteConnectionOwner(db)) {
+            seed(owner,100,true);
+            owner.call(c->{try(var s=c.createStatement()) {
+                s.execute("""
+                    WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<100000)
+                    INSERT INTO item_observations(item_uuid,code,scan_epoch,holder_type,holder_id,slot,observed_at)
+                    SELECT 'noise-'||i,'OTHER',9000,'CONTAINER','world-block',i,999999 FROM n
+                    """);
+                try(var r=s.executeQuery("EXPLAIN QUERY PLAN SELECT observation_id FROM item_observations WHERE item_uuid='identity' AND code='ABC123' ORDER BY scan_epoch DESC,observation_id DESC LIMIT 101")) {
+                    var plan=new StringBuilder(); while(r.next()) plan.append(r.getString(4)).append('\n');
+                    assertTrue(plan.toString().contains("idx_observation_identity_epoch"),plan.toString());
+                    assertFalse(plan.toString().contains("TEMP B-TREE"),plan.toString());
+                }
+            }return null;});
+            var result=new CatalogRepository(owner).observations("ABC123","identity").get();
+            assertEquals(100,result.rows().size()); assertFalse(result.hasMore());
+        }
+        try(var reopened=new SqliteConnectionOwner(db)) {
+            var result=new CatalogRepository(reopened).observations("ABC123","identity").get();
+            assertEquals(100,result.rows().getFirst().id()); assertEquals(1,result.rows().getLast().id());
+            assertFalse(result.hasMore());
+        }
+    }
+
+    static void seed(SqliteConnectionOwner owner, int count, boolean noExtra) {
+        owner.call(c -> {
+            try (var s = c.prepareStatement("INSERT INTO item_observations(item_uuid,code,scan_epoch,epoch_complete,holder_type,holder_id,slot,observed_at) VALUES(?,?,?,?,?,?,?,?)")) {
+                for (int i=0;i<count+(noExtra?0:2);i++) {
+                    s.setString(1, i == count ? "other" : "identity");
+                    s.setString(2, i == count+1 ? "OTHER" : "ABC123");
+                    s.setLong(3, i/2); s.setInt(4, i%2);
+                    s.setString(5,"PLAYER"); s.setString(6,"holder"+i); s.setInt(7,i); s.setLong(8,10000-i); s.addBatch();
+                }
+                s.executeBatch();
+            }
+            return null;
+        });
+    }
+}
+
+
+FILE src/test/java/com/itemguard/catalog/CatalogObservationControllerTest.java
+package com.itemguard.catalog;
+
+import org.junit.jupiter.api.Test;
+import java.util.*;
+import static org.junit.jupiter.api.Assertions.*;
+
+class CatalogObservationControllerTest {
+    @Test void profileOpensRecordedLocationsThenDetailAndReturnsToSameCatalog() {
+        var data=new CatalogControllerTest.Data(); var ui=new CatalogControllerTest.Port();
+        new CatalogController(data,ui).open();
+        data.pages.remove().complete(new CatalogPage(List.of(CatalogControllerTest.row("ABC123")),false)); ui.drain(); ui.click(9);
+        assertNotNull(ui.screen.icons().get(24).action(),"recorded locations must be navigable");
+        ui.click(24); assertEquals("ABC123",data.observationCode); assertEquals("uuid-ABC123",data.observationUuid);
+        data.observations.complete(new CatalogObservations(List.of(observation(7)),false)); ui.drain();
+        assertTrue(ui.screen.title().contains("Quan sát"));
+        assertTrue(ui.screen.icons().get(4).lore().contains("Không xác minh người giữ hiện tại"));
+        ui.click(9); assertTrue(ui.screen.icons().get(22).lore().contains("Quan sát #7"));
+        assertTrue(ui.screen.icons().get(22).lore().contains("Ô: 7"));
+        ui.click(45); ui.click(45); ui.click(45);
+        assertTrue(ui.screen.title().contains("Kho")); assertEquals(1,data.queries.size());
+    }
+    @Test void pagesAllRetainedRowsAndLabelsPartialUnknownAndPruningGaps() {
+        var data=new CatalogControllerTest.Data(); var ui=new CatalogControllerTest.Port();
+        new CatalogController(data,ui).open(); data.pages.remove().complete(new CatalogPage(List.of(CatalogControllerTest.row("ABC123")),false)); ui.drain(); ui.click(9); ui.click(24);
+        var rows=new ArrayList<CatalogObservation>(); for(int i=0;i<100;i++) rows.add(observation(i));
+        rows.set(99,new CatalogObservation(99,30,true,"FUTURE_PLUGIN","opaque",9,0));
+        data.observations.complete(new CatalogObservations(rows,true)); ui.drain();
+        assertTrue(ui.screen.icons().get(4).lore().contains("Đã cắt: chỉ 100 quan sát đầu"));
+        assertTrue(ui.screen.icons().get(9).lore().contains("Đợt quét chưa hoàn tất"));
+        ui.click(50); ui.click(50); assertNull(ui.screen.icons().get(50)); ui.click(36);
+        assertTrue(ui.screen.icons().get(22).title().contains("chưa hỗ trợ"));
+        assertTrue(ui.screen.icons().get(22).lore().contains("Chưa ghi thời gian"));
+        assertTrue(ui.screen.icons().get(22).lore().contains("Quan sát #99"));
+        ui.click(45); ui.click(48); assertTrue(ui.screen.title().endsWith("2"));
+    }
+
+    @Test void failedObservationRetryKeepsIdentityAndNeverExposesPriorItemOrFilters() {
+        var data=new CatalogControllerTest.Data(); var ui=new CatalogControllerTest.Port();
+        new CatalogController(data,ui).open(); data.pages.remove().complete(new CatalogPage(List.of(CatalogControllerTest.row("ABC123"),CatalogControllerTest.row("DEF456")),false)); ui.drain(); ui.click(9); ui.click(24);
+        data.observations.complete(new CatalogObservations(List.of(observation(7)),false)); ui.drain(); var stale=ui.screen.icons().get(9).action();
+        ui.click(45); ui.click(45); ui.click(10); data.observations=new java.util.concurrent.CompletableFuture<>(); ui.click(24);
+        data.observations.completeExceptionally(new IllegalStateException("busy")); ui.drain(); var error=ui.screen;
+        stale.run(); assertSame(error,ui.screen); assertNull(ui.screen.icons().get(2)); assertNull(ui.screen.icons().get(9));
+        data.observations=new java.util.concurrent.CompletableFuture<>(); ui.click(49); assertEquals("DEF456",data.observationCode);
+        data.observations.complete(new CatalogObservations(List.of(),false)); ui.drain();
+        assertTrue(ui.screen.icons().get(22).lore().contains("Không chứng minh item không tồn tại"));
+        ui.click(45); ui.click(45); assertEquals(1,data.queries.size());
+    }
+
+    @Test void deniedSubmissionAndLateCompletionAndStaleDetailFailClosed() {
+        for(String mode:List.of("denied","closed","revoked","detail","show")) {
+            var data=new CatalogControllerTest.Data();
+            var ui=new CatalogControllerTest.Port() { @Override public void show(CatalogScreen screen) { super.show(screen); if(mode.equals("show") && screen.title().equals("Quan sát")) historyAllowed=false; } };
+            var controller=new CatalogController(data,ui); controller.open(); data.pages.remove().complete(new CatalogPage(List.of(CatalogControllerTest.row("ABC123")),false)); ui.drain(); ui.click(9);
+            if(mode.equals("denied")) ui.historyAllowed=false;
+            ui.click(24);
+            if(mode.equals("denied") || mode.equals("show")) { assertEquals(0,data.observationCalls); assertTrue(ui.closed); continue; }
+            var loading=ui.screen;
+            if(mode.equals("closed")) controller.close();
+            if(mode.equals("revoked")) ui.historyAllowed=false;
+            data.observations.complete(new CatalogObservations(List.of(observation(7)),false)); ui.drain();
+            if(mode.equals("detail")) { ui.historyAllowed=false; ui.click(9); assertTrue(ui.closed); }
+            else assertSame(loading,ui.screen);
+        }
+    }
+
+    @Test void synchronousSubmissionFailureIsAnErrorNotEmptySuccess() {
+        var data=new CatalogControllerTest.Data() { @Override public java.util.concurrent.CompletableFuture<CatalogObservations> observations(String code,String uuid) { throw new IllegalStateException("closed"); } };
+        var ui=new CatalogControllerTest.Port(); new CatalogController(data,ui).open(); data.pages.remove().complete(new CatalogPage(List.of(CatalogControllerTest.row("ABC123")),false)); ui.drain(); ui.click(9);
+        assertDoesNotThrow(()->ui.click(24)); assertTrue(ui.screen.title().contains("Lỗi")); assertNotNull(ui.screen.icons().get(49));
+    }
+    static CatalogObservation observation(int id) { return new CatalogObservation(id,20,false,"PLAYER","player-id",id,1000); }
+}
+
+
+FILE src/test/java/com/itemguard/catalog/CatalogObservationFlowTest.java
+package com.itemguard.catalog;
+
+import com.itemguard.persistence.SqliteConnectionOwner;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import static org.junit.jupiter.api.Assertions.*;
+
+/** Actual JDBC -> shared gate -> controller/port, not Paper or client rendering. */
+class CatalogObservationFlowTest {
+    @TempDir Path dir;
+
+    @Test void sharedReadAdmissionRetriesExactPhysicalObservationThenSurvivesPruning() throws Exception {
+        try(var owner=new SqliteConnectionOwner(dir.resolve("flow.db"))) {
+            owner.call(c->{try(var s=c.createStatement()) {
+                s.execute("INSERT INTO tracked_items(code,item_uuid,material,last_seen_at,created_at) VALUES('ABC123','identity','PAPER',1000,0)");
+                s.execute("INSERT INTO item_observations(item_uuid,code,scan_epoch,holder_type,holder_id,slot,observed_at) VALUES('identity','ABC123',1,'CONTAINER','BLOCK:world-id:10:20:30',4,1000)");
+            }return null;});
+            var repository=new CatalogRepository(owner); var clock=new AtomicLong(); var gate=new CatalogReadGate(clock::get);
+            class Data implements CatalogController.Data {
+                CompletableFuture<?> completion;
+                public CompletableFuture<CatalogPage> find(CatalogQuery query) {
+                    var f=gate.submit(()->repository.find(query)); completion=f; return f;
+                }
+                public CompletableFuture<List<CatalogEvent>> history(String code,String uuid) { return gate.submit(()->repository.history(code,uuid)); }
+                public CompletableFuture<CatalogObservations> observations(String code,String uuid) {
+                    var f=gate.submit(()->repository.observations(code,uuid)); completion=f; return f;
+                }
+            }
+            var data=new Data(); var ui=new CatalogControllerTest.Port() {
+                @Override public void main(Runnable action) { synchronized(tasks) { tasks.add(action); tasks.notifyAll(); } }
+                @Override void drain() {
+                    synchronized(tasks) {
+                        long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(5);
+                        while(tasks.isEmpty()) {
+                            long left=until-System.nanoTime(); assertTrue(left>0,"async completion never reached main port");
+                            try { TimeUnit.NANOSECONDS.timedWait(tasks,left); } catch(InterruptedException e) { Thread.currentThread().interrupt(); throw new AssertionError(e); }
+                        }
+                        super.drain();
+                    }
+                }
+            };
+            new CatalogController(data,ui).open(); data.completion.get(5,TimeUnit.SECONDS); ui.drain(); ui.click(9); ui.click(24); ui.drain();
+            assertTrue(ui.screen.title().contains("Lỗi"),"shared cooldown applies across catalog/observations");
+            clock.set(TimeUnit.SECONDS.toNanos(1)); ui.click(49); data.completion.get(5,TimeUnit.SECONDS); ui.drain();
+            assertTrue(ui.screen.icons().get(9).lore().contains("BLOCK:world-id:10:20:30")); ui.click(9);
+            assertTrue(ui.screen.icons().get(22).lore().contains("Ô: 4"));
+            new com.itemguard.persistence.ItemSqliteRepository(owner).completeObservationEpoch(2);
+            owner.call(c->null); // writer barrier
+            ui.click(45); assertNotNull(ui.screen.icons().get(9),"cached view remains a retained snapshot, not live presence");
+            ui.click(45); clock.set(TimeUnit.SECONDS.toNanos(2)); ui.click(24); data.completion.get(5,TimeUnit.SECONDS); ui.drain();
+            assertTrue(ui.screen.icons().get(22).lore().contains("Không chứng minh item không tồn tại"));
+        }
+    }
+}
+
+
+FILE src/test/java/com/itemguard/catalog/CatalogUiLifecycleTest.java
+package com.itemguard.catalog;
+
+import org.junit.jupiter.api.Test;
+import org.bukkit.entity.Player;
+import org.bukkit.inventory.*;
+import org.bukkit.event.inventory.*;
+import org.bukkit.event.player.*;
+import org.bukkit.scheduler.BukkitTask;
+import java.lang.reflect.Proxy;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import static org.junit.jupiter.api.Assertions.*;
+
+/** Real CatalogUi/Controller and Bukkit event objects; host/render/player are test doubles, NOT Paper runtime. */
+class CatalogUiLifecycleTest {
+    @Test void observationPermissionsAndSharedGateAreEnforcedAtAdapterBoundary() {
+        for(String denied:List.of("itemguard.history","itemguard.history.others","")) {
+            var h=new Harness(); h.ui.open(h.player); h.finish(); h.click(9); h.drain();
+            if(!denied.isEmpty()) h.deniedNodes.add(denied);
+            h.click(24); h.drain();
+            assertEquals(0,h.observationReads,"permission/shared admission must prevent observation submission");
+            if(denied.isEmpty()) assertTrue(h.screen.title().contains("Lỗi"),"catalog and observations share cooldown");
+            else assertNull(h.top.getHolder());
+        }
+    }
+    @Test void historyPermissionNodesAreEnforcedIndividually() {
+        for(String denied:List.of("itemguard.history","itemguard.history.others")) {
+            var h=new Harness(); h.ui.open(h.player); h.finish(); h.click(9); h.drain();
+            assertTrue(h.screen.title().startsWith("Hồ sơ"));
+            h.deniedNodes.add(denied); h.click(20); h.drain();
+            assertEquals(0,h.historyReads,denied+" must prevent history submission");
+            assertNull(h.top.getHolder());
+        }
+    }
+    @Test void closeWhileLoadingDoesNotReopen() {
+        var h=new Harness(); h.ui.open(h.player);
+        assertEquals(1,h.renders); h.closeWindow(); h.finish();
+        assertEquals(1,h.renders); assertNull(h.top.getHolder());
+    }
+    @Test void replacesInventoryWithoutReleasingOwnSessionAndDefersClicks() {
+        var h=new Harness(); h.ui.open(h.player); h.finish();
+        assertEquals(2,h.renders); h.click(9);
+        assertEquals(2,h.renders,"click must defer inventory changes"); h.drain();
+        assertEquals(3,h.renders); assertTrue(h.screen.title().startsWith("Hồ sơ"));
+    }
+    @Test void promptHidesChatAndResumesOnlyOnMainThread() {
+        var h=new Harness(); h.ui.open(h.player); h.finish(); h.click(2); h.drain();
+        var chat=h.chat("hủy"); assertTrue(chat.isCancelled()); int before=h.renders;
+        assertNull(h.top.getHolder()); h.drain();
+        assertEquals(before+1,h.renders); assertTrue(h.screen.title().startsWith("Kho tra cứu"));
+        assertEquals(1,h.cancelledTimers);
+        assertFalse(h.chat("normal chat").isCancelled());
+    }
+    @Test void quitCommandForeignInventoryAndTimeoutDisposePrompt() {
+        for(String mode:List.of("quit","command","foreign","timeout","clear")) {
+            var h=new Harness(); h.ui.open(h.player); h.finish(); h.click(2); h.drain();
+            switch(mode) {
+                case "quit" -> h.ui.onQuit(new PlayerQuitEvent(h.player,net.kyori.adventure.text.Component.text("quit")));
+                case "command" -> h.ui.onCommand(new PlayerCommandPreprocessEvent(h.player,"/help",new HashSet<>()));
+                case "foreign" -> h.openWindow(h.emptyInventory());
+                case "timeout" -> h.timers.getFirst().run();
+                case "clear" -> h.ui.clear();
+            }
+            int before=h.renders;
+            assertFalse(h.chat("normal chat").isCancelled(),mode+" must release chat capture");
+            h.drain(); assertEquals(before,h.renders,mode+" must not reopen");
+        }
+    }
+    @Test void revokedPermissionOrDisabledPluginDropsCompletion() {
+        for(boolean permission:List.of(true,false)) {
+            var h=new Harness(); h.ui.open(h.player);
+            if(permission) h.authorized=false; else h.enabled=false;
+            h.finish(); assertEquals(1,h.renders); assertNull(h.top.getHolder());
+        }
+    }
+    @Test void chatAlreadyQueuedCannotReviveClosedSession() {
+        var h=new Harness(); h.ui.open(h.player); h.finish(); h.click(2); h.drain();
+        assertTrue(h.chat("hủy").isCancelled()); h.ui.clear(); int before=h.renders;
+        h.drain(); assertEquals(before,h.renders);
+    }
+    @Test void cancelledOpenAndClearWhileLoadingDropLateResults() {
+        for(boolean cancelledOpen:List.of(true,false)) {
+            var h=new Harness(); h.cancelOpen=cancelledOpen; h.ui.open(h.player);
+            if(!cancelledOpen) h.ui.clear(); h.finish();
+            assertEquals(1,h.renders); assertNull(h.top.getHolder());
+        }
+    }
+    static final class Harness implements CatalogUi.Host {
+        final UUID id=UUID.randomUUID();
+        final List<Runnable> queue=new ArrayList<>(),timers=new ArrayList<>();
+        final Set<String> deniedNodes=new HashSet<>();
+        final CompletableFuture<CatalogPage> result=new CompletableFuture<>();
+        final CatalogUi ui=new CatalogUi(this,queue::add);
+        final Player player=(Player)Proxy.newProxyInstance(Player.class.getClassLoader(),new Class<?>[]{Player.class},(p,m,a)->{
+            return switch(m.getName()) {
+                case "getUniqueId" -> id;
+                case "hasPermission" -> this.authorized && !deniedNodes.contains(a[0]);
+                case "isOnline" -> true;
+                case "getOpenInventory" -> view();
+                case "openInventory" -> { openWindow((Inventory)a[0]); yield view(); }
+                case "closeInventory" -> { closeWindow(); yield null; }
+                case "sendMessage" -> null;
+                case "equals" -> p==a[0];
+                case "hashCode" -> System.identityHashCode(p);
+                default -> null;
+            };
+        });
+        Inventory top=emptyInventory(); CatalogScreen screen;
+        int renders,cancelledTimers,historyReads,observationReads; boolean authorized=true,enabled=true,cancelOpen;
+        Inventory emptyInventory() { return CatalogInventoryTest.proxy(Inventory.class,Map.of("getSize",36)); }
+        InventoryView view() { return CatalogInventoryTest.proxy(InventoryView.class,Map.of("getTopInventory",top,"getPlayer",player)); }
+        void openWindow(Inventory next) {
+            ui.onClose(new InventoryCloseEvent(view()));
+            if(cancelOpen) { top=emptyInventory(); return; }
+            top=next; ui.onOpen(new InventoryOpenEvent(view()));
+        }
+        void closeWindow() { ui.onClose(new InventoryCloseEvent(view())); top=emptyInventory(); }
+        void click(int slot) {
+            var event=new InventoryClickEvent(view(),InventoryType.SlotType.CONTAINER,slot,ClickType.LEFT,InventoryAction.PICKUP_ALL);
+            ui.onClick(event); assertTrue(event.isCancelled());
+        }
+        AsyncPlayerChatEvent chat(String text) {
+            var event=new AsyncPlayerChatEvent(true,player,text,new HashSet<>()); ui.onChat(event); return event;
+        }
+        void drain() { while(!queue.isEmpty()) queue.removeFirst().run(); }
+        void finish() {
+            result.complete(new CatalogPage(List.of(new CatalogRow("ABC123","id1","PAPER","Recorded item","Staff","world",1000L)),false)); drain();
+        }
+        public boolean enabled() { return enabled; }
+        public CatalogController.Data data() { return new CatalogController.Data() {
+            public CompletableFuture<CatalogPage> find(CatalogQuery query) { return result; }
+            public CompletableFuture<List<CatalogEvent>> history(String code,String uuid) { historyReads++; return CompletableFuture.completedFuture(List.of()); }
+            public CompletableFuture<CatalogObservations> observations(String code,String uuid) { observationReads++; return CompletableFuture.completedFuture(new CatalogObservations(List.of(),false)); }
+        }; }
+        public CatalogInventory render(Player player,CatalogScreen screen) {
+            this.screen=screen; renders++;
+            return new CatalogInventory(id,screen,h->CatalogInventoryTest.proxy(Inventory.class,Map.of("getHolder",h,"getSize",54)));
+        }
+        public BukkitTask later(Runnable action,long ticks) {
+            assertEquals(600L,ticks); timers.add(action);
+            return (BukkitTask)Proxy.newProxyInstance(BukkitTask.class.getClassLoader(),new Class<?>[]{BukkitTask.class},(p,m,a)->{
+                if(m.getName().equals("cancel")) cancelledTimers++;
+                return null;
+            });
+        }
+        public void releaseLegacy(UUID id) {}
+    }
+}
+
+
+SOURCE CONTEXT src/main/java/com/itemguard/services/ItemTrackingService.java
+721|    private void scanPlayerInventory(Player player, Long scanEpoch) {
+722|        int maxPerPlayer = plugin.getConfigs().getMaxTrackPerPlayer();
+723|        Set<String> tracked = playerTrackedItems.computeIfAbsent(
+724|            player.getUniqueId(), k -> Collections.synchronizedSet(new HashSet<>()));
+725|
+726|        int slotCount = player.getInventory().getSize();
+727|        int requested = 0;
+728|        for (int slot = 0; slot < slotCount && requested < maxPerPlayer; slot++) {
+729|            ItemStack item = player.getInventory().getItem(slot);
+730|            if (item == null
+731|                || !shouldTrack(item)
+732|                || resolveIdentityTags(item).status() != IdentityTagStatus.ABSENT) {
+733|                continue;
+734|            }
+735|            if (requestPlayerSlotTag(player, slot)) {
+736|                requested++;
+737|            }
+738|        }
+739|
+740|        long observedAt = System.currentTimeMillis();
+741|        for (int slot = 0; slot < slotCount; slot++) {
+742|            ItemStack item = player.getInventory().getItem(slot);
+743|            if (item == null
+744|                || !identityEligibilityPolicy.supportsIdentity(
+745|                    item.getMaxStackSize(), item.getAmount())) {
+746|                continue;
+747|            }
+748|            IdentityTagResolution identity = resolveIdentityTags(item);
+749|            if (identity.status() != IdentityTagStatus.COMPLETE) {
+750|                continue;
+751|            }
+752|            if (!reconcilePhysicalIdentity(
+753|                identity,
+754|                TagPhysicalSourceKey.playerSlot(player.getUniqueId(), slot),
+755|                item
+756|            )) {
+757|                continue;
+758|            }
+759|            tracked.add(identity.code());
+760|            db.updateItemLocationOnly(
+761|                identity.code(),
+762|                player.getLocation(),
+763|                player.getName(),
+764|                player.getUniqueId()
+765|            );
+766|            if (scanEpoch != null) {
+767|                observationFactory.create(
+768|                    identity,
+769|                    scanEpoch,
+770|                    player.getUniqueId(),
+771|                    slot,
+772|                    observedAt
+773|                ).ifPresent(db::recordObservation);
+774|            }
+775|        }
+776|    }
+777|
+778|    public int scanContainer(org.bukkit.block.Block block) {
+779|        int requested = 0;
+780|        if (block.getState() instanceof org.bukkit.block.Container container) {
+781|            org.bukkit.inventory.Inventory inventory = container.getInventory();
+782|            for (int slot = 0; slot < inventory.getSize(); slot++) {
+783|                ItemStack item = inventory.getItem(slot);
+784|                if (item != null && shouldTrack(item) && !hasCode(item)) {
+785|                    Optional<BlockContainerPhysicalSlotResolver.ResolvedSlot> physical =
+786|                        blockContainerSlotResolver.resolve(inventory, slot);
+787|                    if (physical.isEmpty()) {
+788|                        continue;
+789|                    }
+790|                    BlockContainerPhysicalSlotResolver.ResolvedSlot resolved =
+791|                        physical.orElseThrow();
+835|    public void scanOpenBlockContainerInventory(Player player, long scanEpoch) {
+836|        if (!plugin.getConfigs().isContainerScanEnabled()) return;
+837|        org.bukkit.inventory.Inventory inventory = player.getOpenInventory().getTopInventory();
+838|
+839|        long observedAt = System.currentTimeMillis();
+840|        for (int slot = 0; slot < inventory.getSize(); slot++) {
+841|            ItemStack item = inventory.getItem(slot);
+842|            if (item == null
+843|                || !identityEligibilityPolicy.supportsIdentity(
+844|                    item.getMaxStackSize(), item.getAmount())) {
+845|                continue;
+846|            }
+847|            IdentityTagResolution identity = resolveIdentityTags(item);
+848|            if (identity.status() != IdentityTagStatus.COMPLETE) {
+849|                continue;
+850|            }
+851|            Optional<BlockContainerPhysicalSlotResolver.ResolvedSlot> physical =
+852|                blockContainerSlotResolver.resolve(inventory, slot);
+853|            if (physical.isEmpty()) {
+854|                continue;
+855|            }
+856|            BlockContainerPhysicalSlotResolver.ResolvedSlot resolved =
+857|                physical.orElseThrow();
+858|            Location location = resolved.location();
+859|            if (!reconcilePhysicalIdentity(
+860|                identity,
+861|                TagPhysicalSourceKey.blockContainerSlot(
+862|                    location.getWorld().getUID(),
+863|                    location.getBlockX(),
+864|                    location.getBlockY(),
+865|                    location.getBlockZ(),
+866|                    resolved.localSlot()
+867|                ),
+868|                item
+869|            )) {
+870|                continue;
+871|            }
+872|            containerObservationFactory.create(
+873|                identity,
+874|                scanEpoch,
+875|                location.getWorld().getUID(),
+876|                location.getBlockX(),
+877|                location.getBlockY(),
+878|                location.getBlockZ(),
+879|                resolved.localSlot(),
+880|                observedAt
+881|            ).ifPresent(db::recordObservation);
+882|        }
+883|    }

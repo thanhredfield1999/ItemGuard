@@ -1,0 +1,11 @@
+# C1 trigram feasibility — synthetic only
+
+User renewed permission to continue after terminal approval timeouts. Git status/diff check and existing C3 verifier now ran successfully: 378 existing tests, 52 catalog, 218 class bytes, unchanged source/review files and JAR c8f95756adedb4a52c09908df0d43f90b7d64d9015ce081ff3b93501d7f6a534. This is artifact revalidation, not a newly executed full Maven suite.
+
+Ran Java21 tools/catalog/CatalogTrigramProbe.java against the SQLite dependency packaged in that JAR. Creates fresh synthetic DB, accepts no paths; no production/schema changes. Log c1-trigram-probe.log, exit0. Real FTS5 trigram case_sensitive1 is available. Normalize NFC then Locale.ROOT before indexing/query; quoted MATCH candidate retrieval plus instr exact residual.
+
+100000 synthetic names, index+table population659.765ms, total DB5283840 bytes (NOT incremental index overhead). RareSuffix exact1 result3.256ms; absent text exact0 result0.386ms. Common/Unicode results17–28ms. Ten query cases all matched independent in-memory first37 identity oracle: rare, absent, composed/decomposed Vietnamese, literal punctuation/quote, CJK/emoji, common, substring, short1/2-codepoint fallback. Same250ms/2000-progress-callback policy; none interrupted in this narrow sample. Reopen retained100000 search rows.
+
+Terminal default encoding replaced Unicode characters in log display; assertions used original Java Unicode strings. Timings are one synthetic run, not comparable production SLO or conclusive speedup benchmark against different baseline schema/workload. Name-only prototype does not cover code/material/owner/category filters, cursor, long names, arbitrary corpus/tokenizer corner cases, transactional update/delete/backfill, damaged/stale index handling, write amplification or crash recovery. Short queries still use normalized full scan; correctness here is not a short-query scale guarantee.
+
+PARTIAL feasibility only: indexing normalized text merits a reviewed design, not direct migration. Next required experiment: all fields + restrictive filters/order, short no-match corpus, update/delete consistency and write/disk overhead against same dataset. No product code changed, no Paper/restart/deploy. Broad permission to continue does not identify HavenBags target server or authorize production migration.

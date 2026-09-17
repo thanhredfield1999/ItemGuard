@@ -1,0 +1,15 @@
+{
+  "files": {
+    "docs/reviews/p1a-review-disposition.md": "fdd762727184a1a1203e848ea5f7197c4bc336668387012821838d610ca95e55",
+    "pom.xml": "ab6345e43a23b4a893bbe16aca0025f0ae82171cbcfa5c34e98d938874aa0c30",
+    "src/main/java/com/itemguard/services/ItemTrackingService.java": "01fdfc7de3f06c4c81c7894fefa7d11571e900f493f942c2669c976aa39d3247",
+    "src/test/java/com/itemguard/services/ItemTrackingCodeGenerationTest.java": "41581aaddfab7c94aee9cd24507bad56676a8a95564231af1a098f863b925d57",
+    "src/test/java/com/itemguard/tracking/TagPublicationCollisionRetryTest.java": "25012ecdf6d27cfc27dc8ee0e71fe69a66185c889956c72e23986213ba8d8ed7",
+    "src/test/java/com/itemguard/persistence/TagIdentityCollisionRepositoryTest.java": "4c3e81661290a04e2549df60ac6cf19f098f3c92462dc2583523a4cb47834a95",
+    "src/main/java/com/itemguard/tracking/BlockContainerPhysicalSlotResolver.java": "91ca3fd580dc75d9b39b757ea5530a0f8eb2158c6282dd71d78642318212afcb",
+    "src/main/java/com/itemguard/commands/ItemCodeInput.java": "6884e22d614943c9bb80be32c343b762f2bc049efdfe98e327edac6ce315412b",
+    "src/test/java/com/itemguard/commands/ItemCodeInputTest.java": "4fe4a230e40ff15849aa3423985f4fb4830a8a05630f8a196d29dedecf066a93",
+    "src/main/java/com/itemguard/persistence/SqliteSchemaManager.java": "894aa950b3c0c0611b6b230cdf1f14fab4ac79f9e5111e334c232d0ef9817dbf"
+  },
+  "input_sha256": "c85d6c437d9f8692e00c90a1abdccdc0f5a90af1f0b18f48d617c48adb64046d"
+}

@@ -1,0 +1,23 @@
+{
+  "files": {
+    "docs/design/2026-09-09-p1a-generator-service.md": "615fb93eb0feb72cd5c18923c95e1cdd78dfe0b8ebc26d75f769f563cd47bad1",
+    "pom.xml": "b1505c9e616b2389b91034a88bbd00f34b01fabaa6c73ba21c2440ea424d7f35",
+    "src/main/resources/config.yml": "f370086815d8c43a0b55b5ce4fb9e92aaf632ddc69d8c58eac2d9ee353aa71a1",
+    "src/main/java/com/itemguard/identity/PublicItemCodeGenerator.java": "b7f05201fbcfa57985015522979568f04241a327aac88c3488a0b3fb97799e18",
+    "src/main/java/com/itemguard/services/ItemTrackingService.java": "d3f054da0ad8cbea8cacfe3e2ffd76fef9c603b100a29642da63d5700f9a81c0",
+    "src/main/java/com/itemguard/tracking/AsyncTagPublicationCoordinator.java": "dad6f296b0553fe4dd8983e3c7c46025b0cb2806002a19f085a8cb77f35eb74b",
+    "src/main/java/com/itemguard/tracking/IdentityReadinessCoordinator.java": "aad4cb5dec18bc8a20cf39034ee529ff65338ea9accc9428ba90aa99d6a050aa",
+    "src/main/java/com/itemguard/tracking/TagPublication.java": "90c492a11420d4911997614a5669dd80a5be25926197d57f87f8044922c4d535",
+    "src/main/java/com/itemguard/tracking/TagPublicationStore.java": "9d99fe9587b0e13b6cb693950a93af8835e58902ce01898c24223a221b11a839",
+    "src/main/java/com/itemguard/tracking/TagPublicationTarget.java": "93f4a21973904ccc7278fd38d945aa2c90dc7f6845c44eff0a33a6f6d11a78cd",
+    "src/main/java/com/itemguard/persistence/ItemSqliteRepository.java": "3c0a3b03fc93fa5d0fff072f292291c48d4b5b06510cd61fb780eaa3332d9f32",
+    "src/main/java/com/itemguard/persistence/SqliteConnectionOwner.java": "7aff238c140f0860bfeda96ef7f287ac87e9104a7b98d6707f86734f894f9732",
+    "src/test/java/com/itemguard/services/ItemTrackingCodeGenerationTest.java": "c670ee72d02d8c44b2856041fc9fcc14d749506efd719f5f97388378c7473b7d",
+    "src/test/java/com/itemguard/services/ItemTrackingPublicationIntegrationTest.java": "13c05aed82806814d8cdb4e4b097ce084d4b9e939b9541d662a299167ee2aa48",
+    "src/test/java/com/itemguard/tracking/TagPublicationCollisionRetryTest.java": "83d3ca3d0e2afafe1643647ec4cd9e824a1a2b229ab9b0a1e838deb1f45d6074",
+    "src/test/java/com/itemguard/persistence/TagIdentityCollisionRepositoryTest.java": "9d888db533010105b3f549a12e125b8cff1727856b9c79ee8c28444b8bc2eca4",
+    "src/test/java/com/itemguard/identity/PublicItemCodeGeneratorTest.java": "c2544bd661ea69dccfddeb9c5b928e0a51930021551a5f3385859b28bc19bf80",
+    "src/test/java/com/itemguard/CodeGenerationTest.java": "ad8a05f5d533a5d9175a38d5eb49b928c74b49f78c4d54e9cb231523c14a1f2e"
+  },
+  "input_sha256": "e224f4fa11ecb76b2c1fb223accc8eb3e5b4a666c1680aa175e0869c60bea46d"
+}

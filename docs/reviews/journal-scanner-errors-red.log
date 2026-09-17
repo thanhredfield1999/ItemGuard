@@ -1,0 +1,8 @@
+OUT=C:/Users/thanh/AppData/Local/Temp/itemguard-codec-bin
+CHAIN_BYTE_MUTATIONS cases=50745 failures=0
+CHAIN cases=25 failures=0
+JOURNAL_LINE_BOUNDS cases=4 failures=0
+FAIL read errors retain prefix: injected read failure
+FAIL record budget: do not misclassify uninspected suffix or claim EOF at budget
+JOURNAL_SCAN cases=6 failures=2
+EXIT_CODE=1

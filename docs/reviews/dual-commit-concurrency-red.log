@@ -1,0 +1,2 @@
+OUT=C:/Users/thanh/AppData/Local/Temp/itemguard-codec-bin
+FAIL concurrent commits must serialize, not poison

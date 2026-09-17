@@ -1,0 +1,26 @@
+{
+  "review_files_unchanged": true,
+  "files": {
+    "docs/design/2026-09-09-dual-journal-commit-core.md": "db52817024c78e48b838f8ab3e88b8182b667b3a59b0425098d6b9a08dbe20d3",
+    "tools/execution-authority/guardian/DualJournalCommitCore.cs": "c67968adb1b46db97163ba0b1f9f3c6cbbc827f56264b1e1ce8ebe11a5bac6b1",
+    "tools/execution-authority/guardian/CanonicalJson.cs": "6ec56107673903083bfe4812ae233436be3b71ece2964394e2ce38cb2025f2ed",
+    "tools/execution-authority/guardian/CanonicalString.cs": "1341268bca440e475c72c52e4d953fdf2de1c82b5a6446bedfbb4a9510ff230b",
+    "tools/execution-authority/tests/DualJournalCommitTests.cs": "e8a70022297d78279ac2e236ff70772248bba38a014a83b288b2faa82876fa02",
+    "tools/execution-authority/recovery/CommonJournalChain.cs": "ea88b7c9f63efee96c62be8c01f15e078740eb75751966f15044c76f0461adee",
+    "tools/execution-authority/build/dual-commit-test.sh": "dc7c926f5ef67648b7f04e0d45c2b8d9286d5ed712cdee7960c0c3722e787860",
+    "tools/execution-authority/build/offline-test.sh": "f18e86815052d22cc1784cc0e336f965983bccf43a276d57c920d7201ab02ec0",
+    "tools/execution-authority/build/codec-build.sh": "200cc11c71f0d8d78494bb9a7bb20e9f4f0d6719105be8eabec00f1efc339b2e",
+    "docs/design/2026-09-01-natural-break-successor-35-execution-authority.md": "ce257d0a6fe2ee456c21c3fbb8d6e36e0e2aa9c6df8c33619d4cbc65058b8cb0",
+    "docs/reviews/dual-commit-review-disposition.md": "f673385134f60367362673cd110d1c8a41604ae0b9cd6f95a418a093141c4010"
+  },
+  "followup_input_sha256": "c5c5f8917f64c67205a37c50ef1641fde7ed29273ad5b8a2bea35122ab4b2552",
+  "artifacts": {
+    "GuardianCommit.dll": "a0e144e53fdff645c5136e409fee814cecfcb5c6ae90537eb7644d4cedd95e17",
+    "RecoveryJournal.dll": "a4ecccfcdec31b64d53ea9158357a230d4fa5bb21b9d7c1c54f665a6691e5873",
+    "DualJournalCommitTests.exe": "2d61b24e0fcd8eeefe05876fef460e53222f1648657a9cb66e62a03c9df2bf2f"
+  },
+  "full_offline_log_sha256": "087338cf809d822886919565b141481423354988ad41cc13f07e40cbdfffdf38",
+  "fresh_binary_exit": 0,
+  "fresh_binary_output": "DUAL_COMMIT checks=60 failures=0 (pure sinks only)",
+  "scope": "PURE_OFFLINE_NOT_DURABILITY_NOT_RUNTIME"
+}

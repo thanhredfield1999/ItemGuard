@@ -1,0 +1,2151 @@
+Review exact supplied snapshot only. No tools/writes. Scope C1 additive index migration and failure-safe paging; NOT Paper/production/full roadmap. Report concrete correctness blockers with paths/lines and minimal fixes. Design phase may identify missing required tests. Implementation phase must distinguish code defects from unverified runtime and pre-existing unsupported capabilities. Verdict PASS_FOR_BOUNDED_IMPLEMENTATION for design or PASS_FOR_OFFLINE_CANDIDATE for implementation, else BLOCK. Vietnamese concise report.
+
+FILE docs/design/2026-09-09-catalog-c1-index-pagination.md
+# C1 — history index and failure-safe catalog paging
+
+Status: scoped implementation design; user said `làm đi` after remaining roadmap recommendation C1. Source/offline only, no deployment, Paper, existing production DB, external API or destructive action. Schema change limited to the proposed additive history index; no new tables/columns/data rewrite.
+
+## Observed root causes and contract
+
+- Schema v7 has no index for `WHERE code=? AND item_uuid=? ORDER BY timestamp DESC,id DESC LIMIT 100`. Existing synthetic JDBC probe showed a scan/sort and SQLITE_INTERRUPT. Index experiment fixed that query, not arbitrary text searches.
+- Controller mutates cursor/previous/filter before success; error screen offers reset but no retry of the failed target and can confuse cached rows with changed filters. Global read admission stays one-inflight plus 1s; do not weaken it.
+
+## Migration (v7 -> v8, older supported versions still use existing initializer)
+
+- Only add nonunique, nonpartial `idx_history_identity_time` on `item_history(code,item_uuid,timestamp DESC,id DESC)` using BINARY collation. No row rewrite, delete, dedupe, backfill, table replacement or drop of unknown indexes/tables.
+- Initialize on the existing single DB-owner thread in its manual JDBC transaction. Reject auto-commit before any DDL, validate schema metadata before mutation. Metadata id=1 must contain SQLite integer version in [1,8]; missing/corrupt/future versions fail closed. Fresh DB without plugin_stats is supported by existing behavior; this is not an all-table forensic validator.
+- Create index then inspect PRAGMA index_list/index_xinfo: exact table, columns, ordering, collations, nonunique/nonpartial. Name collision or incompatible existing definition is an error, never DROP/repair it. Repeat init must preserve the existing index and data.
+- Write version 8 only after successful index creation/validation, in same transaction as all initialization DDL. On SQLException roll back, preserve original exception with rollback failure suppressed. Close/reopen verification checks durable version/data/index outcome. Interrupted CREATE INDEX must not publish v8.
+- Bound CREATE INDEX through a temporary SQLite ProgressHandler: check every 1000 VM instructions; proposed cap 100000 checks or 30s elapsed must be calibrated on the 1M workload before acceptance. Clear in finally before commit and rollback/other work. These are sampled CPU/elapsed limits, NOT an I/O/lock/OS/fsync deadline. Larger-than-tested DBs may fail startup rather than exceed the cap; this is not a supported production size claim. Existing driver busy timeout and sidecar ownership remain unchanged.
+- Index creation consumes disk/temp space and writer time. Startup constructor still waits for DB initialization; no main-thread query or background live migration is added. A large/disk-full/locked DB can reject startup; release requires stopped-server consistent backup, free-space planning, maintenance window, controlled migration and restore rehearsal. No live enable approval from this slice.
+- Rollback to an old JAR is not automatic: v7 correctly rejects v8; use stopped backup restoration through a separately approved deployment procedure. No downgrading schema stamp over a v8 DB.
+
+## Paging behavior
+
+- Keep a committed catalog query/cursor-stack paired with the cached successful page. Build immutable proposed request state for next/previous/filter/reset; commit it only when that request succeeds under current generation/permission.
+- While loading, invalidate old actions as today. Error UI offers `Thử lại` for the exact failed target and `Về trang trước đó` to the last successful cached page (including its filters/cursor stack); first-load failure has no fake successful page. Busy/error never becomes empty results. No automatic retry or loop.
+- History errors retry the same selected identity with history permission and return to that profile; no catalog filter controls on a history-error screen. Catalog failure never uses a stale selected profile as its back target. Preserve existing generation, post-show and close/quit guards. No return-to-cached-history action after failure: history renders only after a successful identity-bound request; regression covers A-history cached then B-history failure/retry.
+- Chat cancel/invalid input returns to last appropriate screen without relabeling cached rows under a failed filter. Keep maximum 128 catalog pages and 100 retained history events, not snapshots/full coverage.
+
+## Verification
+
+1. Behavioral RED then GREEN: frozen v7 DDL/data fixture upgrades to exactly v8 with exact index, retained unknown data and unchanged history rows; reopen idempotence. Fault after index/before version commit rolls back on disk; conflicting index/malformed metadata/future version/autocommit reject without mutation. Existing v1/v6 tests remain.
+2. JDBC indexed query on 1M synthetic history events: exact identity and timestamp/id tie ordering; plan uses index without temp sort. Query budget unchanged; interrupted search must not poison next write/read. No existing DB path accepted by probe.
+3. Controller tests: failed next/previous/filter keeps successful state; retry identical query; double/stale clicks do not skip; permissions/close discard callbacks; history failure remains in profile context.
+4. Measure synthetic migration time, DB bytes, filtered search outcomes and mixed FIFO read/write/retention. Do not claim production SLO or that history index fixes contains-text search.
+5. Full Java21 clean test package; exact artifact/hash and independent Opus5 review; source/test evidence. Paper/client/production and remaining roadmap gates still open.
+
+## Design review disposition (Opus5, c1-design-review.json)
+- PASS_FOR_BOUNDED_IMPLEMENTATION with amendments. A1: stale history risk is prevented by no cached-history return and generation/selection invariants; add cross-item regression, do not introduce new cache subsystem. A2: operation-kind error routing plus no history-error catalog filters. A3: cap acceptance requires measured VM callbacks/migration time; no arbitrary larger-size promise.
+- Tests include no fake empty after initial failure/chat cancel, previous-stack failures, repeated retry, handler cleared before commit (instrument JDBC proxy), xinfo key rows only, migration rollback/reopen and shared-gate behavior. Unsupported old-table corruption beyond version/index validation remains outside this slice.
+
+## Calibration observed (c1-scale-compiled.log)
+- Three independently generated DBs: 1,000,002 history rows (1M base + two identity impostors). Migration used 12,000 progress checks of the 100,000 cap each run, ~1.31–1.37s vs 30s sampled cap. Retain proposed bounds for this offline candidate; larger DB admission/support remains unproven.
+- DB bytes before/after: 41,435,136 / 68,591,616 (includes all initializer additions, not index-only attribution). 60 exact history queries returned correct identity and timestamp/id tie order; no temp sort. Missing contains-text filter on 100k tracked records still interrupts; mixed reads/writes and retention/reopen continue after that failure.
+- Source-launcher cannot use the package-private calibration seam across classloaders. Compile probe with javac and launch with the JAR in the same app classloader; do not expose test constructor publicly.
+- SQLITE_INTERRUPT during CREATE INDEX auto-rolls back SQLite's transaction; cleanup rollback can report no active transaction and is preserved as suppressed. Failed-initialization connection is closed by existing owner lifecycle. Recovery evidence uses close/reopen, not falsely claiming that connection is ready for another commit.
+
+
+FILE src/main/java/com/itemguard/persistence/SqliteSchemaManager.java
+package com.itemguard.persistence;
+
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+
+public final class SqliteSchemaManager {
+
+    public static final int CURRENT_SCHEMA_VERSION = 8;
+    private final int indexProgressLimit;
+    private final java.util.function.LongSupplier clock;
+
+    public SqliteSchemaManager() { this(100_000, System::nanoTime); }
+
+    SqliteSchemaManager(int indexProgressLimit, java.util.function.LongSupplier clock) {
+        this.indexProgressLimit = indexProgressLimit;
+        this.clock = clock;
+    }
+
+    public void initialize(Connection connection) throws SQLException {
+        if (connection.getAutoCommit()) throw new SQLException("Schema initialization requires a transaction");
+        validateExistingSchema(connection);
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS tracked_items (
+                    code VARCHAR(16) PRIMARY KEY,
+                    item_uuid VARCHAR(36) NOT NULL,
+                    owner_uuid VARCHAR(36),
+                    owner_name VARCHAR(255),
+                    material VARCHAR(64),
+                    item_name VARCHAR(255),
+                    item_lore TEXT,
+                    created_at BIGINT NOT NULL,
+                    last_seen_at BIGINT NOT NULL,
+                    last_action VARCHAR(32),
+                    detection_count INT DEFAULT 0,
+                    last_location TEXT
+                )
+                """);
+            statement.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_item_uuid_unique
+                ON tracked_items(item_uuid)
+                """);
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS item_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    code VARCHAR(16) NOT NULL,
+                    item_uuid VARCHAR(36) NOT NULL,
+                    action VARCHAR(32) NOT NULL,
+                    player_name VARCHAR(255),
+                    player_uuid VARCHAR(36),
+                    location TEXT,
+                    world VARCHAR(64),
+                    x INT,
+                    y INT,
+                    z INT,
+                    timestamp BIGINT NOT NULL,
+                    additional_data TEXT
+                )
+                """);
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS item_observations (
+                    observation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    item_uuid VARCHAR(36) NOT NULL,
+                    code VARCHAR(16) NOT NULL,
+                    scan_epoch BIGINT NOT NULL,
+                    epoch_complete INT NOT NULL DEFAULT 0,
+                    holder_type VARCHAR(32) NOT NULL,
+                    holder_id VARCHAR(255) NOT NULL,
+                    slot INT NOT NULL,
+                    observed_at BIGINT NOT NULL,
+                    UNIQUE(scan_epoch, holder_type, holder_id, slot, item_uuid)
+                )
+                """);
+            statement.execute("""
+                CREATE INDEX IF NOT EXISTS idx_observation_identity_epoch
+                ON item_observations(item_uuid, scan_epoch)
+                """);
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS duplicate_findings (
+                    finding_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    item_uuid VARCHAR(36) NOT NULL,
+                    code VARCHAR(16) NOT NULL,
+                    scan_epoch BIGINT NOT NULL,
+                    status VARCHAR(16) NOT NULL,
+                    distinct_locations INT NOT NULL,
+                    action VARCHAR(16) NOT NULL,
+                    created_at BIGINT NOT NULL,
+                    detail TEXT,
+                    FOREIGN KEY(code) REFERENCES tracked_items(code)
+                )
+                """);
+            statement.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_duplicate_finding_identity_epoch
+                ON duplicate_findings(item_uuid, scan_epoch)
+                """);
+            statement.execute("""
+                CREATE INDEX IF NOT EXISTS idx_duplicate_finding_identity_created
+                ON duplicate_findings(item_uuid, created_at)
+                """);
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS item_search_requests (
+                    code VARCHAR(16) PRIMARY KEY,
+                    mode VARCHAR(16) NOT NULL,
+                    state VARCHAR(16) NOT NULL,
+                    actor_uuid VARCHAR(36),
+                    actor_name VARCHAR(255) NOT NULL,
+                    created_at BIGINT NOT NULL,
+                    expires_at BIGINT NOT NULL,
+                    updated_at BIGINT NOT NULL
+                )
+                """);
+            statement.execute("""
+                CREATE INDEX IF NOT EXISTS idx_search_state_expiry
+                ON item_search_requests(state, expires_at)
+                """);
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS item_snapshots (
+                    code VARCHAR(16) PRIMARY KEY,
+                    snapshot_version INT NOT NULL,
+                    payload BLOB NOT NULL,
+                    sha256 BLOB NOT NULL,
+                    captured_at BIGINT NOT NULL,
+                    FOREIGN KEY(code) REFERENCES tracked_items(code)
+                )
+                """);
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS reclaim_claims (
+                    claim_id VARCHAR(36) PRIMARY KEY,
+                    idempotency_key VARCHAR(128) NOT NULL UNIQUE,
+                    player_uuid VARCHAR(36) NOT NULL,
+                    code VARCHAR(16) NOT NULL,
+                    state VARCHAR(16) NOT NULL,
+                    requested_at BIGINT NOT NULL,
+                    updated_at BIGINT NOT NULL,
+                    detail TEXT,
+                    FOREIGN KEY(code) REFERENCES tracked_items(code)
+                )
+                """);
+            statement.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_reclaim_identity_lock
+                ON reclaim_claims(player_uuid, code)
+                WHERE state IN ('PENDING', 'PREPARED', 'COMMITTED')
+                """);
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS tag_publications (
+                    publication_id VARCHAR(36) PRIMARY KEY,
+                    source_key VARCHAR(255) NOT NULL,
+                    source_digest BLOB NOT NULL,
+                    code VARCHAR(16) NOT NULL,
+                    item_uuid VARCHAR(36) NOT NULL,
+                    owner_uuid VARCHAR(36),
+                    owner_name VARCHAR(255),
+                    material VARCHAR(64),
+                    item_name VARCHAR(255),
+                    item_lore TEXT,
+                    created_item_at BIGINT NOT NULL,
+                    last_seen_at BIGINT NOT NULL,
+                    last_action VARCHAR(32),
+                    detection_count INT NOT NULL,
+                    last_location TEXT,
+                    snapshot_version INT NOT NULL,
+                    payload BLOB NOT NULL,
+                    sha256 BLOB NOT NULL,
+                    captured_at BIGINT NOT NULL,
+                    state VARCHAR(16) NOT NULL,
+                    created_at BIGINT NOT NULL,
+                    updated_at BIGINT NOT NULL,
+                    detail TEXT
+                )
+                """);
+            statement.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_tag_publication_source_lock
+                ON tag_publications(source_key)
+                WHERE state = 'PREPARED'
+                """);
+            statement.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_tag_publication_code_unique
+                ON tag_publications(code)
+                """);
+            statement.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_tag_publication_uuid_unique
+                ON tag_publications(item_uuid)
+                """);
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS plugin_stats (
+                    id INTEGER PRIMARY KEY,
+                    schema_version INT NOT NULL,
+                    duplicates_detected INT DEFAULT 0,
+                    last_updated BIGINT
+                )
+                """);
+            createHistoryIndex(connection, statement);
+            validateHistoryIndex(connection);
+            statement.executeUpdate("""
+                INSERT OR IGNORE INTO plugin_stats
+                (id, schema_version, duplicates_detected, last_updated)
+                VALUES (1, %d, 0, 0)
+                """.formatted(CURRENT_SCHEMA_VERSION));
+            statement.executeUpdate("""
+                UPDATE plugin_stats
+                SET schema_version = %d
+                WHERE id = 1 AND schema_version < %d
+                """.formatted(CURRENT_SCHEMA_VERSION, CURRENT_SCHEMA_VERSION));
+            connection.commit();
+        } catch (SQLException exception) {
+            try { connection.rollback(); }
+            catch (SQLException rollbackFailure) { exception.addSuppressed(rollbackFailure); }
+            throw exception;
+        }
+    }
+
+    private void createHistoryIndex(Connection connection, Statement statement) throws SQLException {
+        var sqlite = connection.unwrap(org.sqlite.SQLiteConnection.class);
+        long started = clock.getAsLong();
+        org.sqlite.ProgressHandler.setHandler(sqlite, 1000, new org.sqlite.ProgressHandler() {
+            private int calls;
+            @Override protected int progress() {
+                return ++calls >= indexProgressLimit || clock.getAsLong() - started > 30_000_000_000L ? 1 : 0;
+            }
+        });
+        SQLException original = null;
+        try {
+            statement.execute("""
+                CREATE INDEX IF NOT EXISTS idx_history_identity_time
+                ON item_history(code,item_uuid,timestamp DESC,id DESC)
+                """);
+        } catch (SQLException failure) {
+            original = failure; throw failure;
+        } finally {
+            try { org.sqlite.ProgressHandler.clearHandler(sqlite); }
+            catch (SQLException cleanupFailure) {
+                if (original != null) original.addSuppressed(cleanupFailure);
+                else throw cleanupFailure;
+            }
+        }
+    }
+
+    private void validateHistoryIndex(Connection connection) throws SQLException {
+        boolean found = false;
+        try (var statement = connection.createStatement();
+             var rows = statement.executeQuery("PRAGMA index_list('item_history')")) {
+            while (rows.next()) {
+                if (!"idx_history_identity_time".equals(rows.getString("name"))) continue;
+                found = rows.getInt("unique") == 0 && rows.getInt("partial") == 0;
+            }
+        }
+        if (!found) throw new SQLException("Missing or incompatible history index");
+        String[] columns = {"code", "item_uuid", "timestamp", "id"};
+        int[] descending = {0, 0, 1, 1};
+        int position = 0;
+        try (var statement = connection.createStatement();
+             var rows = statement.executeQuery("PRAGMA index_xinfo('idx_history_identity_time')")) {
+            while (rows.next()) {
+                if (rows.getInt("key") == 0) continue;
+                if (position >= columns.length || !columns[position].equals(rows.getString("name"))
+                    || rows.getInt("desc") != descending[position]
+                    || !"BINARY".equals(rows.getString("coll"))) {
+                    throw new SQLException("Incompatible history index definition");
+                }
+                position++;
+            }
+        }
+        if (position != columns.length) throw new SQLException("Incomplete history index definition");
+    }
+
+    private void validateExistingSchema(Connection connection) throws SQLException {
+        try (var metadata = connection.prepareStatement(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'plugin_stats'");
+             ResultSet table = metadata.executeQuery()) {
+            if (!table.next()) {
+                return;
+            }
+        }
+
+        try (Statement statement = connection.createStatement();
+             ResultSet result = statement.executeQuery(
+                 "SELECT schema_version, typeof(schema_version) FROM plugin_stats WHERE id = 1")) {
+            if (!result.next()) {
+                throw new SQLException("ItemGuard schema metadata is missing row id=1");
+            }
+            long schemaVersion = result.getLong(1);
+            if (!"integer".equals(result.getString(2)) || schemaVersion < 1) {
+                throw new SQLException("Invalid ItemGuard schema version metadata");
+            }
+            if (schemaVersion > CURRENT_SCHEMA_VERSION) {
+                throw new SQLException(
+                    "Unsupported future ItemGuard schema version: " + schemaVersion
+                );
+            }
+        }
+    }
+}
+
+
+FILE src/main/java/com/itemguard/persistence/SqliteConnectionOwner.java
+package com.itemguard.persistence;
+
+import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.time.Duration;
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
+
+public final class SqliteConnectionOwner implements AutoCloseable {
+
+    private static final Duration DEFAULT_CLOSE_TIMEOUT = Duration.ofSeconds(10);
+
+    private final SerialDatabaseExecutor executor;
+    private final Consumer<Throwable> failureHandler;
+    private final SqliteProcessLock processLock;
+    private final Duration initializationCleanupTimeout;
+    private final Consumer<SqliteProcessLock> processLockReleaser;
+    private final AtomicBoolean closed = new AtomicBoolean();
+    private volatile boolean closeSucceeded;
+    private Connection connection;
+
+    public SqliteConnectionOwner(Path databasePath) {
+        this(databasePath, failure -> {});
+    }
+
+    public SqliteConnectionOwner(Path databasePath, Consumer<Throwable> failureHandler) {
+        this(
+            databasePath,
+            failureHandler,
+            DEFAULT_CLOSE_TIMEOUT,
+            () -> {},
+            SqliteProcessLock::close
+        );
+    }
+
+    SqliteConnectionOwner(
+        Path databasePath,
+        Consumer<Throwable> failureHandler,
+        Duration initializationCleanupTimeout,
+        Runnable beforeInitialization,
+        Consumer<SqliteProcessLock> processLockReleaser
+    ) {
+        Objects.requireNonNull(databasePath, "databasePath");
+        this.failureHandler = Objects.requireNonNull(failureHandler, "failureHandler");
+        this.initializationCleanupTimeout = Objects.requireNonNull(
+            initializationCleanupTimeout,
+            "initializationCleanupTimeout"
+        );
+        Objects.requireNonNull(beforeInitialization, "beforeInitialization");
+        this.processLockReleaser = Objects.requireNonNull(
+            processLockReleaser,
+            "processLockReleaser"
+        );
+        this.processLock = SqliteProcessLock.acquire(databasePath);
+        this.executor = new SerialDatabaseExecutor("ItemGuard-DB");
+
+        Future<Void> initialization = executor.submit(() -> {
+            try {
+                beforeInitialization.run();
+                connection = DriverManager.getConnection(
+                    "jdbc:sqlite:" + databasePath.toAbsolutePath()
+                );
+                try (var statement = connection.createStatement()) {
+                    statement.execute("PRAGMA foreign_keys = ON");
+                }
+                connection.setAutoCommit(false);
+                new SqliteSchemaManager().initialize(connection);
+                return null;
+            } catch (Throwable failure) {
+                if (connection != null) {
+                    try {
+                        connection.close();
+                    } catch (SQLException closeFailure) {
+                        failure.addSuppressed(closeFailure);
+                    } finally {
+                        connection = null;
+                    }
+                }
+                throw failure;
+            }
+        });
+        try {
+            awaitInitialization(initialization);
+        } catch (RuntimeException failure) {
+            if (cleanupAfterInitializationFailure(failure)) {
+                try {
+                    processLockReleaser.accept(processLock);
+                } catch (RuntimeException releaseFailure) {
+                    failure.addSuppressed(releaseFailure);
+                    processLock.retainUntilProcessExit();
+                }
+            } else {
+                processLock.retainUntilProcessExit();
+            }
+            throw failure;
+        }
+    }
+
+    public void execute(SqliteOperation<Void> operation) {
+        requireOpen();
+        executor.execute(() -> {
+            try {
+                runTransaction(operation);
+            } catch (RuntimeException failure) {
+                reportFailure(failure);
+            }
+        });
+    }
+
+    public <T> T call(SqliteOperation<T> operation) {
+        requireOpen();
+        Future<T> future = executor.submit(() -> runTransaction(operation));
+        try {
+            return future.get();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting for ItemGuard database", interrupted);
+        } catch (ExecutionException failure) {
+            throw propagate(failure.getCause());
+        }
+    }
+
+    public <T> CompletableFuture<T> callAsync(SqliteOperation<T> operation) {
+        requireOpen();
+        Objects.requireNonNull(operation, "operation");
+        CompletableFuture<T> completion = new CompletableFuture<>();
+        executor.execute(() -> {
+            try {
+                completion.complete(runTransaction(operation));
+            } catch (RuntimeException failure) {
+                reportFailure(failure);
+                completion.completeExceptionally(failure);
+            }
+        });
+        return completion;
+    }
+
+    public void flush() {
+        call(connection -> null);
+    }
+
+    public synchronized boolean close(Duration timeout) {
+        Objects.requireNonNull(timeout, "timeout");
+        if (!closed.compareAndSet(false, true)) {
+            return closeSucceeded;
+        }
+
+        long deadline = System.nanoTime() + timeout.toNanos();
+        Future<Void> closeConnection = executor.submit(() -> {
+            if (connection != null && !connection.isClosed()) {
+                connection.close();
+            }
+            return null;
+        });
+
+        try {
+            closeConnection.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            processLock.retainUntilProcessExit();
+            closeSucceeded = false;
+            return false;
+        } catch (ExecutionException | TimeoutException failure) {
+            reportFailure(failure);
+            processLock.retainUntilProcessExit();
+            closeSucceeded = false;
+            return false;
+        }
+
+        long remainingNanos = Math.max(0L, deadline - System.nanoTime());
+        if (!executor.close(Duration.ofNanos(remainingNanos))) {
+            processLock.retainUntilProcessExit();
+            closeSucceeded = false;
+            return false;
+        }
+        try {
+            processLockReleaser.accept(processLock);
+            closeSucceeded = true;
+            return true;
+        } catch (RuntimeException releaseFailure) {
+            reportFailure(releaseFailure);
+            processLock.retainUntilProcessExit();
+            closeSucceeded = false;
+            return false;
+        }
+    }
+
+    @Override
+    public void close() {
+        close(DEFAULT_CLOSE_TIMEOUT);
+    }
+
+    private <T> T runTransaction(SqliteOperation<T> operation) {
+        try {
+            T result = operation.apply(connection);
+            connection.commit();
+            return result;
+        } catch (Throwable failure) {
+            rollback(failure);
+            throw propagate(failure);
+        }
+    }
+
+    private void rollback(Throwable originalFailure) {
+        try {
+            connection.rollback();
+        } catch (SQLException rollbackFailure) {
+            originalFailure.addSuppressed(rollbackFailure);
+        }
+    }
+
+    private void requireOpen() {
+        if (closed.get()) {
+            throw new RejectedExecutionException("ItemGuard database owner is closed");
+        }
+    }
+
+    private void awaitInitialization(Future<Void> initialization) {
+        try {
+            initialization.get();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while initializing ItemGuard database", interrupted);
+        } catch (ExecutionException failure) {
+            throw propagate(failure.getCause());
+        }
+    }
+
+    private boolean cleanupAfterInitializationFailure(RuntimeException originalFailure) {
+        long deadline = System.nanoTime() + initializationCleanupTimeout.toNanos();
+        Future<Void> cleanup;
+        try {
+            cleanup = executor.submit(() -> {
+                if (connection != null) {
+                    try {
+                        connection.close();
+                    } finally {
+                        connection = null;
+                    }
+                }
+                return null;
+            });
+        } catch (RuntimeException submissionFailure) {
+            originalFailure.addSuppressed(submissionFailure);
+            return false;
+        }
+
+        boolean interrupted = Thread.interrupted();
+        boolean cleanupSucceeded = false;
+        try {
+            while (true) {
+                try {
+                    long remainingNanos = Math.max(0L, deadline - System.nanoTime());
+                    cleanup.get(remainingNanos, TimeUnit.NANOSECONDS);
+                    cleanupSucceeded = true;
+                    break;
+                } catch (InterruptedException ignored) {
+                    interrupted = true;
+                } catch (ExecutionException cleanupFailure) {
+                    originalFailure.addSuppressed(cleanupFailure.getCause());
+                    break;
+                } catch (TimeoutException timeout) {
+                    originalFailure.addSuppressed(new IllegalStateException(
+                        "Timed out cleaning up ItemGuard database initialization",
+                        timeout
+                    ));
+                    break;
+                }
+            }
+            long remainingNanos = Math.max(0L, deadline - System.nanoTime());
+            boolean terminated = executor.close(Duration.ofNanos(remainingNanos));
+            if (!terminated) {
+                originalFailure.addSuppressed(new IllegalStateException(
+                    "ItemGuard database executor did not terminate after initialization failure"
+                ));
+            }
+            return cleanupSucceeded && terminated;
+        } finally {
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    private RuntimeException propagate(Throwable failure) {
+        if (failure instanceof RuntimeException runtimeFailure) {
+            return runtimeFailure;
+        }
+        return new IllegalStateException("ItemGuard database operation failed", failure);
+    }
+
+    private void reportFailure(Throwable failure) {
+        try {
+            failureHandler.accept(failure);
+        } catch (Throwable handlerFailure) {
+            failure.addSuppressed(handlerFailure);
+        }
+    }
+
+    @FunctionalInterface
+    public interface SqliteOperation<T> {
+        T apply(Connection connection) throws Exception;
+    }
+}
+
+
+FILE src/main/java/com/itemguard/catalog/CatalogRepository.java
+package com.itemguard.catalog;
+
+import com.itemguard.persistence.SqliteConnectionOwner;
+import java.util.ArrayList;
+import java.util.concurrent.CompletableFuture;
+import org.sqlite.ProgressHandler;
+
+/** Bounded SELECT-only catalog; no world scan or item mutation. */
+public final class CatalogRepository {
+    private final SqliteConnectionOwner owner;
+    private final int progressLimit;
+    public CatalogRepository(SqliteConnectionOwner owner) { this(owner, 2000); }
+    CatalogRepository(SqliteConnectionOwner owner, int progressLimit) {
+        this.owner = java.util.Objects.requireNonNull(owner);
+        if (progressLimit < 1) throw new IllegalArgumentException("progressLimit");
+        this.progressLimit = progressLimit;
+    }
+    public CompletableFuture<java.util.List<CatalogEvent>> history(String code, String itemUuid) {
+        java.util.Objects.requireNonNull(code);
+        java.util.Objects.requireNonNull(itemUuid);
+        return bounded(connection -> {
+            var events = new ArrayList<CatalogEvent>();
+            try (var statement = connection.prepareStatement("""
+                SELECT id,action,player_name,player_uuid,location,timestamp,additional_data
+                FROM item_history WHERE code = ? AND item_uuid = ?
+                ORDER BY timestamp DESC, id DESC LIMIT 100
+                """)) {
+                statement.setString(1, code);
+                statement.setString(2, itemUuid);
+                try (var result = statement.executeQuery()) {
+                    while (result.next()) events.add(new CatalogEvent(result.getLong(1), result.getString(2),
+                        result.getString(3), result.getString(4), result.getString(5), result.getLong(6), result.getString(7)));
+                }
+            }
+            return java.util.List.copyOf(events);
+        });
+    }
+
+    public CompletableFuture<CatalogPage> find(CatalogQuery query) {
+        java.util.Objects.requireNonNull(query);
+        return bounded(connection -> {
+            var rows = new ArrayList<CatalogRow>();
+            String sql = """
+                SELECT code,item_uuid,material,item_name,owner_name,last_location,last_seen_at
+                FROM tracked_items WHERE code > ?
+                AND (? = '' OR instr(ig_catalog_fold(COALESCE(item_name,'')), ig_catalog_fold(?)) > 0
+                    OR instr(ig_catalog_fold(code),ig_catalog_fold(?)) > 0 OR instr(ig_catalog_fold(COALESCE(material,'')),ig_catalog_fold(?)) > 0)
+                AND (? = '' OR owner_name = ? COLLATE NOCASE)
+                AND %s ORDER BY code ASC LIMIT 37
+                """.formatted(query.category().predicate());
+            try (var statement = connection.prepareStatement(sql)) {
+                statement.setString(1, query.afterCode());
+                for (int i = 2; i <= 5; i++) statement.setString(i, query.text());
+                statement.setString(6, query.ownerName());
+                statement.setString(7, query.ownerName());
+                try (var result = statement.executeQuery()) {
+                    while (result.next()) rows.add(new CatalogRow(
+                        result.getString(1), result.getString(2), result.getString(3),
+                        result.getString(4), result.getString(5), result.getString(6), result.getLong(7)));
+                }
+            }
+            boolean more = rows.size() > 36;
+            if (more) rows.removeLast();
+            return new CatalogPage(rows, more);
+        });
+    }
+
+    private <T> CompletableFuture<T> bounded(SqliteConnectionOwner.SqliteOperation<T> operation) {
+        return owner.callAsync(connection -> {
+            long started = System.nanoTime();
+            org.sqlite.Function.create(connection, "ig_catalog_fold", new org.sqlite.Function() {
+                @Override protected void xFunc() throws java.sql.SQLException {
+                    String value=value_text(0);
+                    result(java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFC).toLowerCase(java.util.Locale.ROOT));
+                }
+            }, 1, org.sqlite.Function.FLAG_DETERMINISTIC);
+            ProgressHandler.setHandler(connection, 1000, new ProgressHandler() {
+                private int calls;
+                @Override protected int progress() {
+                    return ++calls >= progressLimit || System.nanoTime() - started > 250_000_000L ? 1 : 0;
+                }
+            });
+            try {
+                return operation.apply(connection);
+            } finally {
+                try { ProgressHandler.clearHandler(connection); }
+                finally { org.sqlite.Function.destroy(connection, "ig_catalog_fold", 1); }
+            }
+        });
+    }
+}
+
+
+FILE src/main/java/com/itemguard/catalog/CatalogController.java
+package com.itemguard.catalog;
+
+import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+
+/** All methods except future completion execute through the main-thread port. */
+public final class CatalogController {
+    public interface Data {
+        CompletableFuture<CatalogPage> find(CatalogQuery query);
+        CompletableFuture<List<CatalogEvent>> history(String code, String itemUuid);
+    }
+    public interface Port {
+        boolean allowed(boolean history);
+        void main(Runnable action);
+        void show(CatalogScreen screen);
+        void close();
+        void prompt(boolean owner, java.util.function.Consumer<String> completion);
+        void message(String message);
+    }
+    private final Data data;
+    private final Port port;
+    private final CatalogSession session = new CatalogSession();
+    private CatalogPage page = new CatalogPage(List.of(), false);
+    private CatalogRow selected;
+    private List<CatalogEvent> events = List.of();
+    private final Map<Integer, CatalogScreen.Icon> icons = new HashMap<>();
+    private String text = "", owner = "", cursor = "";
+    private CatalogCategory category = CatalogCategory.ALL;
+    private final java.util.ArrayList<String> previous = new java.util.ArrayList<>();
+    private int historyPage;
+    private long viewGeneration;
+    private boolean hasPage, historyFailure;
+    private Runnable retry = this::open;
+    private record Request(CatalogQuery query, List<String> previous) {
+        Request { previous = List.copyOf(previous); }
+    }
+
+    public CatalogController(Data data, Port port) { this.data = data; this.port = port; }
+    public void open() {
+        load(new Request(new CatalogQuery(text, owner, category, cursor), previous));
+    }
+    private void load(Request request) {
+        if (!permit(false)) return;
+        historyFailure = false; retry = () -> load(request);
+        base(); icon(22, "CLOCK", "Đang tải…", List.of(), null); show("Kho tra cứu");
+        if (!session.accepts(viewGeneration) || !permit(false)) return;
+        long generation = viewGeneration;
+        try {
+            data.find(request.query()).whenComplete((result, failure) ->
+                port.main(() -> {
+                    if (!session.accepts(generation) || !permit(false)) return;
+                    if (failure != null) { error(); return; }
+                    text = request.query().text(); owner = request.query().ownerName();
+                    category = request.query().category(); cursor = request.query().afterCode();
+                    previous.clear(); previous.addAll(request.previous());
+                    page = result; hasPage = true; catalog();
+                }));
+        } catch (RuntimeException failure) { error(); }
+    }
+    public void close() { session.close(); }
+
+    private boolean permit(boolean history) {
+        if (port.allowed(history)) return true;
+        close(); port.close(); return false;
+    }
+    private void base() {
+        viewGeneration = session.begin(); icons.clear();
+        icon(53, "BARRIER", "Đóng", List.of(), () -> { close(); port.close(); });
+        icon(0, "BOOK", "Chỉ dữ liệu đã ghi nhận", List.of(
+            "Chưa phải toàn bộ item trên hệ thống", "HavenBags/kho ngoài: chưa hỗ trợ", "Chỉ xem — không lấy hoặc xóa đồ"), null);
+    }
+    private void icon(int slot, String material, String title, List<String> lore, Runnable action) {
+        icons.put(slot, new CatalogScreen.Icon(material, title, lore, action));
+    }
+    private void show(String title) { show(title, false); }
+    private void show(String title, boolean historyRequired) {
+        if (!permit(historyRequired)) return;
+        long generation = viewGeneration;
+        var guarded = new HashMap<Integer, CatalogScreen.Icon>();
+        icons.forEach((slot, icon) -> guarded.put(slot, new CatalogScreen.Icon(icon.material(), icon.title(), icon.lore(),
+            icon.action() == null ? null : () -> {
+                if (session.accepts(generation) && permit(historyRequired)) icon.action().run();
+            })));
+        port.show(new CatalogScreen(title, guarded));
+    }
+    private void catalog() {
+        if (!hasPage) { error(); return; }
+        base();
+        filters();
+        for (int i=0; i<page.items().size(); i++) {
+            var row = page.items().get(i);
+            icon(i+9, row.material(), text(row.name()), List.of(row.code(),
+                "Người liên quan (bản ghi): " + text(row.ownerName()),
+                "Nguồn plugin: chưa xác định", "Bấm xem hồ sơ"), () -> { selected = row; profile(); });
+        }
+        if (page.items().isEmpty()) icon(22, "PAPER", "Không có bản ghi phù hợp", List.of("Không chứng minh item không tồn tại"), null);
+        if (!previous.isEmpty()) icon(48, "ARROW", "Trang trước", List.of(), () -> {
+            var stack = new java.util.ArrayList<>(previous);
+            String target = stack.removeLast();
+            load(new Request(new CatalogQuery(text, owner, category, target), stack));
+        });
+        if (page.hasMore() && !page.items().isEmpty()) {
+            if (previous.size() < 127) icon(50, "ARROW", "Trang sau", List.of(), () -> {
+                var stack = new java.util.ArrayList<>(previous); stack.add(cursor);
+                load(new Request(new CatalogQuery(text, owner, category, page.items().getLast().code()), stack));
+            });
+            else icon(50, "BARRIER", "Đã tới giới hạn 128 trang", List.of("Thu hẹp bộ lọc để tra tiếp"), null);
+        }
+        icon(49, "PAPER", "Trang " + (previous.size()+1), List.of("Xếp theo mã; không phải snapshot DB", "Dữ liệu mới có thể cần làm mới"), null);
+        show("Kho tra cứu · " + (previous.size()+1));
+    }
+    private void filters() {
+        icon(2, "NAME_TAG", "Tìm tên / mã / material", List.of(text.isEmpty() ? "Chưa lọc" : text), () -> input(false));
+        icon(3, "PLAYER_HEAD", "Người liên quan", List.of(owner.isEmpty() ? "Chưa lọc" : owner, "Theo tên trong bản ghi, không phải custody"), () -> input(true));
+        icon(4, "HOPPER", "Loại đồ: " + categoryName(category), List.of("Suy từ material; không phải loại custom"), this::categories);
+        icon(6, "SUNFLOWER", "Làm mới từ đầu", List.of(), () -> first(text, owner, category));
+        icon(7, "MILK_BUCKET", "Xóa bộ lọc", List.of(), () -> first("", "", CatalogCategory.ALL));
+    }
+    private void first(String search, String related, CatalogCategory kind) {
+        load(new Request(new CatalogQuery(search, related, kind, ""), List.of()));
+    }
+    private void input(boolean byOwner) {
+        long generation = session.begin();
+        port.prompt(byOwner, value -> {
+            if (!session.accepts(generation) || !permit(false)) return;
+            if (value.equalsIgnoreCase("huy") || value.equalsIgnoreCase("hủy")) { catalog(); return; }
+            String input = value.equals("*") ? "" : value;
+            try {
+                first(byOwner ? text : input, byOwner ? input : owner, category);
+            } catch (IllegalArgumentException invalid) {
+                port.message("Nội dung không hợp lệ: tên tối đa 16, tìm kiếm tối đa 64 ký tự."); catalog();
+            }
+        });
+    }
+    private void categories() {
+        base();
+        String[] materials={"CHEST","DIAMOND_SWORD","DIAMOND_CHESTPLATE","DIAMOND_PICKAXE","BOW","PAPER"};
+        for (var value : CatalogCategory.values()) {
+            icon(18+value.ordinal(), materials[value.ordinal()], categoryName(value), List.of("Phân loại theo material"), () -> first(text, owner, value));
+        }
+        icon(45, "ARROW", "Về kho", List.of(), this::catalog); show("Chọn loại đồ");
+    }
+    private static String categoryName(CatalogCategory value) {
+        return switch(value) { case ALL -> "Tất cả"; case SWORD -> "Kiếm"; case ARMOR -> "Giáp";
+            case TOOLS -> "Công cụ"; case RANGED -> "Tầm xa"; case OTHER -> "Khác / chưa phân loại"; };
+    }
+    private void profile() {
+        base();
+        icon(4, selected.material(), text(selected.name()), List.of(selected.code(), "UUID: " + text(selected.itemUuid()),
+            "Người liên quan (bản ghi): " + text(selected.ownerName()), "Nguồn plugin: chưa xác định"), null);
+        icon(20, "CLOCK", "Lịch sử", List.of("Tối đa 100 sự kiện còn lưu", "Không đầy đủ: giới hạn + retention"), this::loadHistory);
+        icon(22, "PLAYER_HEAD", "Qua tay ai — chưa hỗ trợ", List.of("Actor lịch sử không phải chuỗi chuyển tay"), null);
+        icon(24, "CHEST", "Nơi thấy trong bản ghi", List.of(text(selected.location()), time(selected.lastSeenAt()),
+            "Không xác minh tồn tại hiện tại", "HavenBags/kho ngoài: chưa hỗ trợ"), null);
+        icon(45, "ARROW", "Về kho", List.of(), this::catalog);
+        show("Hồ sơ · " + selected.code());
+    }
+    private void loadHistory() {
+        if (!permit(true)) return;
+        historyFailure = true; retry = this::loadHistory;
+        base(); icon(22, "CLOCK", "Đang tải lịch sử…", List.of(), null); show("Lịch sử");
+        if (!session.accepts(viewGeneration) || !permit(true)) return;
+        long generation = viewGeneration;
+        try {
+            data.history(selected.code(), selected.itemUuid()).whenComplete((result, failure) -> port.main(() -> {
+                if (!session.accepts(generation) || !permit(true)) return;
+                if (failure != null) { error(); return; }
+                events = List.copyOf(result); historyPage=0; history();
+            }));
+        } catch (RuntimeException failure) { error(); }
+    }
+    private void history() {
+        base();
+        int start = historyPage*36;
+        for (int i=0; i<Math.min(36, events.size()-start); i++) {
+            var event = events.get(start+i);
+            icon(i+9, "PAPER", text(event.action()), List.of(time(event.timestamp()),
+                "Người thực hiện: " + text(event.actor()), text(event.location())), () -> detail(event));
+        }
+        icon(4, "BOOK", "Lịch sử không đầy đủ", List.of("Tối đa 100 sự kiện còn lưu; retention", "Người thực hiện không đồng nghĩa người giữ"), null);
+        icon(45, "ARROW", "Về hồ sơ", List.of(), this::profile);
+        if (historyPage>0) icon(48,"ARROW","Trang trước",List.of(),()->{historyPage--;history();});
+        if (start+36<events.size()) icon(50,"ARROW","Trang sau",List.of(),()->{historyPage++;history();});
+        if (events.isEmpty()) icon(22,"PAPER","Chưa có sự kiện còn lưu",List.of("Không đồng nghĩa chưa từng xảy ra"),null);
+        show("Lịch sử · " + selected.code() + " · " + (historyPage+1), true);
+    }
+    private void detail(CatalogEvent event) {
+        base();
+        icon(22, "PAPER", text(event.action()), List.of("Sự kiện #" + event.id(), time(event.timestamp()),
+            "Người thực hiện: " + text(event.actor()), "UUID: " + text(event.actorUuid()),
+            text(event.location()), text(event.detail()), "Không phải bằng chứng chuyển quyền sở hữu"), null);
+        icon(45, "ARROW", "Về lịch sử", List.of(), this::history);
+        show("Sự kiện · " + selected.code(), true);
+    }
+    private void error() {
+        base(); icon(22, "BARRIER", "Không thể tải dữ liệu", List.of("DB đang bận, lỗi hoặc vượt giới hạn", "Đợi ít nhất 1 giây rồi thử lại", "Không coi là kết quả rỗng"), null);
+        icon(49, "CLOCK", "Thử lại", List.of("Giữ nguyên yêu cầu vừa lỗi"), retry);
+        if (historyFailure && selected != null) icon(45,"ARROW","Về hồ sơ",List.of(),this::profile);
+        else if (hasPage) icon(45,"ARROW","Về trang trước đó",List.of("Giữ trang và bộ lọc đã tải thành công"),this::catalog);
+        if (!historyFailure) filters();
+        show("ItemGuard · Lỗi truy vấn");
+    }
+    private static String text(String value) { return value == null || value.isBlank() ? "Chưa ghi nhận" : value; }
+    private static String time(long value) {
+        return value <= 0 ? "Chưa ghi thời gian" : java.time.format.DateTimeFormatter.ofPattern("dd/MM/uuuu HH:mm:ss XXX")
+            .withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.ofEpochMilli(value));
+    }
+}
+
+
+FILE src/main/java/com/itemguard/catalog/CatalogReadGate.java
+package com.itemguard.catalog;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
+import java.util.function.LongSupplier;
+
+/** Shared admission across all catalog viewers, independent of tracking writes. */
+public final class CatalogReadGate {
+    private final LongSupplier clock;
+    private boolean busy, used;
+    private long lastStart;
+    public CatalogReadGate(LongSupplier clock) { this.clock=java.util.Objects.requireNonNull(clock); }
+    public synchronized <T> CompletableFuture<T> submit(Supplier<CompletableFuture<T>> operation) {
+        long now=clock.getAsLong();
+        if (busy || (used && now-lastStart<1_000_000_000L)) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Catalog busy; try again shortly"));
+        }
+        busy=true; used=true; lastStart=now;
+        try {
+            CompletableFuture<T> result=operation.get();
+            result.whenComplete((value,failure)->release());
+            return result;
+        } catch (RuntimeException failure) {
+            busy=false; return CompletableFuture.failedFuture(failure);
+        }
+    }
+    private synchronized void release() { busy=false; }
+}
+
+
+FILE src/test/java/com/itemguard/persistence/SqliteHistoryMigrationTest.java
+package com.itemguard.persistence;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import java.nio.file.Path;
+import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
+import static org.junit.jupiter.api.Assertions.*;
+
+class SqliteHistoryMigrationTest {
+    @TempDir Path temp;
+
+    @Test void versionSevenPreservesHistoryAndUnknownDataWithOrderedIndexOnReopen() throws Exception {
+        Path db = temp.resolve("upgrade.db");
+        try (var c = connect(db)) {
+            legacy(c);
+            new SqliteSchemaManager().initialize(c);
+            assertEquals(8, version(c), "successful migration must publish schema eight");
+            assertHistoryIndex(c);
+            assertLegacyData(c);
+        }
+        try (var c = connect(db)) {
+            new SqliteSchemaManager().initialize(c);
+            assertEquals(8, version(c));
+            assertHistoryIndex(c);
+            assertLegacyData(c);
+        }
+    }
+
+    @Test void incompatibleNamedIndexesAreRejectedWithoutRepairOrVersionStamp() throws Exception {
+        var definitions=List.of(
+            "CREATE INDEX idx_history_identity_time ON item_history(action)",
+            "CREATE INDEX idx_history_identity_time ON item_history(code,item_uuid,timestamp,id)",
+            "CREATE INDEX idx_history_identity_time ON item_history(code COLLATE NOCASE,item_uuid,timestamp DESC,id DESC)",
+            "CREATE UNIQUE INDEX idx_history_identity_time ON item_history(code,item_uuid,timestamp DESC,id DESC)",
+            "CREATE INDEX idx_history_identity_time ON item_history(code,item_uuid,timestamp DESC,id DESC) WHERE id>0",
+            "CREATE INDEX idx_history_identity_time ON unknown_extension(k)"
+        );
+        for(int i=0;i<definitions.size();i++) {
+            Path db=temp.resolve("conflict-"+i+".db");
+            try(var c=connect(db)) {
+                legacy(c);
+                try(var s=c.createStatement()) { s.execute(definitions.get(i)); c.commit(); }
+                assertThrows(SQLException.class,()->new SqliteSchemaManager().initialize(c),"incompatible index must reject");
+                assertEquals(7,version(c)); assertLegacyData(c);
+            }
+            try(var c=connect(db)) { assertEquals(7,version(c)); assertLegacyData(c); }
+        }
+    }
+
+    @Test void corruptMetadataIsRejectedWithoutCreatingTablesOrChangingStamp() throws Exception {
+        var values=List.of("'broken'", "0", "-1", "7.5", "99", "4294967303");
+        for(int i=0;i<values.size();i++) {
+            try(var c=connect(temp.resolve("metadata-"+i+".db"))) {
+                legacy(c);
+                try(var s=c.createStatement()) { s.execute("UPDATE plugin_stats SET schema_version="+values.get(i)); c.commit(); }
+                String before=metadata(c);
+                assertThrows(SQLException.class,()->new SqliteSchemaManager().initialize(c),"invalid metadata must reject");
+                assertEquals(before,metadata(c)); assertFalse(objectExists(c,"tracked_items")); assertLegacyRows(c);
+            }
+        }
+    }
+
+    @Test void autoCommitRejectedBeforeAnyDdl() throws Exception {
+        try(var c=DriverManager.getConnection("jdbc:sqlite:"+temp.resolve("autocommit.db"))) {
+            assertThrows(SQLException.class,()->new SqliteSchemaManager().initialize(c));
+            assertFalse(objectExists(c,"tracked_items"),"autocommit rejection must precede DDL");
+        }
+    }
+
+    static boolean objectExists(Connection c,String name) throws SQLException {
+        try(var s=c.prepareStatement("SELECT 1 FROM sqlite_master WHERE name=?")) {
+            s.setString(1,name); try(var r=s.executeQuery()) { return r.next(); }
+        }
+    }
+    static String metadata(Connection c) throws SQLException {
+        try(var s=c.createStatement(); var r=s.executeQuery("SELECT typeof(schema_version)||':'||schema_version FROM plugin_stats WHERE id=1")) { assertTrue(r.next()); return r.getString(1); }
+    }
+    static void assertLegacyRows(Connection c) throws SQLException {
+        try(var s=c.createStatement();var r=s.executeQuery("SELECT count(*) FROM item_history")) { assertTrue(r.next()); assertEquals(2,r.getInt(1)); }
+    }
+
+    @Test void stampFailureRollsBackIndexAndSchemaOnDisk() throws Exception {
+        Path db=temp.resolve("stamp-failure.db");
+        try(var c=connect(db)) {
+            legacy(c);
+            try(var s=c.createStatement()) { s.execute("CREATE TRIGGER reject_stamp BEFORE UPDATE ON plugin_stats BEGIN SELECT RAISE(ABORT,'stamp blocked'); END"); c.commit(); }
+            SQLException failure=assertThrows(SQLException.class,()->new SqliteSchemaManager().initialize(c));
+            assertTrue(failure.getMessage().contains("stamp blocked"));
+            assertFalse(objectExists(c,"idx_history_identity_time")); assertFalse(objectExists(c,"tracked_items"));
+        }
+        try(var c=connect(db)) {
+            assertEquals(7,version(c)); assertLegacyData(c);
+            assertFalse(objectExists(c,"idx_history_identity_time"));
+            try(var s=c.createStatement()) { s.execute("DROP TRIGGER reject_stamp"); c.commit(); }
+            new SqliteSchemaManager().initialize(c); assertEquals(8,version(c)); assertHistoryIndex(c);
+        }
+    }
+
+    @Test void rollbackFailureDoesNotHideOriginalMigrationFailure() throws Exception {
+        try(var c=connect(temp.resolve("rollback-failure.db"))) {
+            legacy(c);
+            try(var s=c.createStatement()) { s.execute("CREATE TRIGGER reject_stamp BEFORE UPDATE ON plugin_stats BEGIN SELECT RAISE(ABORT,'stamp blocked'); END"); c.commit(); }
+            Connection proxy=(Connection)java.lang.reflect.Proxy.newProxyInstance(Connection.class.getClassLoader(),new Class[]{Connection.class},(obj,method,args)->{
+                if(method.getName().equals("rollback")) throw new SQLException("rollback blocked");
+                try { return method.invoke(c,args); } catch(java.lang.reflect.InvocationTargetException e) { throw e.getCause(); }
+            });
+            SQLException failure=assertThrows(SQLException.class,()->new SqliteSchemaManager().initialize(proxy));
+            assertTrue(failure.getMessage().contains("stamp blocked"),"original migration error must survive rollback failure");
+            assertEquals("rollback blocked",failure.getSuppressed()[0].getMessage());
+            c.rollback();
+        }
+    }
+
+    @Test void interruptedIndexRollsBackAndClearsHandlerForNextOperation() throws Exception {
+        for(boolean elapsed:List.of(false,true)) {
+            Path db=temp.resolve("interrupt-"+elapsed+".db");
+            try(var c=connect(db)) {
+                legacy(c);
+                try(var s=c.createStatement()) {
+                    s.execute("WITH RECURSIVE seq(n) AS (SELECT 100 UNION ALL SELECT n+1 FROM seq WHERE n<10000) INSERT INTO item_history(code,item_uuid,action,timestamp) SELECT 'NOISE','noise','SYNTHETIC',n FROM seq"); c.commit();
+                }
+                var calls=new java.util.concurrent.atomic.AtomicInteger();
+                var manager=new SqliteSchemaManager(elapsed?100000:1,()->elapsed && calls.getAndIncrement()>0?30_000_000_001L:0L);
+                SQLException failure=assertThrows(SQLException.class,()->manager.initialize(c),"index budget must interrupt before stamp");
+                assertTrue(failure.getMessage().contains("SQLITE_INTERRUPT"));
+                assertEquals(7,version(c)); assertFalse(objectExists(c,"idx_history_identity_time"));
+                try(var s=c.createStatement();var r=s.executeQuery("SELECT sum(timestamp) FROM item_history")) { assertTrue(r.next()); assertTrue(r.getLong(1)>0); }
+                // SQLITE_INTERRUPT can auto-rollback SQLite's transaction. The owner
+                // closes a failed initialization connection; recovery uses reopen.
+            }
+            try(var c=connect(db)) { assertEquals(7,version(c)); new SqliteSchemaManager().initialize(c); assertHistoryIndex(c); }
+        }
+    }
+
+    @Test void progressHandlerIsClearedBeforeCommit() throws Exception {
+        try(var c=connect(temp.resolve("clear-before-commit.db"))) {
+            legacy(c);
+            var ticks=new java.util.concurrent.atomic.AtomicLong();
+            var checked=new java.util.concurrent.atomic.AtomicBoolean();
+            Connection proxy=(Connection)java.lang.reflect.Proxy.newProxyInstance(Connection.class.getClassLoader(),new Class[]{Connection.class},(obj,method,args)->{
+                if(method.getName().equals("commit")) {
+                    ticks.set(31_000_000_000L);
+                    try(var s=c.createStatement();var r=s.executeQuery("WITH RECURSIVE seq(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM seq WHERE n<10000) SELECT sum(n) FROM seq")) {
+                        assertTrue(r.next()); assertEquals(50005000L,r.getLong(1)); checked.set(true);
+                    }
+                }
+                try { return method.invoke(c,args); } catch(java.lang.reflect.InvocationTargetException e) { throw e.getCause(); }
+            });
+            new SqliteSchemaManager(100000,ticks::get).initialize(proxy);
+            assertTrue(checked.get()); assertEquals(8,version(c));
+        }
+    }
+
+    @Test void missingOrNullMetadataIsRejected() throws Exception {
+        for(boolean missing:List.of(true,false)) {
+            try(var c=connect(temp.resolve("missing-"+missing+".db"))) {
+                try(var s=c.createStatement()) {
+                    s.execute("CREATE TABLE plugin_stats(id INTEGER PRIMARY KEY,schema_version INT,duplicates_detected INT,last_updated BIGINT)");
+                    if(!missing) s.execute("INSERT INTO plugin_stats VALUES(1,NULL,0,0)"); c.commit();
+                }
+                assertThrows(SQLException.class,()->new SqliteSchemaManager().initialize(c));
+                assertFalse(objectExists(c,"tracked_items")); assertFalse(objectExists(c,"idx_history_identity_time"));
+            }
+        }
+    }
+
+    static Connection connect(Path path) throws SQLException {
+        var c = DriverManager.getConnection("jdbc:sqlite:" + path);
+        c.setAutoCommit(false);
+        return c;
+    }
+    // Frozen pre-index DDL, independent of the initializer under test.
+    static void legacy(Connection c) throws SQLException {
+        try (var s = c.createStatement()) {
+            s.execute("CREATE TABLE plugin_stats(id INTEGER PRIMARY KEY,schema_version INT NOT NULL,duplicates_detected INT DEFAULT 0,last_updated BIGINT)");
+            s.execute("INSERT INTO plugin_stats VALUES(1,7,17,123)");
+            s.execute("CREATE TABLE item_history(id INTEGER PRIMARY KEY AUTOINCREMENT,code VARCHAR(16) NOT NULL,item_uuid VARCHAR(36) NOT NULL,action VARCHAR(32) NOT NULL,player_name VARCHAR(255),player_uuid VARCHAR(36),location TEXT,world VARCHAR(64),x INT,y INT,z INT,timestamp BIGINT NOT NULL,additional_data TEXT)");
+            s.execute("INSERT INTO item_history(id,code,item_uuid,action,timestamp,additional_data) VALUES(41,'ABC123','identity','DROP',100,'unknown payload'),(42,'ABC123','identity','PICKUP',100,'keep')");
+            s.execute("CREATE TABLE unknown_extension(k TEXT,v BLOB)");
+            s.execute("INSERT INTO unknown_extension VALUES('opaque',X'0001FEFF')");
+            s.execute("CREATE INDEX unknown_history_index ON item_history(action)");
+            c.commit();
+        }
+    }
+    static int version(Connection c) throws SQLException {
+        try (var s=c.createStatement(); var r=s.executeQuery("SELECT schema_version FROM plugin_stats WHERE id=1")) { assertTrue(r.next()); return r.getInt(1); }
+    }
+    static void assertHistoryIndex(Connection c) throws SQLException {
+        List<String> keys=new ArrayList<>();
+        try (var s=c.createStatement(); var r=s.executeQuery("PRAGMA index_xinfo('idx_history_identity_time')")) {
+            while(r.next()) if(r.getInt("key")==1) keys.add(r.getString("name")+":"+r.getInt("desc")+":"+r.getString("coll"));
+        }
+        assertEquals(List.of("code:0:BINARY","item_uuid:0:BINARY","timestamp:1:BINARY","id:1:BINARY"),keys);
+        try (var s=c.createStatement(); var r=s.executeQuery("EXPLAIN QUERY PLAN SELECT id,action FROM item_history WHERE code='ABC123' AND item_uuid='identity' ORDER BY timestamp DESC,id DESC LIMIT 100")) {
+            String plan=""; while(r.next()) plan+=r.getString(4);
+            assertTrue(plan.contains("idx_history_identity_time"),plan);
+            assertFalse(plan.contains("TEMP B-TREE"),plan);
+        }
+    }
+    static void assertLegacyData(Connection c) throws SQLException {
+        try(var s=c.createStatement(); var r=s.executeQuery("SELECT id,additional_data FROM item_history ORDER BY id")) {
+            assertTrue(r.next()); assertEquals(41,r.getInt(1)); assertEquals("unknown payload",r.getString(2));
+            assertTrue(r.next()); assertEquals(42,r.getInt(1)); assertEquals("keep",r.getString(2)); assertFalse(r.next());
+        }
+        try(var s=c.createStatement(); var r=s.executeQuery("SELECT hex(v) FROM unknown_extension")) { assertTrue(r.next()); assertEquals("0001FEFF",r.getString(1)); }
+        try(var s=c.createStatement(); var r=s.executeQuery("SELECT duplicates_detected,last_updated FROM plugin_stats WHERE id=1")) { assertTrue(r.next()); assertEquals(17,r.getInt(1)); assertEquals(123,r.getInt(2)); }
+        try(var s=c.createStatement(); var r=s.executeQuery("SELECT 1 FROM sqlite_master WHERE name='unknown_history_index'")) { assertTrue(r.next()); }
+    }
+}
+
+
+FILE src/test/java/com/itemguard/persistence/SqliteConnectionOwnerTest.java
+package com.itemguard.persistence;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.file.Path;
+import java.nio.file.Files;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class SqliteConnectionOwnerTest {
+
+    @TempDir
+    Path tempDir;
+
+    @Test
+    void closeDrainsWritesAndRestartReadsPersistedRows() {
+        Path database = tempDir.resolve("restart.db");
+        SqliteConnectionOwner owner = new SqliteConnectionOwner(database);
+        for (int i = 0; i < 50; i++) {
+            int index = i;
+            owner.execute(connection -> {
+                try (var statement = connection.prepareStatement("""
+                    INSERT INTO tracked_items
+                    (code, item_uuid, created_at, last_seen_at)
+                    VALUES (?, ?, ?, ?)
+                    """)) {
+                    statement.setString(1, "CODE" + index);
+                    statement.setString(2, "00000000-0000-0000-0000-" + String.format("%012d", index));
+                    statement.setLong(3, index);
+                    statement.setLong(4, index);
+                    statement.executeUpdate();
+                }
+                return null;
+            });
+        }
+
+        assertTrue(owner.close(Duration.ofSeconds(5)));
+
+        try (SqliteConnectionOwner reopened = new SqliteConnectionOwner(database)) {
+            int count = reopened.call(connection -> {
+                try (var statement = connection.createStatement();
+                     var result = statement.executeQuery("SELECT COUNT(*) FROM tracked_items")) {
+                    result.next();
+                    return result.getInt(1);
+                }
+            });
+            assertEquals(50, count);
+        }
+    }
+
+    @Test
+    void operationsAreRejectedAfterClose() {
+        SqliteConnectionOwner owner = new SqliteConnectionOwner(tempDir.resolve("closed.db"));
+        assertTrue(owner.close(Duration.ofSeconds(5)));
+
+        assertThrows(RejectedExecutionException.class,
+            () -> owner.execute(connection -> null));
+        assertThrows(RejectedExecutionException.class,
+            () -> owner.call(connection -> 1));
+    }
+
+    @Test
+    void secondOwnerForSameDatabaseIsRejectedUntilFirstCloses() {
+        Path database = tempDir.resolve("single-writer.db");
+        try (SqliteConnectionOwner first = new SqliteConnectionOwner(database)) {
+            SqliteConnectionOwner[] unexpectedOwner = new SqliteConnectionOwner[1];
+            IllegalStateException rejected;
+            try {
+                rejected = assertThrows(
+                    IllegalStateException.class,
+                    () -> unexpectedOwner[0] = new SqliteConnectionOwner(database)
+                );
+            } finally {
+                if (unexpectedOwner[0] != null) {
+                    unexpectedOwner[0].close();
+                }
+            }
+            assertTrue(rejected.getMessage().contains("already owned"));
+        }
+
+        try (SqliteConnectionOwner reopened = new SqliteConnectionOwner(database)) {
+            assertEquals("ok", reopened.call(connection -> {
+                try (var statement = connection.createStatement();
+                     var result = statement.executeQuery("PRAGMA integrity_check")) {
+                    result.next();
+                    return result.getString(1);
+                }
+            }));
+        }
+    }
+
+    @Test
+    void initializationFailureClosesDatabaseBeforeReleasingProcessLock() throws Exception {
+        Path database = tempDir.resolve("future-schema.db");
+        try (var connection = DriverManager.getConnection("jdbc:sqlite:" + database.toAbsolutePath());
+             var statement = connection.createStatement()) {
+            statement.execute("""
+                CREATE TABLE plugin_stats (
+                    id INTEGER PRIMARY KEY,
+                    schema_version INT NOT NULL,
+                    duplicates_detected INT DEFAULT 0,
+                    last_updated BIGINT
+                )
+                """);
+            statement.executeUpdate("""
+                INSERT INTO plugin_stats
+                (id, schema_version, duplicates_detected, last_updated)
+                VALUES (1, %d, 0, 0)
+                """.formatted(SqliteSchemaManager.CURRENT_SCHEMA_VERSION + 1));
+        }
+
+        IllegalStateException rejected = assertThrows(
+            IllegalStateException.class,
+            () -> new SqliteConnectionOwner(database)
+        );
+        assertTrue(rejected.getMessage().contains("database operation failed"));
+        assertDoesNotThrow(() -> Files.delete(database));
+
+        try (SqliteConnectionOwner reopened = new SqliteConnectionOwner(database)) {
+            assertEquals("ok", reopened.call(connection -> {
+                try (var statement = connection.createStatement();
+                     var result = statement.executeQuery("PRAGMA integrity_check")) {
+                    result.next();
+                    return result.getString(1);
+                }
+            }));
+        }
+    }
+
+    @Test
+    void interruptedInitializationDoesNotReleaseLockWhileWorkerIsStillRunning()
+        throws Exception {
+        Path database = tempDir.resolve("interrupted-initialization.db");
+        try (SqliteConnectionOwner initialized = new SqliteConnectionOwner(database)) {
+            assertEquals("ok", integrity(initialized));
+        }
+
+        AtomicReference<Throwable> constructorOutcome = new AtomicReference<>();
+        try (var blocker = DriverManager.getConnection("jdbc:sqlite:" + database.toAbsolutePath());
+             var statement = blocker.createStatement()) {
+            statement.execute("BEGIN EXCLUSIVE");
+
+            Thread constructor = new Thread(() -> {
+                try {
+                    new SqliteConnectionOwner(database);
+                    constructorOutcome.set(new AssertionError(
+                        "interrupted constructor unexpectedly succeeded"
+                    ));
+                } catch (Throwable failure) {
+                    constructorOutcome.set(failure);
+                }
+            }, "interrupted-owner-constructor");
+            constructor.start();
+            awaitThreadState(constructor, Thread.State.WAITING, Duration.ofSeconds(5));
+
+            constructor.interrupt();
+            constructor.join(500L);
+
+            SqliteProcessLock[] unexpectedLock = new SqliteProcessLock[1];
+            try {
+                IllegalStateException rejected = assertThrows(
+                    IllegalStateException.class,
+                    () -> unexpectedLock[0] = SqliteProcessLock.acquire(database)
+                );
+                assertTrue(rejected.getMessage().contains("already owned"));
+            } finally {
+                if (unexpectedLock[0] != null) {
+                    unexpectedLock[0].close();
+                }
+            }
+
+            statement.execute("ROLLBACK");
+            constructor.join(10_000L);
+            assertFalse(constructor.isAlive());
+            assertTrue(constructorOutcome.get() instanceof IllegalStateException);
+            assertTrue(constructorOutcome.get().getMessage().contains("Interrupted"));
+        }
+
+        try (SqliteProcessLock released = SqliteProcessLock.acquire(database)) {
+            assertTrue(Files.exists(database));
+        }
+    }
+
+    @Test
+    void distinctDatabasesAndStaleSidecarDoNotCauseFalseOwnershipRejection()
+        throws Exception {
+        Path firstDatabase = tempDir.resolve("first.db");
+        Path secondDirectory = Files.createDirectories(tempDir.resolve("other"));
+        Path secondDatabase = secondDirectory.resolve("second.db");
+        Files.writeString(
+            firstDatabase.resolveSibling(firstDatabase.getFileName() + ".itemguard.lock"),
+            "stale"
+        );
+
+        try (
+            SqliteConnectionOwner first = new SqliteConnectionOwner(firstDatabase);
+            SqliteConnectionOwner second = new SqliteConnectionOwner(secondDatabase)
+        ) {
+            assertEquals("ok", integrity(first));
+            assertEquals("ok", integrity(second));
+        }
+    }
+
+    @Test
+    void normalizedAndAbsoluteAliasesShareOneOwnershipLock() {
+        Path canonical = tempDir.resolve("alias.db").toAbsolutePath();
+        Path alias = tempDir.resolve(".").resolve("alias.db");
+
+        try (SqliteConnectionOwner first = new SqliteConnectionOwner(canonical)) {
+            IllegalStateException rejected = assertThrows(
+                IllegalStateException.class,
+                () -> new SqliteConnectionOwner(alias)
+            );
+            assertTrue(rejected.getMessage().contains("already owned"));
+        }
+    }
+
+    @Test
+    void failedWriteRollsBackAndReportsError() {
+        List<Throwable> failures = new ArrayList<>();
+        try (SqliteConnectionOwner owner = new SqliteConnectionOwner(
+            tempDir.resolve("rollback.db"), failures::add
+        )) {
+            owner.execute(connection -> {
+                try (var statement = connection.createStatement()) {
+                    statement.executeUpdate("""
+                        INSERT INTO tracked_items
+                        (code, item_uuid, created_at, last_seen_at)
+                        VALUES ('GOOD01', '00000000-0000-0000-0000-000000000001', 1, 1)
+                        """);
+                    statement.executeUpdate("INSERT INTO missing_table VALUES (1)");
+                }
+                return null;
+            });
+            owner.flush();
+
+            int count = owner.call(connection -> {
+                try (var statement = connection.createStatement();
+                     var result = statement.executeQuery("SELECT COUNT(*) FROM tracked_items")) {
+                    result.next();
+                    return result.getInt(1);
+                }
+            });
+
+            assertEquals(0, count);
+            assertFalse(failures.isEmpty());
+        }
+    }
+
+    @Test
+    void connectionEnforcesForeignKeysForDurableSchema() {
+        try (SqliteConnectionOwner owner = new SqliteConnectionOwner(
+            tempDir.resolve("foreign-keys.db")
+        )) {
+            assertThrows(IllegalStateException.class, () -> owner.call(connection -> {
+                try (var statement = connection.prepareStatement("""
+                    INSERT INTO item_snapshots
+                    (code, snapshot_version, payload, sha256, captured_at)
+                    VALUES ('MISSING', 1, X'01', zeroblob(32), 1)
+                    """)) {
+                    statement.executeUpdate();
+                }
+                return null;
+            }));
+        }
+    }
+
+    @Test
+    void callAsyncReturnsBeforeTransactionCompletesAndPropagatesFailure() throws Exception {
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        try (SqliteConnectionOwner owner = new SqliteConnectionOwner(
+            tempDir.resolve("async.db")
+        )) {
+            long started = System.nanoTime();
+            CompletableFuture<String> success = owner.callAsync(connection -> {
+                entered.countDown();
+                if (!release.await(5, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("test latch timeout");
+                }
+                return "committed";
+            });
+            long submitMillis = TimeUnit.NANOSECONDS.toMillis(
+                System.nanoTime() - started
+            );
+
+            assertTrue(entered.await(2, TimeUnit.SECONDS));
+            assertTrue(submitMillis < 100L);
+            assertFalse(success.isDone());
+            release.countDown();
+            assertEquals("committed", success.get(2, TimeUnit.SECONDS));
+
+            CompletableFuture<Void> failed = owner.callAsync(connection -> {
+                throw new SQLException("boom");
+            });
+            assertThrows(
+                java.util.concurrent.ExecutionException.class,
+                () -> failed.get(2, TimeUnit.SECONDS)
+            );
+        }
+    }
+
+    private String integrity(SqliteConnectionOwner owner) {
+        return owner.call(connection -> {
+            try (var statement = connection.createStatement();
+                 var result = statement.executeQuery("PRAGMA integrity_check")) {
+                result.next();
+                return result.getString(1);
+            }
+        });
+    }
+
+    private void awaitThreadState(
+        Thread thread,
+        Thread.State expected,
+        Duration timeout
+    ) throws Exception {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while (System.nanoTime() < deadline) {
+            if (thread.getState() == expected) {
+                return;
+            }
+            TimeUnit.MILLISECONDS.sleep(10L);
+        }
+        throw new AssertionError(
+            "thread did not reach " + expected + "; current=" + thread.getState()
+        );
+    }
+}
+
+
+FILE src/test/java/com/itemguard/catalog/CatalogControllerTest.java
+package com.itemguard.catalog;
+
+import org.junit.jupiter.api.Test;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
+import static org.junit.jupiter.api.Assertions.*;
+
+class CatalogControllerTest {
+    @Test void catalogOpensRealProfileThenHistoryAndReturnsToSamePage() {
+        var data = new Data(); var ui = new Port(); var controller = new CatalogController(data, ui);
+        controller.open();
+        assertEquals(1, data.queries.size(), "open must request catalog");
+        data.pages.remove().complete(new CatalogPage(List.of(row("ABC123")), false)); ui.drain();
+        assertEquals("ABC123", ui.screen.icons().get(9).lore().getFirst());
+        ui.click(9);
+        assertTrue(ui.screen.title().contains("Hồ sơ"));
+        ui.click(20);
+        assertEquals("ABC123", data.historyCode);
+        data.history.complete(List.of(new CatalogEvent(1, "DROP", "Lan", "actor-uuid", "world (1,2,3)", 10, "detail"))); ui.drain();
+        assertTrue(ui.screen.title().contains("Lịch sử"));
+        ui.click(9); assertTrue(ui.screen.title().contains("Sự kiện"));
+        ui.click(45); ui.click(45); ui.click(45);
+        assertTrue(ui.screen.title().contains("Kho"));
+        assertEquals(1, data.queries.size(), "back uses selected catalog state, not fresh query");
+    }
+    @Test void pagesAndFiltersKeepCursorAndResetAtFirstPage() {
+        var data=new Data(); var ui=new Port(); var c=new CatalogController(data,ui); c.open();
+        data.pages.remove().complete(new CatalogPage(List.of(row("ABC123")),true)); ui.drain();
+        assertNotNull(ui.screen.icons().get(50), "catalog needs next page");
+        ui.click(50); assertEquals("ABC123",data.queries.getLast().afterCode());
+        data.pages.remove().complete(new CatalogPage(List.of(row("DEF456")),false)); ui.drain();
+        ui.click(48); assertEquals("",data.queries.getLast().afterCode());
+        data.pages.remove().complete(new CatalogPage(List.of(row("ABC123")),true)); ui.drain();
+        ui.click(2); assertNotNull(ui.prompt); ui.prompt.accept("Blade");
+        assertEquals("Blade",data.queries.getLast().text());
+        data.pages.remove().complete(new CatalogPage(List.of(),false)); ui.drain();
+        ui.click(4); ui.click(20);
+        assertEquals(CatalogCategory.ARMOR,data.queries.getLast().category());
+    }
+
+    @Test void historyExposesAllHundredEventsAcrossPages() {
+        var data=new Data(); var ui=new Port(); var c=new CatalogController(data,ui); c.open();
+        data.pages.remove().complete(new CatalogPage(List.of(row("ABC123")),false)); ui.drain(); ui.click(9); ui.click(20);
+        var events=new ArrayList<CatalogEvent>();
+        for(int i=0;i<100;i++) events.add(new CatalogEvent(i,"DROP","Lan","uuid","loc",i+1,"detail"));
+        data.history.complete(events); ui.drain();
+        assertNotNull(ui.screen.icons().get(50), "history needs next page");
+        ui.click(50); ui.click(50); ui.click(36);
+        assertTrue(ui.screen.icons().get(22).lore().contains("Sự kiện #99"));
+    }
+
+    @Test void staleActionsAndRevokedHistoryPermissionCannotRender() {
+        var data=new Data(); var ui=new Port(); var c=new CatalogController(data,ui); c.open();
+        data.pages.remove().complete(new CatalogPage(List.of(row("ABC123")),false)); ui.drain();
+        Runnable stale=ui.screen.icons().get(9).action(); ui.click(4);
+        var current=ui.screen; stale.run(); assertSame(current,ui.screen,"stale slot action must not navigate");
+        ui.click(45); ui.click(9); ui.click(20);
+        data.history.complete(List.of(new CatalogEvent(1,"DROP","Lan","uuid","loc",1,"detail"))); ui.drain();
+        ui.historyAllowed=false; ui.click(9);
+        assertTrue(ui.closed,"revoked history permission must close before detail");
+    }
+
+    @Test void closeAndPermissionLossDropAsyncResults() {
+        var data=new Data(); var ui=new Port(); var c=new CatalogController(data,ui); c.open();
+        var loading=ui.screen; c.close(); data.pages.remove().complete(new CatalogPage(List.of(row("ABC123")),false)); ui.drain();
+        assertSame(loading,ui.screen);
+        var data2=new Data(); var ui2=new Port(); var c2=new CatalogController(data2,ui2); c2.open();
+        ui2.allowed=false; data2.pages.remove().complete(new CatalogPage(List.of(row("ABC123")),false)); ui2.drain();
+        assertTrue(ui2.closed);
+    }
+
+    @Test void deniedOpenAndQueryFailureNeverLookLikeSuccessfulEmptyPage() {
+        var data=new Data(); var ui=new Port(); ui.allowed=false; new CatalogController(data,ui).open();
+        assertTrue(data.queries.isEmpty()); assertTrue(ui.closed);
+        var ui2=new Port(); var c=new CatalogController(data,ui2); c.open();
+        data.pages.remove().completeExceptionally(new IllegalStateException("failure")); ui2.drain();
+        assertTrue(ui2.screen.title().contains("Lỗi")); assertNotNull(ui2.screen.icons().get(2));
+    }
+
+    @Test void pageCapAndCancelInvalidChatPreserveContext() {
+        var data=new Data(); var ui=new Port(); var c=new CatalogController(data,ui); c.open();
+        for (int i=0;i<128;i++) {
+            data.pages.remove().complete(new CatalogPage(List.of(row(String.format("C%05d",i))),true)); ui.drain();
+            if (i<127) ui.click(50);
+        }
+        assertNull(ui.screen.icons().get(50).action());
+        assertTrue(ui.screen.icons().get(50).title().contains("128"));
+        ui.click(2); var old=ui.prompt; old.accept("Hủy"); assertEquals(128,data.queries.size());
+        old.accept("late"); assertEquals(128,data.queries.size());
+        ui.click(2); ui.prompt.accept("x".repeat(65)); assertEquals(128,data.queries.size());
+        ui.click(7); assertEquals("",data.queries.getLast().afterCode());
+    }
+
+    @Test void synchronousDatabaseShutdownGetsErrorScreen() {
+        var data=new Data() {
+            @Override public CompletableFuture<CatalogPage> find(CatalogQuery query) { throw new IllegalStateException("closed"); }
+        };
+        var ui=new Port();
+        assertDoesNotThrow(()->new CatalogController(data,ui).open(),"DB submission failure must reach error screen");
+        assertTrue(ui.screen.title().contains("Lỗi"));
+    }
+
+    @Test void rejectedShowNeverSubmitsQuery() {
+        var data=new Data();
+        var ui=new Port() { @Override public void show(CatalogScreen screen) { super.show(screen); allowed=false; } };
+        new CatalogController(data,ui).open();
+        assertTrue(data.queries.isEmpty(),"lost permission during show must not submit");
+    }
+
+    @Test void failedNextPageCanRetryExactTargetOrReturnToCommittedPage() {
+        var data=new Data(); var ui=new Port(); var c=new CatalogController(data,ui); c.open();
+        data.pages.remove().complete(new CatalogPage(List.of(row("ABC123")),true)); ui.drain();
+        var staleNext=ui.screen.icons().get(50).action();
+        ui.click(50); var target=data.queries.getLast();
+        staleNext.run(); assertEquals(2,data.queries.size());
+        data.pages.remove().completeExceptionally(new IllegalStateException("busy")); ui.drain();
+        assertNotNull(ui.screen.icons().get(49),"failed page must offer retry of exact target");
+        ui.click(49); assertEquals(target,data.queries.getLast());
+        data.pages.remove().completeExceptionally(new IllegalStateException("busy again")); ui.drain();
+        ui.click(45);
+        assertEquals("Trang 1",ui.screen.icons().get(49).title());
+        assertEquals("ABC123",ui.screen.icons().get(9).lore().getFirst());
+        assertNull(ui.screen.icons().get(48));
+        ui.click(50); assertEquals(target,data.queries.getLast());
+        data.pages.remove().complete(new CatalogPage(List.of(row("DEF456")),false)); ui.drain();
+        assertEquals("Trang 2",ui.screen.icons().get(49).title());
+    }
+
+    @Test void failedPreviousAndFilterLeaveCachedPageAndFiltersPaired() {
+        var data=new Data(); var ui=new Port(); var c=new CatalogController(data,ui); c.open();
+        data.pages.remove().complete(new CatalogPage(List.of(row("ABC123")),true)); ui.drain();
+        ui.click(50); data.pages.remove().complete(new CatalogPage(List.of(row("DEF456")),true)); ui.drain();
+        ui.click(48); data.pages.remove().completeExceptionally(new IllegalStateException("busy")); ui.drain();
+        ui.click(45); assertEquals("Trang 2",ui.screen.icons().get(49).title());
+        ui.click(2); ui.prompt.accept("Blade"); var failedFilter=data.queries.getLast();
+        data.pages.remove().completeExceptionally(new IllegalStateException("busy")); ui.drain();
+        ui.click(49); assertEquals(failedFilter,data.queries.getLast());
+        data.pages.remove().completeExceptionally(new IllegalStateException("busy")); ui.drain();
+        ui.click(2); ui.prompt.accept("Hủy");
+        assertEquals("Trang 2",ui.screen.icons().get(49).title());
+        assertEquals(List.of("Chưa lọc"),ui.screen.icons().get(2).lore());
+        assertEquals("DEF456",ui.screen.icons().get(9).lore().getFirst());
+        ui.click(4); ui.click(20);
+        data.pages.remove().completeExceptionally(new IllegalStateException("busy")); ui.drain(); ui.click(45);
+        assertEquals("Loại đồ: Tất cả",ui.screen.icons().get(4).title());
+        ui.click(50); assertEquals("DEF456",data.queries.getLast().afterCode());
+        assertEquals("",data.queries.getLast().text());
+    }
+
+    @Test void firstFailureCancelStaysErrorAndHistoryRetryRechecksPermission() {
+        var data=new Data(); var ui=new Port(); var c=new CatalogController(data,ui); c.open();
+        data.pages.remove().completeExceptionally(new IllegalStateException("busy")); ui.drain();
+        assertNull(ui.screen.icons().get(45));
+        ui.click(2); ui.prompt.accept("Hủy"); assertTrue(ui.screen.title().contains("Lỗi"));
+        ui.click(49); data.pages.remove().complete(new CatalogPage(List.of(row("ABC123")),false)); ui.drain();
+        ui.click(9); ui.click(20); data.history.completeExceptionally(new IllegalStateException("busy")); ui.drain();
+        assertEquals("Về hồ sơ",ui.screen.icons().get(45).title());
+        data.history=new CompletableFuture<>(); ui.click(49); assertEquals("ABC123",data.historyCode);
+        data.history.completeExceptionally(new IllegalStateException("busy")); ui.drain();
+        int count=data.historyCalls; ui.historyAllowed=false; ui.click(49);
+        assertTrue(ui.closed); assertEquals(count,data.historyCalls);
+    }
+
+    @Test void retryCallbackAfterCloseDoesNotRender() {
+        var data=new Data(); var ui=new Port(); var c=new CatalogController(data,ui); c.open();
+        data.pages.remove().completeExceptionally(new IllegalStateException("busy")); ui.drain();
+        ui.click(49); var loading=ui.screen; c.close();
+        data.pages.remove().complete(new CatalogPage(List.of(row("ABC123")),false)); ui.drain();
+        assertSame(loading,ui.screen);
+    }
+
+    @Test void itemBHistoryFailureNeverExposesItemACacheOrCatalogFilters() {
+        var data=new Data(); var ui=new Port(); var c=new CatalogController(data,ui); c.open();
+        data.pages.remove().complete(new CatalogPage(List.of(row("ABC123"),row("DEF456")),false)); ui.drain();
+        ui.click(9); ui.click(20);
+        data.history.complete(List.of(new CatalogEvent(1,"A_ONLY","Lan","uuid","loc",1,"detail"))); ui.drain();
+        var staleEvent=ui.screen.icons().get(9).action(); ui.click(45); ui.click(45);
+        ui.click(10); data.history=new CompletableFuture<>(); ui.click(20);
+        data.history.completeExceptionally(new IllegalStateException("busy")); ui.drain();
+        var error=ui.screen; staleEvent.run(); assertSame(error,ui.screen);
+        assertNull(ui.screen.icons().get(2),"history errors must not mix catalog filter controls");
+        assertNull(ui.screen.icons().get(9));
+        data.history=new CompletableFuture<>(); ui.click(49); assertEquals("DEF456",data.historyCode);
+        data.history.complete(List.of(new CatalogEvent(2,"B_ONLY","Lan","uuid","loc",2,"detail"))); ui.drain();
+        assertEquals("B_ONLY",ui.screen.icons().get(9).title());
+        ui.click(45); ui.click(45); ui.click(6);
+        data.pages.remove().completeExceptionally(new IllegalStateException("busy")); ui.drain();
+        assertEquals("Về trang trước đó",ui.screen.icons().get(45).title());
+    }
+
+    @Test void realAdmissionGateRepeatedDenialsDoNotConsumePageStack() {
+        var clock=new java.util.concurrent.atomic.AtomicLong(); var gate=new CatalogReadGate(clock::get);
+        var raw=new Data();
+        CatalogController.Data gated=new CatalogController.Data() {
+            public CompletableFuture<CatalogPage> find(CatalogQuery query) { return gate.submit(()->raw.find(query)); }
+            public CompletableFuture<List<CatalogEvent>> history(String code,String uuid) { return gate.submit(()->raw.history(code,uuid)); }
+        };
+        var ui=new Port(); var c=new CatalogController(gated,ui); c.open();
+        raw.pages.remove().complete(new CatalogPage(List.of(row("ABC123")),true)); ui.drain(); ui.click(50); ui.drain();
+        for(int i=0;i<5;i++) { ui.click(49); ui.drain(); assertTrue(ui.screen.title().contains("Lỗi")); }
+        assertEquals(1,raw.queries.size()); clock.set(1_000_000_000L);
+        ui.click(49); assertEquals("ABC123",raw.queries.getLast().afterCode());
+        raw.pages.remove().complete(new CatalogPage(List.of(row("DEF456")),false)); ui.drain();
+        assertEquals("Trang 2",ui.screen.icons().get(49).title());
+    }
+
+    static CatalogRow row(String code) { return new CatalogRow(code, "uuid-"+code, "DIAMOND_SWORD", "Sword", "Lan", "world (1,2,3)", 1); }
+    static class Data implements CatalogController.Data {
+        List<CatalogQuery> queries = new ArrayList<>();
+        Queue<CompletableFuture<CatalogPage>> pages = new ArrayDeque<>();
+        CompletableFuture<List<CatalogEvent>> history = new CompletableFuture<>(); String historyCode; int historyCalls;
+        public CompletableFuture<CatalogPage> find(CatalogQuery query) {
+            queries.add(query); var f = new CompletableFuture<CatalogPage>(); pages.add(f); return f;
+        }
+        public CompletableFuture<List<CatalogEvent>> history(String code, String uuid) { historyCode=code; historyCalls++; return history; }
+    }
+    static class Port implements CatalogController.Port {
+        CatalogScreen screen; boolean allowed=true, historyAllowed=true, closed;
+        Queue<Runnable> tasks=new ArrayDeque<>(); Consumer<String> prompt;
+        public boolean allowed(boolean history) { return allowed && (!history || historyAllowed); }
+        public void main(Runnable action) { tasks.add(action); }
+        public void show(CatalogScreen screen) { this.screen=screen; }
+        public void close() { closed=true; }
+        public void prompt(boolean owner, Consumer<String> completion) { prompt=completion; }
+        public void message(String message) {}
+        void click(int slot) { var action=screen.icons().get(slot).action(); assertNotNull(action); action.run(); }
+        void drain() { while(!tasks.isEmpty()) tasks.remove().run(); }
+    }
+}
+
+
+FILE src/main/java/com/itemguard/catalog/CatalogUi.java
+package com.itemguard.catalog;
+
+import com.itemguard.ItemGuard;
+import com.itemguard.gui.UiMainThreadHandoff;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
+import org.bukkit.Bukkit;
+import org.bukkit.Material;
+import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
+import org.bukkit.event.Listener;
+import org.bukkit.event.inventory.*;
+import org.bukkit.event.player.AsyncPlayerChatEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerCommandPreprocessEvent;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.scheduler.BukkitTask;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
+
+public final class CatalogUi implements Listener {
+    interface Host {
+        boolean enabled();
+        CatalogController.Data data();
+        CatalogInventory render(Player player, CatalogScreen screen);
+        BukkitTask later(Runnable action, long ticks);
+        void releaseLegacy(UUID id);
+    }
+    private final Host host;
+    private final Consumer<Runnable> schedule;
+    private final Map<UUID, View> views = new HashMap<>();
+    private final Map<UUID, Prompt> prompts = new ConcurrentHashMap<>();
+    private final CatalogReadGate readGate = new CatalogReadGate(System::nanoTime);
+
+    public CatalogUi(ItemGuard plugin) { this(plugin, action -> UiMainThreadHandoff.dispatch(plugin, action)); }
+    CatalogUi(ItemGuard plugin, Consumer<Runnable> schedule) { this(new Host() {
+        public boolean enabled() { return plugin.isEnabled(); }
+        public CatalogController.Data data() {
+            var repository=plugin.getDB().getCatalog();
+            return new CatalogController.Data() {
+                public java.util.concurrent.CompletableFuture<CatalogPage> find(CatalogQuery query) { return repository.find(query); }
+                public java.util.concurrent.CompletableFuture<List<CatalogEvent>> history(String code,String uuid) { return repository.history(code,uuid); }
+            };
+        }
+        public CatalogInventory render(Player player, CatalogScreen screen) {
+            var next=new CatalogInventory(player.getUniqueId(),screen,holder -> Bukkit.createInventory(holder,54,Component.text(display(screen.title()))));
+            for (int slot=0;slot<54;slot++) next.getInventory().setItem(slot,preview(new CatalogScreen.Icon("GRAY_STAINED_GLASS_PANE"," ",List.of(),null)));
+            screen.icons().forEach((slot,icon)->next.getInventory().setItem(slot,preview(icon)));
+            return next;
+        }
+        public BukkitTask later(Runnable action,long ticks) { return Bukkit.getScheduler().runTaskLater(plugin,action,ticks); }
+        public void releaseLegacy(UUID id) { plugin.getGuiListener().releasePlayer(id); }
+    }, schedule); }
+    CatalogUi(Host host, Consumer<Runnable> schedule) { this.host=host; this.schedule=schedule; }
+
+    public void open(Player player) {
+        if (!player.hasPermission("itemguard.gui") || !player.hasPermission("itemguard.search")) {
+            player.sendMessage(Component.text("Bạn cần quyền itemguard.gui và itemguard.search.", NamedTextColor.RED)); return;
+        }
+        release(player.getUniqueId());
+        host.releaseLegacy(player.getUniqueId());
+        var view = new View(player); views.put(player.getUniqueId(), view); view.controller.open();
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onClick(InventoryClickEvent event) {
+        if (!(event.getView().getTopInventory().getHolder() instanceof CatalogInventory holder)) return;
+        Runnable action = holder.cancelAndResolve(event);
+        if (action == null) return;
+        UUID id = event.getWhoClicked().getUniqueId();
+        schedule.accept(() -> {
+            View view=views.get(id);
+            if (view != null && view.current == holder && view.allowed(false)) action.run();
+        });
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onDrag(InventoryDragEvent event) {
+        if (event.getView().getTopInventory().getHolder() instanceof CatalogInventory) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onClose(InventoryCloseEvent event) {
+        View view=views.get(event.getPlayer().getUniqueId());
+        if (view != null && !view.switching && view.current != null
+            && event.getInventory() == view.current.getInventory()) release(event.getPlayer().getUniqueId());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onOpen(InventoryOpenEvent event) {
+        View view=views.get(event.getPlayer().getUniqueId());
+        if (view != null && (view.current == null || event.getInventory() != view.current.getInventory())) {
+            release(event.getPlayer().getUniqueId());
+        }
+    }
+
+    @EventHandler public void onQuit(PlayerQuitEvent event) { release(event.getPlayer().getUniqueId()); }
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onCommand(PlayerCommandPreprocessEvent event) {
+        View view=views.get(event.getPlayer().getUniqueId());
+        if (view != null && view.prompt != null) release(event.getPlayer().getUniqueId());
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onChat(AsyncPlayerChatEvent event) {
+        UUID id=event.getPlayer().getUniqueId();
+        Prompt prompt=prompts.remove(id);
+        if (prompt == null) return;
+        event.setCancelled(true);
+        String value=event.getMessage();
+        schedule.accept(() -> {
+            View view=views.get(id);
+            if (view == null || view.prompt != prompt || !view.allowed(false)) return;
+            view.cancelPrompt(); prompt.completion.accept(value);
+        });
+    }
+
+    private void release(UUID id) {
+        View view=views.remove(id);
+        if (view != null) { view.controller.close(); view.cancelPrompt(); }
+        prompts.remove(id);
+    }
+    public void clear() {
+        for (View view : List.copyOf(views.values())) {
+            boolean ours=view.current != null && view.player.getOpenInventory().getTopInventory() == view.current.getInventory();
+            release(view.player.getUniqueId());
+            if (ours) view.player.closeInventory();
+        }
+    }
+    private record Prompt(Consumer<String> completion) {}
+
+    private final class View implements CatalogController.Port {
+        private final Player player;
+        private final CatalogController controller;
+        private CatalogInventory current;
+        private boolean switching;
+        private Prompt prompt;
+        private BukkitTask timeout;
+
+        private View(Player player) {
+            this.player=player;
+            var repository=host.data();
+            controller=new CatalogController(new CatalogController.Data() {
+                public java.util.concurrent.CompletableFuture<CatalogPage> find(CatalogQuery query) { return readGate.submit(() -> repository.find(query)); }
+                public java.util.concurrent.CompletableFuture<List<CatalogEvent>> history(String code,String uuid) { return readGate.submit(() -> repository.history(code,uuid)); }
+            },this);
+        }
+        @Override public boolean allowed(boolean history) {
+            return views.get(player.getUniqueId()) == this && host.enabled() && player.isOnline()
+                && player.hasPermission("itemguard.gui") && player.hasPermission("itemguard.search")
+                && (!history || (player.hasPermission("itemguard.history") && player.hasPermission("itemguard.history.others")))
+                && (current == null || switching || player.getOpenInventory().getTopInventory() == current.getInventory());
+        }
+        @Override public void main(Runnable action) { schedule.accept(action); }
+        @Override public void show(CatalogScreen screen) {
+            if (!allowed(false)) { close(); return; }
+            cancelPrompt();
+            var next=host.render(player,screen);
+            var inventory=next.getInventory();
+            switching=true; current=next;
+            try { player.openInventory(inventory); }
+            finally { switching=false; }
+            if (player.getOpenInventory().getTopInventory() != inventory) release(player.getUniqueId());
+        }
+        @Override public void close() {
+            boolean ours=current != null && player.getOpenInventory().getTopInventory() == current.getInventory();
+            release(player.getUniqueId()); if (ours) player.closeInventory();
+        }
+        @Override public void prompt(boolean owner, Consumer<String> completion) {
+            cancelPrompt();
+            switching=true;
+            try { player.closeInventory(); current=null; } finally { switching=false; }
+            prompt=new Prompt(completion); Prompt captured=prompt;
+            prompts.put(player.getUniqueId(), captured);
+            message(owner ? "Nhập tên trong bản ghi (tối đa 16 ký tự). * để bỏ lọc; Hủy để quay lại."
+                : "Nhập tên / mã / material (tối đa 64 ký tự). * để bỏ lọc; Hủy để quay lại.");
+            timeout=host.later(()->{
+                if (views.get(player.getUniqueId()) == this && prompt == captured) {
+                    release(player.getUniqueId()); message("Đã hết thời gian nhập. Mở lại /ig browser.");
+                }
+            },600L);
+        }
+        private void cancelPrompt() {
+            if (prompt != null) prompts.remove(player.getUniqueId(),prompt);
+            prompt=null;
+            if (timeout != null) { timeout.cancel(); timeout=null; }
+        }
+        @Override public void message(String message) { player.sendMessage(Component.text(message,NamedTextColor.YELLOW)); }
+    }
+
+    private static ItemStack preview(CatalogScreen.Icon icon) {
+        Material material=icon.material() == null ? null : Material.matchMaterial(icon.material());
+        if (material == null || material.isAir() || !material.isItem()) material=Material.PAPER;
+        var item=new ItemStack(material);
+        var meta=item.getItemMeta();
+        if (meta != null) {
+            meta.displayName(Component.text(display(icon.title()),NamedTextColor.GOLD).decoration(TextDecoration.ITALIC,false));
+            meta.lore(icon.lore().stream().map(line->Component.text(display(line),NamedTextColor.GRAY).decoration(TextDecoration.ITALIC,false)).toList());
+            item.setItemMeta(meta);
+        }
+        return item;
+    }
+    static String display(String value) {
+        if (value == null) return "Chưa ghi nhận";
+        String safe=value.replaceAll("§[0-9a-fk-orxA-FK-ORX]","").replaceAll("[\\p{Cntrl}\\p{Cf}]"," ");
+        int end=Math.min(safe.length(),160);
+        if (end<safe.length() && end>0 && Character.isHighSurrogate(safe.charAt(end-1))) end--;
+        return end<safe.length() ? safe.substring(0,end)+"…" : safe;
+    }
+}
+
+
+FILE src/main/java/com/itemguard/catalog/CatalogSession.java
+package com.itemguard.catalog;
+
+/** Main-thread generation guard, independent from Bukkit objects. */
+public final class CatalogSession {
+    private long generation;
+    private boolean closed;
+    public long begin() {
+        if (closed) throw new IllegalStateException("Closed catalog session");
+        return ++generation;
+    }
+    public boolean accepts(long candidate) { return !closed && candidate == generation; }
+    public void close() { closed = true; }
+}
+
+
+FILE src/main/java/com/itemguard/catalog/CatalogQuery.java
+package com.itemguard.catalog;
+
+public record CatalogQuery(String text, String ownerName, CatalogCategory category, String afterCode) {
+    public CatalogQuery {
+        validate(text, 64);
+        validate(ownerName, 16);
+        validate(afterCode, 16);
+        java.util.Objects.requireNonNull(category, "category");
+    }
+
+    private static void validate(String value, int max) {
+        java.util.Objects.requireNonNull(value, "value");
+        if (value.length() > max || value.codePoints().anyMatch(Character::isISOControl)) {
+            throw new IllegalArgumentException("Invalid catalog input length or control characters");
+        }
+    }
+}
+
+
+FILE tools/catalog/CatalogC1Probe.java
+package com.itemguard.persistence;
+
+import com.itemguard.catalog.*;
+import java.nio.file.*;
+import java.sql.*;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/** Synthetic JDBC only: creates new databases, never accepts an existing path. */
+public final class CatalogC1Probe {
+    public static void main(String[] args) throws Exception {
+        if(args.length!=0) throw new IllegalArgumentException("No existing database paths accepted");
+        Path dir=Files.createTempDirectory("itemguard-c1-");
+        System.out.println("SYNTHETIC_ONLY dir="+dir);
+        for(int run=0;run<3;run++) run(dir.resolve("run-"+run+".db"),run);
+        System.out.println("PASS C1 JDBC migration/query/mixed workload; NOT Paper or production SLO");
+    }
+    static void run(Path db,int run) throws Exception {
+        try(var c=DriverManager.getConnection("jdbc:sqlite:"+db)) {
+            c.setAutoCommit(false);
+            try(var s=c.createStatement()) {
+                s.execute("CREATE TABLE plugin_stats(id INTEGER PRIMARY KEY,schema_version INT NOT NULL,duplicates_detected INT DEFAULT 0,last_updated BIGINT)");
+                s.execute("INSERT INTO plugin_stats VALUES(1,7,0,0)");
+                s.execute("CREATE TABLE item_history(id INTEGER PRIMARY KEY AUTOINCREMENT,code TEXT NOT NULL,item_uuid TEXT NOT NULL,action TEXT NOT NULL,player_name TEXT,player_uuid TEXT,location TEXT,world TEXT,x INT,y INT,z INT,timestamp BIGINT NOT NULL,additional_data TEXT)");
+                s.execute("WITH RECURSIVE seq(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM seq WHERE n<1000000) INSERT INTO item_history(code,item_uuid,action,timestamp) SELECT CASE WHEN n%10000=0 THEN 'TARGET' ELSE 'OTHER1' END,CASE WHEN n%10000=0 THEN 'identity' ELSE 'noise' END,'SYNTHETIC',n/20000 FROM seq");
+                s.execute("INSERT INTO item_history(code,item_uuid,action,timestamp) VALUES('TARGET','wrong','IMPOSTOR',9999),('WRONG','identity','IMPOSTOR',9999)");
+                c.commit();
+            }
+        }
+        long before=Files.size(db),start=System.nanoTime();
+        var ticks=new AtomicInteger();
+        // Same policy and real clock; count callback reads, not a lowered test budget.
+        try(var c=DriverManager.getConnection("jdbc:sqlite:"+db)) {
+            c.setAutoCommit(false);
+            new SqliteSchemaManager(100000,()->{ticks.incrementAndGet();return System.nanoTime();}).initialize(c);
+        }
+        System.out.printf(Locale.ROOT,"run=%d migration_ms=%.3f progress_checks=%d bytes_before=%d bytes_after=%d%n",run,ms(start),ticks.get()-1,before,Files.size(db));
+        try(var owner=new SqliteConnectionOwner(db)) {
+            var repo=new CatalogRepository(owner);
+            String plan=owner.call(c->{try(var s=c.createStatement();var r=s.executeQuery("EXPLAIN QUERY PLAN SELECT id,action,player_name,player_uuid,location,timestamp,additional_data FROM item_history WHERE code='TARGET' AND item_uuid='identity' ORDER BY timestamp DESC,id DESC LIMIT 100")) {String p="";while(r.next())p+=r.getString(4);return p;}});
+            check(plan.contains("idx_history_identity_time")&&!plan.contains("TEMP B-TREE"),plan);
+            List<Double> times=new ArrayList<>();
+            for(int i=0;i<20;i++) { start=System.nanoTime(); exact(repo.history("TARGET","identity").get(10,TimeUnit.SECONDS)); times.add(ms(start)); }
+            System.out.println("run="+run+" plan="+plan+" history20_ms="+times);
+            owner.call(c->{try(var s=c.createStatement()) {
+                s.execute("WITH RECURSIVE seq(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM seq WHERE n<100000) INSERT INTO tracked_items(code,item_uuid,material,item_name,owner_name,created_at,last_seen_at) SELECT printf('C%06d',n),'u-'||n,'DIAMOND_SWORD','Blade','Lan',1,1 FROM seq");
+            }return null;});
+            check(repo.find(new CatalogQuery("","",CatalogCategory.ALL,"")).get(10,TimeUnit.SECONDS).items().size()==36,"first page");
+            for(String query:List.of("Blade","not-present")) {
+                start=System.nanoTime();
+                try { var rows=repo.find(new CatalogQuery(query,"",CatalogCategory.ALL,"")).get(10,TimeUnit.SECONDS); System.out.println("run="+run+" filter="+query+" rows="+rows.items().size()+" ms="+ms(start)); }
+                catch(ExecutionException failure) { Throwable cause=failure;while(cause.getCause()!=null)cause=cause.getCause();System.out.println("run="+run+" filter="+query+" error="+cause.getMessage()+" ms="+ms(start)); }
+            }
+            // Same serial-owner transaction path; SQL insert seam, not gameplay tracking.
+            start=System.nanoTime();
+            List<CompletableFuture<?>> work=new ArrayList<>();
+            for(int i=0;i<30;i++) {
+                work.add(owner.callAsync(c->{try(var s=c.createStatement()) {s.execute("INSERT INTO item_history(code,item_uuid,action,timestamp) VALUES('WRITE1','writer','MIXED',8888)");}return null;}));
+                work.add(repo.history("TARGET","identity").thenAccept(CatalogC1Probe::exact));
+            }
+            CompletableFuture.allOf(work.toArray(CompletableFuture[]::new)).get(20,TimeUnit.SECONDS);
+            check(owner.call(c->{try(var s=c.createStatement();var r=s.executeQuery("SELECT count(*) FROM item_history WHERE action='MIXED'")){r.next();return r.getInt(1);}})==30,"mixed writes missing");
+            System.out.println("run="+run+" mixed_30_writes_30_reads_ms="+ms(start));
+            start=System.nanoTime();
+            int deleted=owner.call(c->{try(var s=c.prepareStatement("DELETE FROM item_history WHERE timestamp < ?")){s.setLong(1,1);return s.executeUpdate();}});
+            check(deleted==19999,"retention count "+deleted);
+            check(repo.history("TARGET","identity").get(10,TimeUnit.SECONDS).size()==99,"retained target count");
+            System.out.println("run="+run+" retention_deleted="+deleted+" ms="+ms(start));
+        }
+        try(var owner=new SqliteConnectionOwner(db)) {
+            check(owner.call(c->{try(var s=c.createStatement();var r=s.executeQuery("SELECT count(*) FROM item_history")){r.next();return r.getInt(1);}})==980033,"reopen row count");
+            check(new CatalogRepository(owner).history("TARGET","identity").get(10,TimeUnit.SECONDS).size()==99,"reopen query");
+        }
+    }
+    static void exact(List<CatalogEvent> rows) {
+        check(rows.size()==100,"history row count");
+        for(int i=0;i<100;i++) {long id=1000000L-i*10000L;check(rows.get(i).id()==id&&rows.get(i).timestamp()==id/20000,"identity/tie order at "+i);}
+    }
+    static double ms(long start) {return (System.nanoTime()-start)/1_000_000d;}
+    static void check(boolean ok,String detail) {if(!ok)throw new AssertionError(detail);}
+}
+
+
+FILE docs/reviews/c1-scale-compiled.log
+SYNTHETIC_ONLY dir=C:\Users\thanh\AppData\Local\Temp\itemguard-c1-4193620391380697359
+run=0 migration_ms=1370.645 progress_checks=12000 bytes_before=41435136 bytes_after=68591616
+run=0 plan=SEARCH item_history USING INDEX idx_history_identity_time (code=? AND item_uuid=?) history20_ms=[5.2888, 1.084, 0.9019, 0.9197, 0.6965, 0.6316, 0.5169, 0.5452, 0.4994, 0.5358, 0.5272, 0.4581, 0.6516, 0.5459, 0.7111, 0.7405, 0.5866, 0.5639, 0.6056, 0.7911]
+run=0 filter=Blade rows=36 ms=6.0763
+run=0 filter=not-present error=[SQLITE_INTERRUPT] Operation terminated by sqlite3_interrupt() (interrupted) ms=245.0871
+run=0 mixed_30_writes_30_reads_ms=413.033
+run=0 retention_deleted=19999 ms=156.3318
+run=1 migration_ms=1307.587 progress_checks=12000 bytes_before=41435136 bytes_after=68591616
+run=1 plan=SEARCH item_history USING INDEX idx_history_identity_time (code=? AND item_uuid=?) history20_ms=[2.4041, 0.5501, 0.54, 0.5206, 0.4192, 0.528, 0.5211, 0.5452, 0.5073, 0.6329, 0.502, 0.4904, 0.4782, 0.453, 0.4501, 0.4438, 0.7098, 0.5631, 0.4692, 0.3921]
+run=1 filter=Blade rows=36 ms=0.43
+run=1 filter=not-present error=[SQLITE_INTERRUPT] Operation terminated by sqlite3_interrupt() (interrupted) ms=250.6058
+run=1 mixed_30_writes_30_reads_ms=436.2243
+run=1 retention_deleted=19999 ms=167.5311
+run=2 migration_ms=1344.508 progress_checks=12000 bytes_before=41435136 bytes_after=68591616
+run=2 plan=SEARCH item_history USING INDEX idx_history_identity_time (code=? AND item_uuid=?) history20_ms=[2.0085, 0.4638, 0.5831, 0.5283, 0.566, 0.444, 0.4423, 0.4457, 0.433, 0.7624, 0.4324, 0.4829, 0.4633, 0.434, 0.4406, 0.5989, 0.8164, 0.5829, 0.5209, 0.509]
+run=2 filter=Blade rows=36 ms=0.4218
+run=2 filter=not-present error=[SQLITE_INTERRUPT] Operation terminated by sqlite3_interrupt() (interrupted) ms=250.7403
+run=2 mixed_30_writes_30_reads_ms=485.7092
+run=2 retention_deleted=19999 ms=159.5296
+PASS C1 JDBC migration/query/mixed workload; NOT Paper or production SLO

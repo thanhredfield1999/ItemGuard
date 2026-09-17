@@ -1,0 +1,8 @@
+{
+  "files": {
+    "docs/reviews/dual-commit-review-disposition.md": "f673385134f60367362673cd110d1c8a41604ae0b9cd6f95a418a093141c4010",
+    "tools/execution-authority/guardian/DualJournalCommitCore.cs": "c67968adb1b46db97163ba0b1f9f3c6cbbc827f56264b1e1ce8ebe11a5bac6b1",
+    "tools/execution-authority/tests/DualJournalCommitTests.cs": "e8a70022297d78279ac2e236ff70772248bba38a014a83b288b2faa82876fa02"
+  },
+  "input_sha256": "c5c5f8917f64c67205a37c50ef1641fde7ed29273ad5b8a2bea35122ab4b2552"
+}

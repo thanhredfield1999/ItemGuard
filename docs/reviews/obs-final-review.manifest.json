@@ -1,0 +1,10 @@
+{
+  "files": {
+    "docs/reviews/obs-final-disposition.md": "38e1d972595324e19965a1c8ce2c28b045a361a3ad048c30e7f1a818cc8cd04d",
+    "src/main/java/com/itemguard/catalog/CatalogController.java": "fa95d03985c24f49c948f2e1d6caf897c9e0935ad3156ce2ca5ecf85b9ae1030",
+    "src/test/java/com/itemguard/catalog/CatalogObservationControllerTest.java": "5a262ab030fa4d186580372dde08de2fefc690e2316ced1fb4e344cea61d563e",
+    "src/test/java/com/itemguard/catalog/CatalogObservationRepositoryTest.java": "77c2edf6f4558f997705a60ba8aba07e9d7d686d675bf0585a38c8995236c233",
+    "src/main/java/com/itemguard/dupe/ScanEpochGenerator.java": "ff96cc5e3beb7af3615326792159352f08defc83cea166c0675238efb09a2f78"
+  },
+  "input_sha256": "03c2530062a9e342ff98bfd870df9e4aef7b040d2b1fc058b1748ff80764b8c0"
+}

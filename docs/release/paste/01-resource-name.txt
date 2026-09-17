@@ -1,0 +1,1 @@
+ItemGuard LITE — Item Identity & Duplicate Detection (Paper/Purpur/Spigot 1.21.4+)

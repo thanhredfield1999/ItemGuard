@@ -1,0 +1,347 @@
+Independent adversarial review. Vietnamese <=500 words. Scope ONLY pure serialized ControlSession policy below. No tools, edits, runtime or product authorization. Validate matching ACK gate, no ACK before complete frame/dual commit, request monotonicity, close pending-operation check, sticky failures, both EOF/wait callback orders and SILENT behavior. Caller guarantees parsed schema/hash/identity and serialized factual notifications; transport/deadline implementation outside this bounded slice. State whether PASS_FOR_OFFLINE_POLICY or BLOCK plus concrete counterexample. ClosedCleanly is only control-channel state, NOT output seal/process success. No speculative missing full guardian as blocker.
+
+SPEC
+589|## Protocol/state machine
+590|
+591|Guardian là writer duy nhất. Mọi append đi qua một serialized writer queue;
+592|allocate seq, prior-line hash, write/flush E: rồi write/flush C: thuộc cùng một
+593|serialized operation. Mirror failure làm writer terminal-failed, không nhận
+594|append tiếp hoặc ACK success. Chỉ protocol-speaking worker gửi request và block
+595|đến ACK/NAK; silent roles không có control channel.
+596|
+597|### Capability transport
+598|
+599|- Sealed role manifest bắt buộc khai `controlProtocolPolicy=SPEAKER|SILENT`.
+600|  SILENT roles không có control pipes, request reader hoặc ACK deadline. SPEAKER
+601|  roles nhận hai anonymous pipes: request worker→guardian và response
+602|  guardian→worker. Role không khai policy bị reject trước spawn.
+603|- Guardian giữ request-read/response-write ends non-inheritable. Exact
+604|  `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` là union của ba child stdio ends
+605|  (`stdin-read`, `stdout-write`, `stderr-write`) và, chỉ với SPEAKER, hai control
+606|  ends (`request-write`, `response-read`). Mỗi listed handle inheritable;
+607|  `bInheritHandles=TRUE`, `STARTF_USESTDHANDLES` và
+608|  `EXTENDED_STARTUPINFO_PRESENT` bắt buộc. STARTUPINFO std handles phải khớp
+609|  exact union; missing/extra handle block trước resume. Không broad inheritance.
+610|  `stdinPolicy=none` vẫn cấp stdin-read, guardian đóng stdin-write để tạo EOF.
+611|  Tất cả worker descendants bị cấm bởi `ActiveProcessLimit=1`.
+612|- Control frames không dùng stdin/stdout/stderr. Normal process output chỉ được
+613|  guardian drain vào bounded role logs; không có push/data pipe thứ hai.
+614|- Frame là `uint32-le length` + exact canonical UTF-8 JSON bytes, tối đa 64 KiB.
+615|  Schema cố định gồm `schemaVersion`, monotonic `requestId`, allowlisted
+616|  `requestType`, `role`, `payload`. Unknown/duplicate key, length 0/oversize,
+617|  partial body, trailing bytes hoặc out-of-order request bị reject.
+618|- ACK/NAK frame bind exact `requestId` và exact SHA-256 của request bytes. Worker
+619|  không action nếu chưa nhận ACK matching cả hai giá trị.
+620|- Guardian đọc đủ request frame trước ACK, worker write đầy đủ request rồi đọc
+621|  response; mỗi worker tối đa một outstanding request. Reads/writes loop trên
+622|  partial transfer với deadline; không dựa pipe buffer chứa được toàn frame.
+623|  Test frame 64 KiB trên buffer nhỏ phải complete, không timeout/deadlock.
+624|- Mỗi request có deadline monotonic cụ thể trong role manifest; deadline tối đa
+625|  30 giây cho journal ACK. Timeout, unexpected EOF, broken pipe, malformed frame, duplicate
+626|  request hoặc unsolicited bytes làm guardian NAK khi có thể, ghi
+627|  `PROTOCOL_REJECTED` nếu journal còn usable và đóng mọi worker jobs.
+628|- SILENT role exit không thể gây control EOF failure vì không có control channel.
+629|  SPEAKER clean close cần terminal-close protocol được đặc tả và test riêng trước
+630|  implementation transport: sau khi hoàn tất mọi request trước, SPEAKER gửi
+631|  `CONTROL_CLOSE` như request cuối. Guardian validate không pending operation,
+632|  journal `<ROLE>_CONTROL_CLOSE_ACCEPTED`, rồi ACK matching request hash và ID.
+633|  Worker chỉ sau ACK mới đóng request-write và exit trong deadline manifest.
+634|  Sau accepted-close guardian không nhận thêm frame; unexpected bytes, partial
+635|  frame, duplicate close hoặc exit deadline expiry fail-closed. EOF sau close
+636|  accepted không tự là exit; vẫn phải wait/drain/seal/exit như lifecycle chung.
+637|  EOF trước close accepted fail-closed dù process exit 0; không suy verdict từ
+638|  scheduling order giữa EOF và wait notification. ACK write failure vẫn failure,
+639|  không biến close accepted thành proof worker nhận ACK.
+640|- Pipe handle là runtime capability, không phải cryptographic identity. Threat
+641|  model cùng-user được giữ bằng explicit handle inheritance + guardian process
+642|  deny `PROCESS_DUP_HANDLE`; named pipe/TCP/file polling không được dùng làm
+643|  control channel.
+644|
+
+FILE tools/execution-authority/control/ControlSession.cs
+1|namespace ItemGuard.Execution.Control {
+2|    public enum ControlRole { SPEAKER, SILENT }
+3|    public enum ControlRequestKind { OPERATION, CONTROL_CLOSE }
+4|
+5|    // Pure serialized policy. Inputs must already be validated by the transport,
+6|    // schema/identity validator and durable writer; this class proves none of those facts.
+7|    public sealed class ControlSession {
+8|        enum Stage { Idle, Reading, Ready, Dispatched, Committed, Closing }
+9|        readonly ControlRole role;
+10|        Stage stage;
+11|        bool released;
+12|        ulong requestId;
+13|        bool hasRequestId;
+14|        string requestHash;
+15|        ControlRequestKind requestKind;
+16|        bool closeAckWritten;
+17|        bool eofObserved;
+18|        bool exitObserved;
+19|        public bool Failed { get; private set; }
+20|        public bool CloseAccepted { get; private set; }
+21|        // Control-channel completion only, NOT lifecycle output seal or product success.
+22|        public bool ClosedCleanly { get { return !Failed && CloseAccepted && closeAckWritten && eofObserved && exitObserved; } }
+23|        public bool ObserveEof() {
+24|            if (Failed) return false;
+25|            if (!CloseAccepted || eofObserved) return Reject();
+26|            eofObserved = true; return true;
+27|        }
+28|        public bool ObserveExit() {
+29|            if (Failed) return false;
+30|            if (exitObserved || (role == ControlRole.SPEAKER && !CloseAccepted)) return Reject();
+31|            exitObserved = true; return true;
+32|        }
+33|        public bool CanAcknowledge { get { return !Failed && stage == Stage.Committed; } }
+34|        public ControlSession(ControlRole role) {
+35|            if (role != ControlRole.SPEAKER && role != ControlRole.SILENT)
+36|                throw new System.ArgumentOutOfRangeException("role");
+37|            this.role = role;
+38|        }
+39|        bool Reject() { Failed = true; return false; }
+40|        // Transport calls this on timeout, broken pipe, invalid frame or ACK write failure.
+41|        public void Fail() { Reject(); }
+42|        public bool BeginFrame() {
+43|            if (Failed) return false;
+44|            if (role != ControlRole.SPEAKER || stage != Stage.Idle) return Reject();
+45|            stage = Stage.Reading; return true;
+46|        }
+47|        public bool CompleteFrame(ulong id, string hash, ControlRequestKind kind) {
+48|            if (Failed) return false;
+49|            if (stage != Stage.Reading || !ValidHash(hash)
+50|                || (kind != ControlRequestKind.OPERATION && kind != ControlRequestKind.CONTROL_CLOSE)
+51|                || (hasRequestId && id <= requestId)) return Reject();
+52|            hasRequestId = true;
+53|            requestId = id; requestHash = hash; requestKind = kind; stage = Stage.Ready; return true;
+54|        }
+55|        public bool TryDispatch(bool hasPendingOperation) {
+56|            if (Failed) return false;
+57|            if (stage != Stage.Ready) return Reject();
+58|            if (!released) return false;
+59|            if (requestKind == ControlRequestKind.CONTROL_CLOSE && hasPendingOperation) return Reject();
+60|            stage = Stage.Dispatched; return true;
+61|        }
+62|        public bool ReleaseCommitted() {
+63|            if (Failed) return false;
+64|            if (released) return Reject();
+65|            released = true; return true;
+66|        }
+67|        public bool CommitRequest(bool firstMirror, bool secondMirror) {
+68|            if (Failed) return false;
+69|            if (stage != Stage.Dispatched || !firstMirror || !secondMirror) return Reject();
+70|            stage = Stage.Committed;
+71|            if (requestKind == ControlRequestKind.CONTROL_CLOSE) CloseAccepted = true;
+72|            return true;
+73|        }
+74|        static bool ValidHash(string value) {
+75|            if (value == null || value.Length != 64) return false;
+76|            foreach (char c in value)
+77|                if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+78|            return true;
+79|        }
+80|        public bool AcknowledgeWritten(ulong id, string hash) {
+81|            if (Failed) return false;
+82|            if (!CanAcknowledge || id != requestId || hash != requestHash) return Reject();
+83|            if (CloseAccepted) { closeAckWritten = true; stage = Stage.Closing; }
+84|            else stage = Stage.Idle;
+85|            return true;
+86|        }
+87|    }
+88|}
+89|
+
+FILE tools/execution-authority/control/ControlSessionTests.cs
+1|using System;
+2|using ItemGuard.Execution.Control;
+3|
+4|class ControlSessionTests {
+5|    static int failures;
+6|    static int cases;
+7|    static readonly string Hash = new string('a', 64);
+8|
+9|    static void Check(bool ok, string message) {
+10|        if (!ok) throw new Exception(message);
+11|    }
+12|    static void Run(string name, Action test) {
+13|        cases++;
+14|        try { test(); Console.WriteLine("PASS " + name); }
+15|        catch (Exception e) { failures++; Console.WriteLine("FAIL " + name + ": " + e.Message); }
+16|    }
+17|    static void RequestRoundTrip() {
+18|        var session = new ControlSession(ControlRole.SPEAKER);
+19|        Check(session.BeginFrame(), "begin frame");
+20|        Check(session.CompleteFrame(7, Hash, ControlRequestKind.OPERATION), "complete frame");
+21|        Check(!session.TryDispatch(false), "request must wait for release commit");
+22|        Check(!session.Failed, "fast reader must buffer, not reject before release commit");
+23|        Check(!session.CanAcknowledge, "read complete does not permit ACK");
+24|        Check(session.ReleaseCommitted(), "release commit");
+25|        Check(session.TryDispatch(false), "dispatch after release commit");
+26|        Check(!session.CanAcknowledge, "dispatch does not permit ACK");
+27|        Check(session.CommitRequest(true, true), "dual commit");
+28|        Check(session.CanAcknowledge, "both journals committed");
+29|        Check(session.AcknowledgeWritten(7, Hash), "matching ACK written");
+30|        Check(!session.CanAcknowledge, "ACK cannot be sent twice");
+31|        Check(session.BeginFrame(), "next request only after ACK");
+32|    }
+33|    static ControlSession ReadyClose() {
+34|        var session = new ControlSession(ControlRole.SPEAKER);
+35|        Check(session.ReleaseCommitted(), "release");
+36|        Check(session.BeginFrame(), "begin close");
+37|        Check(session.CompleteFrame(8, Hash, ControlRequestKind.CONTROL_CLOSE), "complete close");
+38|        return session;
+39|    }
+40|    static void CloseRoundTrip(bool exitFirst) {
+41|        var session = ReadyClose();
+42|        Check(session.TryDispatch(false) && session.CommitRequest(true, true), "durable close");
+43|        Check(session.CloseAccepted && !session.ClosedCleanly, "close accepted is not clean close");
+44|        Check(session.AcknowledgeWritten(8, Hash), "close ACK");
+45|        Check(exitFirst ? session.ObserveExit() : session.ObserveEof(), "first notification");
+46|        Check(!session.ClosedCleanly, "one notification is not both EOF and exit");
+47|        Check(exitFirst ? session.ObserveEof() : session.ObserveExit(), "second notification");
+48|        Check(session.ClosedCleanly, "clean control close");
+49|        Check(!session.BeginFrame() && session.Failed, "no requests after close");
+50|        Check(session.CloseAccepted && !session.ClosedCleanly, "failure retains facts, revokes clean status");
+51|    }
+52|    static void ClosePendingOperation() {
+53|        var session = ReadyClose();
+54|        Check(!session.TryDispatch(true) && session.Failed, "pending operation forbids close");
+55|        Check(!session.CloseAccepted && !session.CanAcknowledge, "failed close has no acceptance or ACK");
+56|    }
+57|    static void SilentExit() {
+58|        var session = new ControlSession(ControlRole.SILENT);
+59|        Check(session.ObserveExit() && !session.Failed, "silent exit has no control EOF obligation");
+60|        Check(!session.CloseAccepted && !session.ClosedCleanly, "silent role has no close protocol facts");
+61|        Check(!session.BeginFrame() && session.Failed, "silent role cannot send requests");
+62|    }
+63|    static void AckWriteFailure() {
+64|        var session = ReadyClose();
+65|        Check(session.TryDispatch(false) && session.CommitRequest(true, true), "close commit");
+66|        Check(session.ObserveEof() && session.ObserveExit(), "notifications may precede ACK completion callback");
+67|        Check(!session.ClosedCleanly, "notifications do not prove successful ACK write");
+68|        session.Fail();
+69|        Check(session.Failed && session.CloseAccepted && !session.ClosedCleanly, "ACK failure preserves only durable close fact");
+70|        Check(!session.AcknowledgeWritten(8, Hash), "late ACK cannot revive failed session");
+71|    }
+72|    static void InvalidRole() {
+73|        bool rejected = false;
+74|        try { new ControlSession((ControlRole)42); }
+75|        catch (ArgumentOutOfRangeException) { rejected = true; }
+76|        Check(rejected, "unknown policy must fail at construction");
+77|    }
+78|    static void InvalidKind() {
+79|        var session = new ControlSession(ControlRole.SPEAKER);
+80|        session.BeginFrame();
+81|        Check(!session.CompleteFrame(1, Hash, (ControlRequestKind)42) && session.Failed, "unknown request kind");
+82|    }
+83|    static void Replay(bool lower) {
+84|        var session = new ControlSession(ControlRole.SPEAKER);
+85|        session.ReleaseCommitted(); session.BeginFrame();
+86|        session.CompleteFrame(7, Hash, ControlRequestKind.OPERATION);
+87|        session.TryDispatch(false); session.CommitRequest(true, true); session.AcknowledgeWritten(7, Hash);
+88|        Check(session.BeginFrame(), "next frame");
+89|        Check(!session.CompleteFrame(lower ? 6UL : 7UL, Hash, ControlRequestKind.OPERATION), "replayed/out-of-order ID rejected");
+90|        Check(session.Failed && !session.CanAcknowledge, "replay terminal failure");
+91|    }
+92|    static void InvalidHash(string hash) {
+93|        var session = new ControlSession(ControlRole.SPEAKER);
+94|        session.BeginFrame();
+95|        Check(!session.CompleteFrame(1, hash, ControlRequestKind.OPERATION) && session.Failed, "hash shape rejected");
+96|    }
+97|    static ControlSession AtStage(int stage) {
+98|        var session = new ControlSession(ControlRole.SPEAKER);
+99|        session.ReleaseCommitted();
+100|        if (stage >= 1) session.BeginFrame();
+101|        if (stage >= 2) session.CompleteFrame(8, Hash, ControlRequestKind.CONTROL_CLOSE);
+102|        if (stage >= 3) session.TryDispatch(false);
+103|        if (stage >= 4) session.CommitRequest(true, true);
+104|        if (stage >= 5) session.AcknowledgeWritten(8, Hash);
+105|        if (stage >= 6) session.ObserveEof();
+106|        if (stage >= 7) session.ObserveExit();
+107|        Check(!session.Failed, "valid prefix");
+108|        return session;
+109|    }
+110|    static void CannotRevive(ControlSession session) {
+111|        Check(session.Failed && !session.CanAcknowledge && !session.ClosedCleanly, "failed terminal");
+112|        Check(!session.BeginFrame() && !session.CompleteFrame(9, Hash, ControlRequestKind.OPERATION)
+113|            && !session.TryDispatch(false) && !session.CommitRequest(true, true)
+114|            && !session.AcknowledgeWritten(8, Hash) && !session.ObserveEof()
+115|            && !session.ObserveExit() && !session.ReleaseCommitted(), "no state-changing action can revive");
+116|    }
+117|    static void FaultAtStage(int stage) {
+118|        var session = AtStage(stage);
+119|        bool accepted = session.CloseAccepted;
+120|        session.Fail();
+121|        CannotRevive(session);
+122|        Check(session.CloseAccepted == accepted, "failure must not erase durable fact");
+123|    }
+124|    static void InvalidAction(int stage, string action) {
+125|        var session = AtStage(stage);
+126|        bool result;
+127|        switch (action) {
+128|            case "begin": result = session.BeginFrame(); break;
+129|            case "complete": result = session.CompleteFrame(9, Hash, ControlRequestKind.OPERATION); break;
+130|            case "dispatch": result = session.TryDispatch(false); break;
+131|            case "commit": result = session.CommitRequest(true, true); break;
+132|            case "ack": result = session.AcknowledgeWritten(8, Hash); break;
+133|            case "eof": result = session.ObserveEof(); break;
+134|            case "exit": result = session.ObserveExit(); break;
+135|            default: throw new Exception("bad test action");
+136|        }
+137|        Check(!result, action + " must reject at " + stage);
+138|        CannotRevive(session);
+139|    }
+140|    static void SingleMirrorFailure(int mask) {
+141|        var session = AtStage(3);
+142|        Check(!session.CommitRequest((mask & 1) != 0, (mask & 2) != 0), "no one-sided ACK");
+143|        Check(!session.CloseAccepted, "close acceptance requires both commits");
+144|        CannotRevive(session);
+145|    }
+146|    static void WrongAck(bool id) {
+147|        var session = AtStage(4);
+148|        Check(!session.AcknowledgeWritten(id ? 9UL : 8UL, id ? Hash : new string('b', 64)), "bind exact ACK");
+149|        CannotRevive(session);
+150|    }
+151|    static void LateAckCallback() {
+152|        var session = AtStage(4);
+153|        Check(session.ObserveExit() && session.ObserveEof() && !session.ClosedCleanly, "callbacks do not imply ACK");
+154|        Check(session.AcknowledgeWritten(8, Hash) && session.ClosedCleanly, "successful ACK completion joins notifications");
+155|    }
+156|    static int Main() {
+157|        Run("request round trip and release gate", RequestRoundTrip);
+158|        Run("close EOF before exit", delegate { CloseRoundTrip(false); });
+159|        Run("close exit before EOF", delegate { CloseRoundTrip(true); });
+160|        Run("pending operation blocks close", ClosePendingOperation);
+161|        Run("silent exit without protocol", SilentExit);
+162|        Run("ACK write failure after notifications", AckWriteFailure);
+163|        Run("unknown role", InvalidRole);
+164|        Run("unknown request kind", InvalidKind);
+165|        Run("duplicate request ID", delegate { Replay(false); });
+166|        Run("decreasing request ID", delegate { Replay(true); });
+167|        foreach (var hash in new [] { null, "", new string('A', 64), new string('g', 64), new string('a', 63), new string('a', 65) }) {
+168|            string value = hash;
+169|            Run("invalid hash " + (value == null ? "null" : value.Length.ToString()), delegate { InvalidHash(value); });
+170|        }
+171|        Run("ACK callback after EOF/exit", LateAckCallback);
+172|        Run("wrong ACK ID", delegate { WrongAck(true); });
+173|        Run("wrong ACK hash", delegate { WrongAck(false); });
+174|        for (int mask = 0; mask < 3; mask++) {
+175|            int m = mask;
+176|            Run("mirror failure " + m, delegate { SingleMirrorFailure(m); });
+177|        }
+178|        for (int stage = 0; stage <= 7; stage++) {
+179|            int s = stage;
+180|            Run("fault terminal at stage " + s, delegate { FaultAtStage(s); });
+181|            foreach (string action in new [] { "begin", "complete", "dispatch", "commit", "ack", "eof", "exit" }) {
+182|                bool allowed = (action == "begin" && s == 0) || (action == "complete" && s == 1)
+183|                    || (action == "dispatch" && s == 2) || (action == "commit" && s == 3)
+184|                    || (action == "ack" && s == 4) || (action == "eof" && (s == 4 || s == 5))
+185|                    || (action == "exit" && s >= 4 && s <= 6);
+186|                if (allowed) continue;
+187|                string a = action;
+188|                Run("reject " + a + " at stage " + s, delegate { InvalidAction(s, a); });
+189|            }
+190|        }
+191|        Console.WriteLine("CONTROL cases=" + cases + " failures=" + failures);
+192|        return failures == 0 ? 0 : 1;
+193|    }
+194|}
+195|

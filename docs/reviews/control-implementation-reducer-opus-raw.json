@@ -1,0 +1,80 @@
+{
+  "is_error": false,
+  "duration_api_ms": 77281,
+  "num_turns": 1,
+  "stop_reason": "end_turn",
+  "session_id": "5f0f9a2a-16a9-4db4-a370-13f4e8808350",
+  "total_cost_usd": 0.2164665,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5846,
+    "cache_read_input_tokens": 3727,
+    "output_tokens": 6078,
+    "output_tokens_details": {
+      "thinking_tokens": 4920
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 5846,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 6078,
+        "cache_read_input_tokens": 3727,
+        "cache_creation_input_tokens": 5846,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 5846
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard"
+  },
+  "modelUsage": {
+    "claude-haiku-4-5-20251001": {
+      "inputTokens": 4113,
+      "outputTokens": 14,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "webSearchRequests": 0,
+      "costUSD": 0.004183,
+      "contextWindow": 200000,
+      "maxOutputTokens": 32000,
+      "canonicalModel": "claude-haiku-4-5",
+      "provider": "firstParty"
+    },
+    "claude-opus-5": {
+      "inputTokens": 2,
+      "outputTokens": 6078,
+      "cacheReadInputTokens": 3727,
+      "cacheCreationInputTokens": 5846,
+      "webSearchRequests": 0,
+      "costUSD": 0.2122835,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 64000,
+      "canonicalModel": "claude-opus-5",
+      "provider": "firstParty"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "## Kết quả: PASS_FOR_OFFLINE_REDUCER\n\nPhạm vi: chỉ `PaperLifecycle` thuần, giả định caller đã bảo đảm một process identity và tính factual của event trong common valid prefix. Không kết luận gì về sản phẩm hay guardian tổng thể.\n\n### Đối chiếu từng nhánh (836-874)\n- Khởi tạo `ABSENT/NOT_APPLICABLE×3`; `NOT_APPLICABLE` chỉ tồn tại ở `ABSENT|SPAWN_INTENT_ONLY`, vì chỉ dòng 14 nâng ba trục lên `NOT_ESTABLISHED` và không đường nào quay lại — đúng 869-871.\n- Chuỗi release: `SPAWN_INTENT`(ABSENT) → `PROCESS_CREATED_SUSPENDED`(SPAWN_INTENT_ONLY) → `RELEASE_INTENT`(CREATED_SUSPENDED) → `RELEASE_OBSERVED`(RELEASE_INTENT_UNCERTAIN) khớp 849-858; `RELEASE_OBSERVED` không đụng `Code`.\n- Nhánh abort: `SUSPENDED_TERMINATION_INTENT` chỉ từ `CREATED_SUSPENDED`, `..._OBSERVED` chỉ từ `..._INTENT_UNCERTAIN` → cặp suspended-termination thay toàn bộ release/activity (782-783), và hai nhánh loại trừ nhau vì guard state không giao nhau.\n- Activity (dòng 20) đòi `RELEASED` nên không thể xuất hiện trên nhánh abort (864-865); đòi `Code == NOT_ESTABLISHED` chặn duplicate (781); đòi `Output == NOT_ESTABLISHED` buộc activity phải trước seal (777-778).\n- **Điểm sửa 776-781 đã đúng**: dòng 23 cho seal từ `RELEASED` mà không yêu cầu activity, và cả seal lẫn exit không ghi `Code`, nên `released → seal → exit` giữ nguyên `NOT_ESTABLISHED`. Không có event nào hạ trục đã established (867).\n- Cardinality: mọi kind đều bị guard bởi state đã tiến, nên lặp lại bất kỳ event nào đều rơi xuống dòng 25. Exit đòi `Output == ESTABLISHED` (864).\n- Suffix invalid: dòng 11 đóng băng vĩnh viễn state, không apply một phần (866). Ma trận prefix kiểm đúng cả `InvalidSuffix`, state bất biến, và không phục hồi sau lỗi.\n\nKhông tìm được counterexample trong không gian bounded này.\n\n### Khoảng trống test (không chặn)\n- Không assert bộ bốn trục lúc khởi tạo và sau `SPAWN_INTENT`/`PROCESS_CREATED_SUSPENDED`.\n- `PaperPrefixTests` chỉ kiểm acceptance, không kiểm giá trị trục sau mỗi bước hợp lệ.\n- Dòng 17 nhánh abort không assert `Output`/`Exit == ESTABLISHED`.",
+  "ttft_ms": 61711,
+  "ttft_stream_ms": 5138,
+  "time_to_request_ms": 3504,
+  "type": "result",
+  "duration_ms": 79453,
+  "uuid": "e00880a3-a2d7-44fd-b81b-a1b2934139f6"
+}

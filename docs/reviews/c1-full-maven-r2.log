@@ -1,0 +1,301 @@
+java version "21.0.4" 2024-07-16 LTS
+Java(TM) SE Runtime Environment (build 21.0.4+8-LTS-274)
+Java HotSpot(TM) 64-Bit Server VM (build 21.0.4+8-LTS-274, mixed mode, sharing)
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ----------------------< com.itemguard:ItemGuard >-----------------------
+[INFO] Building ItemGuard 1.0.0
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- clean:3.2.0:clean (default-clean) @ ItemGuard ---
+[INFO] Deleting E:\AI.WORK\ItemGuard\target
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ ItemGuard ---
+[INFO] Copying 5 resources from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.13.0:compile (default-compile) @ ItemGuard ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 160 source files with javac [debug release 21] to target\classes
+[INFO] Annotation processing is enabled because one or more processors were found
+  on the class path. A future release of javac may disable annotation processing
+  unless at least one processor is specified by name (-processor), or a search
+  path is specified (--processor-path, --processor-module-path), or annotation
+  processing is enabled explicitly (-proc:only, -proc:full).
+  Use -Xlint:-options to suppress this message.
+  Use -proc:none to disable annotation processing.
+[INFO] /E:/AI.WORK/ItemGuard/src/main/java/com/itemguard/ItemGuard.java: Some input files use or override a deprecated API.
+[INFO] /E:/AI.WORK/ItemGuard/src/main/java/com/itemguard/ItemGuard.java: Recompile with -Xlint:deprecation for details.
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ ItemGuard ---
+[INFO] skip non existing resourceDirectory E:\AI.WORK\ItemGuard\src\test\resources
+[INFO] 
+[INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ ItemGuard ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 99 source files with javac [debug release 21] to target\test-classes
+[INFO] Annotation processing is enabled because one or more processors were found
+  on the class path. A future release of javac may disable annotation processing
+  unless at least one processor is specified by name (-processor), or a search
+  path is specified (--processor-path, --processor-module-path), or annotation
+  processing is enabled explicitly (-proc:only, -proc:full).
+  Use -Xlint:-options to suppress this message.
+  Use -proc:none to disable annotation processing.
+[WARNING] /E:/AI.WORK/ItemGuard/src/test/java/com/itemguard/catalog/CatalogUiLifecycleTest.java:[48,44] PlayerQuitEvent(org.bukkit.entity.Player,net.kyori.adventure.text.Component) in org.bukkit.event.player.PlayerQuitEvent has been deprecated and marked for removal
+[INFO] /E:/AI.WORK/ItemGuard/src/test/java/com/itemguard/catalog/CatalogUiLifecycleTest.java: E:\AI.WORK\ItemGuard\src\test\java\com\itemguard\catalog\CatalogUiLifecycleTest.java uses or overrides a deprecated API.
+[INFO] /E:/AI.WORK/ItemGuard/src/test/java/com/itemguard/catalog/CatalogUiLifecycleTest.java: Recompile with -Xlint:deprecation for details.
+[INFO] 
+[INFO] --- surefire:3.5.2:test (default-test) @ ItemGuard ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.itemguard.catalog.CatalogControllerTest
+[INFO] Tests run: 15, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.206 s -- in com.itemguard.catalog.CatalogControllerTest
+[INFO] Running com.itemguard.catalog.CatalogInventoryTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.398 s -- in com.itemguard.catalog.CatalogInventoryTest
+[INFO] Running com.itemguard.catalog.CatalogReadGateTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in com.itemguard.catalog.CatalogReadGateTest
+[INFO] Running com.itemguard.catalog.CatalogRepositoryTest
+SLF4J(W): No SLF4J providers were found.
+SLF4J(W): Defaulting to no-operation (NOP) logger implementation
+SLF4J(W): See https://www.slf4j.org/codes.html#noProviders for further details.
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.444 s -- in com.itemguard.catalog.CatalogRepositoryTest
+[INFO] Running com.itemguard.catalog.CatalogSessionTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in com.itemguard.catalog.CatalogSessionTest
+[INFO] Running com.itemguard.catalog.CatalogUiLifecycleTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.050 s -- in com.itemguard.catalog.CatalogUiLifecycleTest
+[INFO] Running com.itemguard.catalog.CatalogUiTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.011 s -- in com.itemguard.catalog.CatalogUiTest
+[INFO] Running com.itemguard.catalog.CatalogWiringTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.itemguard.catalog.CatalogWiringTest
+[INFO] Running com.itemguard.CodeGenerationTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.itemguard.CodeGenerationTest
+[INFO] Running com.itemguard.commands.DirectCommandPermissionContractTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.007 s -- in com.itemguard.commands.DirectCommandPermissionContractTest
+[INFO] Running com.itemguard.commands.FindItemCommandParserTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.021 s -- in com.itemguard.commands.FindItemCommandParserTest
+[INFO] Running com.itemguard.commands.FindItemCommandTaskTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.019 s -- in com.itemguard.commands.FindItemCommandTaskTest
+[INFO] Running com.itemguard.commands.HistoryAccessPolicyTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in com.itemguard.commands.HistoryAccessPolicyTest
+[INFO] Running com.itemguard.commands.HistoryCommandWiringContractTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in com.itemguard.commands.HistoryCommandWiringContractTest
+[INFO] Running com.itemguard.commands.ItemCodeInputTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in com.itemguard.commands.ItemCodeInputTest
+[INFO] Running com.itemguard.commands.MainCommandUxContractTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.itemguard.commands.MainCommandUxContractTest
+[INFO] Running com.itemguard.commands.MatDoCommandParserTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.010 s -- in com.itemguard.commands.MatDoCommandParserTest
+[INFO] Running com.itemguard.commands.SubcommandArgumentsTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in com.itemguard.commands.SubcommandArgumentsTest
+[INFO] Running com.itemguard.config.AntiDupeSettingsTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.033 s -- in com.itemguard.config.AntiDupeSettingsTest
+[INFO] Running com.itemguard.config.ReloadPolicyTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.007 s -- in com.itemguard.config.ReloadPolicyTest
+[INFO] Running com.itemguard.DefaultConfigContractTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.045 s -- in com.itemguard.DefaultConfigContractTest
+[INFO] Running com.itemguard.dupe.AntiDupeActionPolicyTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.itemguard.dupe.AntiDupeActionPolicyTest
+[INFO] Running com.itemguard.dupe.ContainerInventoryObservationFactoryTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.010 s -- in com.itemguard.dupe.ContainerInventoryObservationFactoryTest
+[INFO] Running com.itemguard.dupe.DuplicateDetectorTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.012 s -- in com.itemguard.dupe.DuplicateDetectorTest
+[INFO] Running com.itemguard.dupe.ObservationEpochFinalizerTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.009 s -- in com.itemguard.dupe.ObservationEpochFinalizerTest
+[INFO] Running com.itemguard.dupe.PlayerInventoryObservationFactoryTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.itemguard.dupe.PlayerInventoryObservationFactoryTest
+[INFO] Running com.itemguard.dupe.ScanEpochGeneratorTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.010 s -- in com.itemguard.dupe.ScanEpochGeneratorTest
+[INFO] Running com.itemguard.gui.FilterInputPolicyTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.011 s -- in com.itemguard.gui.FilterInputPolicyTest
+[INFO] Running com.itemguard.gui.GuiClickPolicyTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.007 s -- in com.itemguard.gui.GuiClickPolicyTest
+[INFO] Running com.itemguard.gui.GuiItemMetaSafetyWiringContractTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.itemguard.gui.GuiItemMetaSafetyWiringContractTest
+[INFO] Running com.itemguard.gui.GuiPageLayoutTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.007 s -- in com.itemguard.gui.GuiPageLayoutTest
+[INFO] Running com.itemguard.gui.GuiSessionLifecycleWiringContractTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.itemguard.gui.GuiSessionLifecycleWiringContractTest
+[INFO] Running com.itemguard.gui.HistoryGuiWiringContractTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in com.itemguard.gui.HistoryGuiWiringContractTest
+[INFO] Running com.itemguard.gui.HistoryNavigationPolicyTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.itemguard.gui.HistoryNavigationPolicyTest
+[INFO] Running com.itemguard.gui.UiAsyncReadWiringContractTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in com.itemguard.gui.UiAsyncReadWiringContractTest
+[INFO] Running com.itemguard.gui.UiMainThreadHandoffTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.007 s -- in com.itemguard.gui.UiMainThreadHandoffTest
+[INFO] Running com.itemguard.identity.IdentityTagResolverTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.007 s -- in com.itemguard.identity.IdentityTagResolverTest
+[INFO] Running com.itemguard.identity.PickupIdentityPolicyTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.007 s -- in com.itemguard.identity.PickupIdentityPolicyTest
+[INFO] Running com.itemguard.identity.PublicItemCodeGeneratorTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in com.itemguard.identity.PublicItemCodeGeneratorTest
+[INFO] Running com.itemguard.integrations.TrackingMutationAccessPolicyTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.itemguard.integrations.TrackingMutationAccessPolicyTest
+[INFO] Running com.itemguard.integrations.WorldGuard7ApiContractTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.itemguard.integrations.WorldGuard7ApiContractTest
+[INFO] Running com.itemguard.integrations.WorldGuardAccessPolicyTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in com.itemguard.integrations.WorldGuardAccessPolicyTest
+[INFO] Running com.itemguard.ItemDataTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.387 s -- in com.itemguard.ItemDataTest
+[INFO] Running com.itemguard.ItemGuardLifecycleContractTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.024 s -- in com.itemguard.ItemGuardLifecycleContractTest
+[INFO] Running com.itemguard.ItemHistoryTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in com.itemguard.ItemHistoryTest
+[INFO] Running com.itemguard.listeners.ItemListenerEventContractTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.010 s -- in com.itemguard.listeners.ItemListenerEventContractTest
+[INFO] Running com.itemguard.listeners.PlayerLifecyclePolicyTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.010 s -- in com.itemguard.listeners.PlayerLifecyclePolicyTest
+[INFO] Running com.itemguard.persistence.AsyncItemReadRepositoryTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.046 s -- in com.itemguard.persistence.AsyncItemReadRepositoryTest
+[INFO] Running com.itemguard.persistence.DatabaseBackendPolicyTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.itemguard.persistence.DatabaseBackendPolicyTest
+[INFO] Running com.itemguard.persistence.ItemHistoryQueryRepositoryTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.088 s -- in com.itemguard.persistence.ItemHistoryQueryRepositoryTest
+[INFO] Running com.itemguard.persistence.ItemSqliteRepositoryTest
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.818 s -- in com.itemguard.persistence.ItemSqliteRepositoryTest
+[INFO] Running com.itemguard.persistence.ReclaimClaimRepositoryTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.297 s -- in com.itemguard.persistence.ReclaimClaimRepositoryTest
+[INFO] Running com.itemguard.persistence.SearchRequestRepositoryTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.320 s -- in com.itemguard.persistence.SearchRequestRepositoryTest
+[INFO] Running com.itemguard.persistence.SerialDatabaseExecutorTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.itemguard.persistence.SerialDatabaseExecutorTest
+[INFO] Running com.itemguard.persistence.SqliteConnectionOwnerFailClosedWiringContractTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in com.itemguard.persistence.SqliteConnectionOwnerFailClosedWiringContractTest
+[INFO] Running com.itemguard.persistence.SqliteConnectionOwnerTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.447 s -- in com.itemguard.persistence.SqliteConnectionOwnerTest
+[INFO] Running com.itemguard.persistence.SqliteHistoryMigrationTest
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.768 s -- in com.itemguard.persistence.SqliteHistoryMigrationTest
+[INFO] Running com.itemguard.persistence.SqliteLifecycleFailureCrossProcessTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.048 s -- in com.itemguard.persistence.SqliteLifecycleFailureCrossProcessTest
+[INFO] Running com.itemguard.persistence.SqliteProcessLockCrossProcessTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.312 s -- in com.itemguard.persistence.SqliteProcessLockCrossProcessTest
+[INFO] Running com.itemguard.persistence.SqliteSchemaManagerTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.229 s -- in com.itemguard.persistence.SqliteSchemaManagerTest
+[INFO] Running com.itemguard.persistence.TagIdentityCollisionRepositoryTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.282 s -- in com.itemguard.persistence.TagIdentityCollisionRepositoryTest
+[INFO] Running com.itemguard.persistence.TagPublicationRelocationRepositoryTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.149 s -- in com.itemguard.persistence.TagPublicationRelocationRepositoryTest
+[INFO] Running com.itemguard.persistence.TagPublicationRepositoryTest
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.390 s -- in com.itemguard.persistence.TagPublicationRepositoryTest
+[INFO] Running com.itemguard.PluginManifestContractTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.011 s -- in com.itemguard.PluginManifestContractTest
+[INFO] Running com.itemguard.reclaim.ExternalPresenceProbeFactoryTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.018 s -- in com.itemguard.reclaim.ExternalPresenceProbeFactoryTest
+[INFO] Running com.itemguard.reclaim.IdentityPresenceScannerTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in com.itemguard.reclaim.IdentityPresenceScannerTest
+[INFO] Running com.itemguard.reclaim.ReclaimCapabilityGateTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.itemguard.reclaim.ReclaimCapabilityGateTest
+[INFO] Running com.itemguard.reclaim.ReclaimClaimServiceTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in com.itemguard.reclaim.ReclaimClaimServiceTest
+[INFO] Running com.itemguard.reclaim.ReclaimPreflightServiceTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.017 s -- in com.itemguard.reclaim.ReclaimPreflightServiceTest
+[INFO] Running com.itemguard.reclaim.ReclaimPreparationServiceTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in com.itemguard.reclaim.ReclaimPreparationServiceTest
+[INFO] Running com.itemguard.scan.BoundedSlotMutatorTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.itemguard.scan.BoundedSlotMutatorTest
+[INFO] Running com.itemguard.search.FindItemServiceTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in com.itemguard.search.FindItemServiceTest
+[INFO] Running com.itemguard.search.SearchDurationParserTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.itemguard.search.SearchDurationParserTest
+[INFO] Running com.itemguard.snapshot.ItemSnapshotCodecTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.itemguard.snapshot.ItemSnapshotCodecTest
+[INFO] Running com.itemguard.SqliteAvailabilityTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in com.itemguard.SqliteAvailabilityTest
+[INFO] Running com.itemguard.tasks.InventoryScanSchedulerTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.itemguard.tasks.InventoryScanSchedulerTest
+[INFO] Running com.itemguard.tasks.InventoryScanTaskContractTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in com.itemguard.tasks.InventoryScanTaskContractTest
+[INFO] Running com.itemguard.tasks.ObservationEpochScannerTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.010 s -- in com.itemguard.tasks.ObservationEpochScannerTest
+[INFO] Running com.itemguard.tracking.AsyncTagPublicationCoordinatorTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.017 s -- in com.itemguard.tracking.AsyncTagPublicationCoordinatorTest
+[INFO] Running com.itemguard.tracking.CraftOutputPolicyTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.itemguard.tracking.CraftOutputPolicyTest
+[INFO] Running com.itemguard.tracking.CraftOutputWiringContractTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.itemguard.tracking.CraftOutputWiringContractTest
+[INFO] Running com.itemguard.tracking.DoubleChestPhysicalSourceWiringContractTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.itemguard.tracking.DoubleChestPhysicalSourceWiringContractTest
+[INFO] Running com.itemguard.tracking.DoubleChestSlotPolicyTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in com.itemguard.tracking.DoubleChestSlotPolicyTest
+[INFO] Running com.itemguard.tracking.EntityPublicationLifecyclePolicyTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.itemguard.tracking.EntityPublicationLifecyclePolicyTest
+[INFO] Running com.itemguard.tracking.GroundItemMergePolicyTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in com.itemguard.tracking.GroundItemMergePolicyTest
+[INFO] Running com.itemguard.tracking.GroundItemMergeWiringContractTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in com.itemguard.tracking.GroundItemMergeWiringContractTest
+[INFO] Running com.itemguard.tracking.HopperTransferPolicyTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.007 s -- in com.itemguard.tracking.HopperTransferPolicyTest
+[INFO] Running com.itemguard.tracking.HopperTransferWiringContractTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.itemguard.tracking.HopperTransferWiringContractTest
+[INFO] Running com.itemguard.tracking.IdentityReadinessCoordinatorTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.014 s -- in com.itemguard.tracking.IdentityReadinessCoordinatorTest
+[INFO] Running com.itemguard.tracking.InventoryClickPhysicalSourcePolicyTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.itemguard.tracking.InventoryClickPhysicalSourcePolicyTest
+[INFO] Running com.itemguard.tracking.InventoryPhysicalSourcePolicyTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.itemguard.tracking.InventoryPhysicalSourcePolicyTest
+[INFO] Running com.itemguard.tracking.ItemIdentityEligibilityPolicyTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in com.itemguard.tracking.ItemIdentityEligibilityPolicyTest
+[INFO] Running com.itemguard.tracking.StackableIdentityWiringContractTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.itemguard.tracking.StackableIdentityWiringContractTest
+[INFO] Running com.itemguard.tracking.TagPhysicalSourceKeyTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in com.itemguard.tracking.TagPhysicalSourceKeyTest
+[INFO] Running com.itemguard.tracking.TagPublicationCollisionRetryTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.itemguard.tracking.TagPublicationCollisionRetryTest
+[INFO] Running com.itemguard.tracking.TagPublicationPolicyTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.itemguard.tracking.TagPublicationPolicyTest
+[INFO] Running com.itemguard.tracking.TagReconciliationReceiptTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in com.itemguard.tracking.TagReconciliationReceiptTest
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 349, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ ItemGuard ---
+[INFO] Copying 5 resources from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.13.0:compile (default-compile) @ ItemGuard ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ ItemGuard ---
+[INFO] skip non existing resourceDirectory E:\AI.WORK\ItemGuard\src\test\resources
+[INFO] 
+[INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ ItemGuard ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 99 source files with javac [debug release 21] to target\test-classes
+[INFO] Annotation processing is enabled because one or more processors were found
+  on the class path. A future release of javac may disable annotation processing
+  unless at least one processor is specified by name (-processor), or a search
+  path is specified (--processor-path, --processor-module-path), or annotation
+  processing is enabled explicitly (-proc:only, -proc:full).
+  Use -Xlint:-options to suppress this message.
+  Use -proc:none to disable annotation processing.
+[WARNING] /E:/AI.WORK/ItemGuard/src/test/java/com/itemguard/catalog/CatalogUiLifecycleTest.java:[48,44] PlayerQuitEvent(org.bukkit.entity.Player,net.kyori.adventure.text.Component) in org.bukkit.event.player.PlayerQuitEvent has been deprecated and marked for removal
+[INFO] /E:/AI.WORK/ItemGuard/src/test/java/com/itemguard/catalog/CatalogUiLifecycleTest.java: E:\AI.WORK\ItemGuard\src\test\java\com\itemguard\catalog\CatalogUiLifecycleTest.java uses or overrides a deprecated API.
+[INFO] /E:/AI.WORK/ItemGuard/src/test/java/com/itemguard/catalog/CatalogUiLifecycleTest.java: Recompile with -Xlint:deprecation for details.
+[INFO] 
+[INFO] --- surefire:3.5.2:test (default-test) @ ItemGuard ---
+[INFO] Skipping execution of surefire because it has already been run for this configuration
+[INFO] 
+[INFO] --- jar:3.4.1:jar (default-jar) @ ItemGuard ---
+[INFO] Building jar: E:\AI.WORK\ItemGuard\target\ItemGuard-1.0.0.jar
+[INFO] 
+[INFO] --- shade:3.6.2:shade (default) @ ItemGuard ---
+[WARNING] ItemGuard-1.0.0.jar, sqlite-jdbc-3.53.2.1.jar define 1 overlapping resource: 
+[WARNING]   - META-INF/MANIFEST.MF
+[WARNING] maven-shade-plugin has detected that some files are
+[WARNING] present in two or more JARs. When this happens, only one
+[WARNING] single version of the file is copied to the uber jar.
+[WARNING] Usually this is not harmful and you can skip these warnings,
+[WARNING] otherwise try to manually exclude artifacts based on
+[WARNING] mvn dependency:tree -Ddetail=true and the above output.
+[WARNING] See https://maven.apache.org/plugins/maven-shade-plugin/
+[INFO] Replacing original artifact with shaded artifact.
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  31.037 s
+[INFO] Finished at: 2026-09-09T13:33:43+07:00
+[INFO] ------------------------------------------------------------------------

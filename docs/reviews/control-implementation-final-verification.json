@@ -1,0 +1,87 @@
+{
+  "scope": "pure offline only; not transport/guardian/Paper/release verification",
+  "command": "bash tools/execution-authority/build/offline-test.sh && git diff --check",
+  "cwd": "E:/AI.WORK/ItemGuard/",
+  "exit_code": 0,
+  "source_unchanged_during_run": true,
+  "source_sha256": {
+    "tools/execution-authority/build/codec-build.sh": "200cc11c71f0d8d78494bb9a7bb20e9f4f0d6719105be8eabec00f1efc339b2e",
+    "tools/execution-authority/build/codec-test.sh": "d1bef670706af15665d020691cef935ecef7530da5ad5bb312b8f47316f6017a",
+    "tools/execution-authority/build/control-test.sh": "a062b32ca42976b572fa6246f22767520687e42a998676dfffe813aa61bd24d0",
+    "tools/execution-authority/build/lifecycle-test.sh": "45722667786b3e6de26e88de27b4da7c28be488803d8163e3dbccd71260124dc",
+    "tools/execution-authority/build/offline-test.sh": "b697f40f57c797f0798cfadac4526838b67a3191e2ab66463d6ce0f579d336e8",
+    "tools/execution-authority/control/ControlCompositionTests.cs": "82438c94d2797504e0e4fefc66ca9d0436c99f329d4ded081d809c11ffead7d8",
+    "tools/execution-authority/control/ControlFrameBoundsTests.cs": "d7857e9964093d5c20791c62b27b75eb3d9645bf360eff48cdc803eff54cf6d3",
+    "tools/execution-authority/control/ControlFrameReader.cs": "efd76e9e488551af0d5e911b5a09ecc80e2c2e7698b893d126aabe39aeba6032",
+    "tools/execution-authority/control/ControlFrameReaderTests.cs": "820078ca1d5a9718f38fb7d36995c59a4c4d541a49d3ff0662e668ad600e0e3b",
+    "tools/execution-authority/control/ControlSession.cs": "7bff46e9c428a8dbcb07c34c41a87671d72e5fb5f78ab9876080987b68258e22",
+    "tools/execution-authority/control/ControlSessionTests.cs": "46755523cb096494f07a3028f9b149b65346f5fe335eb6057f9b7b6c16e4c685",
+    "tools/execution-authority/guardian/CanonicalJson.cs": "6ec56107673903083bfe4812ae233436be3b71ece2964394e2ce38cb2025f2ed",
+    "tools/execution-authority/guardian/CanonicalString.cs": "1341268bca440e475c72c52e4d953fdf2de1c82b5a6446bedfbb4a9510ff230b",
+    "tools/execution-authority/lifecycle/AbsentPaperSummary.cs": "33d1d2d271e3a73454754e1ef5416ed0bf1e1c7ab43e4f0328bc4ca2d4652634",
+    "tools/execution-authority/lifecycle/AbsentPaperSummaryTests.cs": "0a21d1d56b14a194c83d4cdb67d29af3fc30e7084927500dfcd655bfc1ed64b4",
+    "tools/execution-authority/lifecycle/HistoryCompleteness.cs": "1259343287baf0c497be9a6a647a14913c9a5f753f809eb7b1040a106fe10628",
+    "tools/execution-authority/lifecycle/HistoryCompletenessTests.cs": "12ad59c9a466f78711c37344d986fae5e2f334b87e9620c5db850e21df4bc6f3",
+    "tools/execution-authority/lifecycle/PaperAxisVectorTests.cs": "f50881144105134dbf295acc500a0d5ed85067118307973776e1468502ffab37",
+    "tools/execution-authority/lifecycle/PaperBranchTests.cs": "6809da7485d8a505e76b0859a90eba41deadf693e39cc2a735ce5d4057f3ceee",
+    "tools/execution-authority/lifecycle/PaperLifecycle.cs": "dd327043d0b7b71d397cb53c0ce6405c806d7aebbfdd8f2400b6fb7c3caf04b7",
+    "tools/execution-authority/lifecycle/PaperLifecycleTests.cs": "192be02f7466759873f3a3c164a12fc818f68f58645fa154b6acea065b8cca33",
+    "tools/execution-authority/lifecycle/PaperPrefixTests.cs": "15618ee4b2b8c9710902e6ea3e43d0638e0889872e329a97c95944f58f0dae93",
+    "tools/execution-authority/recovery/CanonicalDecoder.cs": "1c66e51d96b1e32e8b80c438afac68567f9a8bd9678a8f0cfca64ff302e4c55b",
+    "tools/execution-authority/recovery/CanonicalReEncoder.cs": "baf9be3555bee65887896ad4618f43b37fd0d6eb401ee47808943a25cb5ea0ad",
+    "tools/execution-authority/tests/CodecEncoderGuardTests.cs": "cd9be17b1d8435329c9055bb113d50860a1d955adc3a0cdab17efcebf17e943c",
+    "tools/execution-authority/tests/CodecObjectTests.cs": "9167f062bafe740e2b49a58b39f3bc7af4dbf86e88f0e4d710a045fe1e047a8a",
+    "tools/execution-authority/tests/CodecScalarTests.cs": "98fbd9bd4d0dd58e038822472f038d95857ce66de7f73f0a850a810e386675e3",
+    "tools/execution-authority/tests/CodecStringTests.cs": "f90fe7600f2a33e76331e5df1d83741b10c2fff2ae0971581bdfccd8917f39e1",
+    "tools/execution-authority/tests/RecordHashTests.cs": "9f2c665be1eaf101e36dd28863747cf2ef35d54d93b1bcef84913cb56d7c6f6d",
+    "tools/execution-authority/tests/RecoveryDecoderTests.cs": "d53e819854a2a1984f5756d9df3a070a55befc6d329a9e353db7dd08c99db477"
+  },
+  "summary": [
+    "PASS 6 encoding vectors + 3 invalid-surrogate cases",
+    "PASS CodecScalarTests: 9 vectors + 8 rejection cases + root-domain guard",
+    "PASS CodecObjectTests: 11 ordering/nesting vectors + 10 bound cases",
+    "PASS CodecEncoderGuardTests: 3 duplicate cases + 3 frame-cap cases + parity",
+    "PASS RecoveryDecoderTests: 12 accept + 6 value + 60 reject + 8 bound cases",
+    "PASS RecordHashTests: 7 pre-image vectors + shape + 11 journal-line cases",
+    "PASS 4 absent-Paper summary cases",
+    "history combinations=128 failures=0",
+    "PASS spawn/created axes",
+    "branch failures=0",
+    "PASS prefix/event matrix cases=242",
+    "AXIS_VECTORS cases=22 failures=0",
+    "CONTROL cases=76 failures=0",
+    "PASS one-byte fragmented frame and immutable body",
+    "FRAME_BOUNDS cases=53 failures=0",
+    "COMPOSITION cases=9 failures=0 (in-memory only)"
+  ],
+  "stdout": "OUT=C:/Users/thanh/AppData/Local/Temp/itemguard-codec-bin\nPASS 6 encoding vectors + 3 invalid-surrogate cases\r\nPASS CodecScalarTests: 9 vectors + 8 rejection cases + root-domain guard\r\nPASS CodecObjectTests: 11 ordering/nesting vectors + 10 bound cases\r\nPASS CodecEncoderGuardTests: 3 duplicate cases + 3 frame-cap cases + parity\r\nPASS RecoveryDecoderTests: 12 accept + 6 value + 60 reject + 8 bound cases\r\nPASS RecordHashTests: 7 pre-image vectors + shape + 11 journal-line cases\r\nOUT=C:/Users/thanh/AppData/Local/Temp/itemguard-codec-bin\nPASS 4 absent-Paper summary cases\r\nhistory combinations=128 failures=0\r\nPASS spawn/created axes\r\nbranch failures=0\r\nPASS prefix/event matrix cases=242\r\nAXIS_VECTORS cases=22 failures=0\r\nOUT=C:/Users/thanh/AppData/Local/Temp/itemguard-codec-bin\nPASS request round trip and release gate\r\nPASS close EOF before exit\r\nPASS close exit before EOF\r\nPASS pending operation blocks close\r\nPASS silent exit without protocol\r\nPASS ACK write failure after notifications\r\nPASS unknown role\r\nPASS unknown request kind\r\nPASS duplicate request ID\r\nPASS decreasing request ID\r\nPASS invalid hash null\r\nPASS invalid hash 0\r\nPASS invalid hash 64\r\nPASS invalid hash 64\r\nPASS invalid hash 63\r\nPASS invalid hash 65\r\nPASS ACK callback after EOF/exit\r\nPASS wrong ACK ID\r\nPASS wrong ACK hash\r\nPASS mirror failure 0\r\nPASS mirror failure 1\r\nPASS mirror failure 2\r\nPASS fault terminal at stage 0\r\nPASS reject complete at stage 0\r\nPASS reject dispatch at stage 0\r\nPASS reject commit at stage 0\r\nPASS reject ack at stage 0\r\nPASS reject eof at stage 0\r\nPASS reject exit at stage 0\r\nPASS fault terminal at stage 1\r\nPASS reject begin at stage 1\r\nPASS reject dispatch at stage 1\r\nPASS reject commit at stage 1\r\nPASS reject ack at stage 1\r\nPASS reject eof at stage 1\r\nPASS reject exit at stage 1\r\nPASS fault terminal at stage 2\r\nPASS reject begin at stage 2\r\nPASS reject complete at stage 2\r\nPASS reject commit at stage 2\r\nPASS reject ack at stage 2\r\nPASS reject eof at stage 2\r\nPASS reject exit at stage 2\r\nPASS fault terminal at stage 3\r\nPASS reject begin at stage 3\r\nPASS reject complete at stage 3\r\nPASS reject dispatch at stage 3\r\nPASS reject ack at stage 3\r\nPASS reject eof at stage 3\r\nPASS reject exit at stage 3\r\nPASS fault terminal at stage 4\r\nPASS reject begin at stage 4\r\nPASS reject complete at stage 4\r\nPASS reject dispatch at stage 4\r\nPASS reject commit at stage 4\r\nPASS fault terminal at stage 5\r\nPASS reject begin at stage 5\r\nPASS reject complete at stage 5\r\nPASS reject dispatch at stage 5\r\nPASS reject commit at stage 5\r\nPASS reject ack at stage 5\r\nPASS fault terminal at stage 6\r\nPASS reject begin at stage 6\r\nPASS reject complete at stage 6\r\nPASS reject dispatch at stage 6\r\nPASS reject commit at stage 6\r\nPASS reject ack at stage 6\r\nPASS reject eof at stage 6\r\nPASS fault terminal at stage 7\r\nPASS reject begin at stage 7\r\nPASS reject complete at stage 7\r\nPASS reject dispatch at stage 7\r\nPASS reject commit at stage 7\r\nPASS reject ack at stage 7\r\nPASS reject eof at stage 7\r\nPASS reject exit at stage 7\r\nCONTROL cases=76 failures=0\r\nPASS one-byte fragmented frame and immutable body\r\nFRAME_BOUNDS cases=53 failures=0\r\nCOMPOSITION cases=9 failures=0 (in-memory only)",
+  "bounded_reviews": [
+    {
+      "scope": "policy",
+      "verdict": "PASS_FOR_OFFLINE_POLICY",
+      "path": "E:/AI.WORK/ItemGuard/docs/reviews/control-implementation-policy-opus-raw.json",
+      "models": [
+        "claude-haiku-4-5-20251001",
+        "claude-opus-5"
+      ]
+    },
+    {
+      "scope": "frame",
+      "verdict": "PASS_FOR_OFFLINE_FRAME_READER",
+      "path": "E:/AI.WORK/ItemGuard/docs/reviews/control-implementation-frame-opus-raw.json",
+      "models": [
+        "claude-haiku-4-5-20251001",
+        "claude-opus-5"
+      ]
+    },
+    {
+      "scope": "reducer",
+      "verdict": "PASS_FOR_OFFLINE_REDUCER",
+      "path": "E:/AI.WORK/ItemGuard/docs/reviews/control-implementation-reducer-opus-raw.json",
+      "models": [
+        "claude-haiku-4-5-20251001",
+        "claude-opus-5"
+      ]
+    }
+  ]
+}

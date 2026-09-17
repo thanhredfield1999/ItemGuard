@@ -1,0 +1,213 @@
+Bounded followup to prior PASS_FOR_OFFLINE_CANDIDATE. Review only current hash-before-sinks refactor, comments, duplicate/prefix/cap tests and disposition. No broad re-review, no tools, no new host/runtime approval. Return PASS_FOR_OFFLINE_CANDIDATE or BLOCK with concrete evidence, <=400 Vietnamese words. Parent full offline test command exit0 and 60 pure checks; do not attest execution.
+
+FILE docs/reviews/dual-commit-review-disposition.md
+# Dual-commit core review disposition
+
+Initial Opus5 review `dual-commit-review.json`: PASS_FOR_OFFLINE_CANDIDATE, input `e7df5eef5d51441d9a85cf17d853c0da449992a0ead1cf7c31679fa432afd719`. This is no runtime/host/durability gate.
+
+1+3 CONFIRMED failure diagnostics insufficient for future host. Kept pure boolean contract: false ALWAYS prohibits ACK and never proves zero writes; host closes job on any failure and recovery derives state from both exact mirrors, not this volatile flag. Source comment now explicit. No invented enum promoted to disk truth. Typed host diagnostics/errors before native sink integration remain OPEN.
+2 CONFIRMED needless allocation/hash window after both flushes. GREEN refactor precomputes SHA before sink calls; only published count/hash assignment follows final flush. Not a newly reproduced FIPS/OOM defect; no claim OS failure injection.
+4 CONFIRMED masked duplicate coverage: duplicate now maxRecords=2, limit stays1; passes existing sequence guard. Green-first coverage, no behavior patch.
+5 CONFIRMED coverage gap: commit0 succeeds, commit1 last flush throws, count/hash preserved, Failed=true. New green-first coverage.
+6 CONFIRMED contract note duplicated onto code: state serial-owner or after operation join only, not cross-thread monitoring.
+7 INCONCLUSIVE flaky claim: 150ms negative wait may let a broken implementation slip through under starvation, but cannot fail correctly serial code solely from timeout; final a/b+count ensure both complete, failure timeouts3s are test bounds. Observed behavioral concurrency RED then GREEN preserved, not runtime stress proof.
+8 Added independent cap equality check. Existing CommonJournalChain byte-pair integration runs separately built recovery assembly; line bounds/frozen codec suites remain part of full offline command. No shared production codec assembly introduced.
+
+Final 60 dual checks + full offline rerun required after hash refactor. No native handle, filesystem journal, ACL/token/job, runtime namespace, receipt or Paper added. CanonicalJson.EncodeJournalLine still assumes stable caller-owned record; full event/trusted-genesis schema upstream of core still OPEN. Core is unused by runtime.
+
+
+FILE tools/execution-authority/guardian/DualJournalCommitCore.cs
+using System;
+using System.Collections;
+namespace ItemGuard.Execution {
+    // Pure commit policy only; no disk, native handle, schema or runtime authority.
+    // Caller owns a stable record tree until return. Sinks are trusted synchronous adapters.
+    // false forbids ACK; it does NOT prove no bytes reached either mirror. Recovery reads both.
+    // A sink may block: watchdog/job-close authority must remain independent of this lock.
+    public sealed class DualJournalCommitCore {
+        readonly Func<byte[], int> appendFirst, appendSecond;
+        readonly Action flushFirst, flushSecond;
+        readonly int maximumRecords;
+        readonly object gate = new object();
+        bool committing;
+        // Inspect state only on the serial owner or after joining the commit operation.
+        public bool Failed { get; private set; }
+        public int CommittedCount { get; private set; }
+        public string LastCommittedLineSha256 { get; private set; }
+        public DualJournalCommitCore(Func<byte[], int> appendFirst, Action flushFirst,
+            Func<byte[], int> appendSecond, Action flushSecond, int maximumRecords) {
+            if (appendFirst == null) throw new ArgumentNullException("appendFirst");
+            if (flushFirst == null) throw new ArgumentNullException("flushFirst");
+            if (appendSecond == null) throw new ArgumentNullException("appendSecond");
+            if (flushSecond == null) throw new ArgumentNullException("flushSecond");
+            this.appendFirst = appendFirst; this.flushFirst = flushFirst;
+            this.appendSecond = appendSecond; this.flushSecond = flushSecond;
+            if (maximumRecords <= 0) throw new ArgumentOutOfRangeException("maximumRecords");
+            this.maximumRecords = maximumRecords;
+        }
+        public bool TryCommit(IDictionary record) {
+            lock (gate) { return CommitLocked(record); }
+        }
+        bool CommitLocked(IDictionary record) {
+            if (Failed) return false;
+            if (committing) return Reject();
+            committing = true;
+            try {
+                if (record == null || CommittedCount >= maximumRecords
+                    || !(record["seq"] is ulong) || (ulong)record["seq"] != (ulong)CommittedCount
+                    || !(record["previousRecordSha256"] is string)
+                    || (string)record["previousRecordSha256"] != (LastCommittedLineSha256 ?? new string('0', 64))) return Reject();
+                byte[] line = CanonicalJson.EncodeJournalLine(record);
+                string lineHash;
+                using (var sha = System.Security.Cryptography.SHA256.Create()) {
+                    var text = new System.Text.StringBuilder(64);
+                    foreach (byte b in sha.ComputeHash(line)) text.Append(b.ToString("x2"));
+                    lineHash = text.ToString();
+                }
+                if (appendFirst((byte[])line.Clone()) != line.Length || Failed) return Reject();
+                flushFirst();
+                if (Failed) return false;
+                if (appendSecond((byte[])line.Clone()) != line.Length || Failed) return Reject();
+                flushSecond();
+                if (Failed) return false;
+                LastCommittedLineSha256 = lineHash;
+                CommittedCount++;
+                return true;
+            } catch (Exception) {
+                return Reject();
+            } finally {
+                committing = false;
+            }
+        }
+        bool Reject() { Failed = true; return false; }
+    }
+}
+
+
+FILE tools/execution-authority/tests/DualJournalCommitTests.cs
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Text;
+using ItemGuard.Execution;
+
+class DualJournalCommitTests {
+    static int checks;
+    static void Check(bool ok, string label) { checks++; if (!ok) throw new Exception(label); }
+    static IDictionary Record(ulong seq, string previous) {
+        var body = new Hashtable(); body["seq"] = seq; body["previousRecordSha256"] = previous;
+        body["event"] = "TEST_ONLY";
+        body["recordSha256"] = CanonicalJson.ComputeRecordSha256(body);
+        return body;
+    }
+    static string Hash(byte[] bytes) {
+        using (var hash = System.Security.Cryptography.SHA256.Create()) {
+            var text = new StringBuilder(); foreach (byte b in hash.ComputeHash(bytes)) text.Append(b.ToString("x2"));
+            return text.ToString();
+        }
+    }
+    static int Main() {
+        try {
+            var order = new List<string>(); byte[] first = null, second = null;
+            var writer = new DualJournalCommitCore(
+                bytes => { order.Add("E.write"); first = bytes; return bytes.Length; }, () => order.Add("E.flush"),
+                bytes => { order.Add("C.write"); second = bytes; return bytes.Length; }, () => order.Add("C.flush"), 2);
+            var record = Record(0, new string('0', 64));
+            Check(writer.TryCommit(record), "both append and flush must permit commit");
+            Check(String.Join(",", order) == "E.write,E.flush,C.write,C.flush", "exact dual commit order");
+            Check(Convert.ToBase64String(first) == Convert.ToBase64String(second), "same exact bytes");
+            Check(!Object.ReferenceEquals(first, second), "sinks cannot alias line arrays");
+            Check(writer.CommittedCount == 1 && !writer.Failed, "commit count");
+            Check(writer.LastCommittedLineSha256 == Hash(first), "hash complete LF-terminated line");
+            var recovery = new ItemGuard.Recovery.CommonJournalChain(2);
+            Check(recovery.AppendPair(first, second), "independent recovery accepts committed bytes");
+            Check(writer.TryCommit(Record(1, writer.LastCommittedLineSha256)), "second chained commit");
+            Check(writer.CommittedCount == 2, "second count");
+            Check(recovery.AppendPair(first, second) && recovery.CommonRecordCount == 2, "independent recovery accepts chained bytes");
+            for (int point = 0; point < 6; point++) {
+                int failAt = point, calls = 0;
+                var broken = new DualJournalCommitCore(
+                    bytes => { calls++; if (failAt == 0) throw new System.IO.IOException("E.write"); return failAt == 4 ? bytes.Length - 1 : bytes.Length; },
+                    () => { calls++; if (failAt == 1) throw new System.IO.IOException("E.flush"); },
+                    bytes => { calls++; if (failAt == 2) throw new System.IO.IOException("C.write"); return failAt == 5 ? bytes.Length - 1 : bytes.Length; },
+                    () => { calls++; if (failAt == 3) throw new System.IO.IOException("C.flush"); }, 2);
+                bool result = true;
+                try { result = broken.TryCommit(Record(0, new string('0', 64))); }
+                catch (Exception) { Check(false, "sink failure must poison without throwing"); }
+                Check(!result && broken.Failed && broken.CommittedCount == 0, "no commit on partial mirror");
+                int stoppedAt = calls;
+                Check(!broken.TryCommit(Record(0, new string('0', 64))) && calls == stoppedAt, "poison prevents all retries");
+                Check(calls == (point == 4 ? 1 : point == 5 ? 3 : point + 1), "stop at exact failed stage");
+            }
+            foreach (string defect in new string[]{"seq", "previous", "hash", "missing", "null", "duplicate", "limit"}) {
+                int writes = 0;
+                var invalid = new DualJournalCommitCore(bytes => { writes++; return bytes.Length; }, () => {}, bytes => { writes++; return bytes.Length; }, () => {}, defect == "duplicate" ? 2 : 1);
+                var body = Record(0, new string('0', 64));
+                if (defect == "seq") body["seq"] = 1UL;
+                if (defect == "previous") body["previousRecordSha256"] = new string('1', 64);
+                if (defect == "missing") body.Remove("seq");
+                if (defect != "hash") body["recordSha256"] = CanonicalJson.ComputeRecordSha256(body);
+                else body["recordSha256"] = new string('f', 64);
+                if (defect == "duplicate" || defect == "limit") {
+                    Check(invalid.TryCommit(body), "first commit before invalid suffix");
+                    if (defect == "limit") body = Record(1, invalid.LastCommittedLineSha256);
+                }
+                int before = writes;
+                Check(!invalid.TryCommit(defect == "null" ? null : body), "invalid chain rejected before append: " + defect);
+                Check(invalid.Failed && writes == before, "invalid chain terminal with no writes");
+            }
+            int reentrantCalls = 0; bool inside = false, nested = true;
+            DualJournalCommitCore reentrant = null;
+            reentrant = new DualJournalCommitCore(bytes => {
+                reentrantCalls++;
+                if (!inside) { inside = true; nested = reentrant.TryCommit(Record(0, new string('0', 64))); }
+                return bytes.Length;
+            }, () => { reentrantCalls++; }, bytes => { reentrantCalls++; return bytes.Length; }, () => { reentrantCalls++; }, 2);
+            Check(!reentrant.TryCommit(Record(0, new string('0', 64))) && !nested, "reentrant callback must fail both commits");
+            Check(reentrant.Failed && reentrant.CommittedCount == 0 && reentrantCalls == 1, "reentrant call poisons before next sink action");
+            var entered = new System.Threading.ManualResetEventSlim(false);
+            var release = new System.Threading.ManualResetEventSlim(false);
+            var started = new System.Threading.ManualResetEventSlim(false);
+            var finished = new System.Threading.ManualResetEventSlim(false);
+            int serialWrites = 0; bool a = false, b = false;
+            var serial = new DualJournalCommitCore(bytes => {
+                if (System.Threading.Interlocked.Increment(ref serialWrites) == 1) {
+                    entered.Set(); if (!release.Wait(3000)) throw new Exception("test release timeout");
+                }
+                return bytes.Length;
+            }, () => {}, bytes => bytes.Length, () => {}, 2);
+            var record0 = Record(0, new string('0', 64));
+            var record1 = Record(1, Hash(CanonicalJson.EncodeJournalLine(record0)));
+            var threadA = new System.Threading.Thread(() => { a = serial.TryCommit(record0); });
+            var threadB = new System.Threading.Thread(() => { started.Set(); b = serial.TryCommit(record1); finished.Set(); });
+            threadA.Start(); Check(entered.Wait(3000), "first serial sink entered"); threadB.Start();
+            Check(started.Wait(3000), "second serial request started");
+            bool early = finished.Wait(150);
+            release.Set(); Check(threadA.Join(3000) && threadB.Join(3000), "serial threads finish");
+            Check(!early && a && b && serial.CommittedCount == 2 && !serial.Failed, "concurrent commits must serialize, not poison");
+            byte[] clean = CanonicalJson.EncodeJournalLine(Record(0, new string('0', 64)));
+            byte[] sinkTwo = null;
+            var mutation = new DualJournalCommitCore(bytes => { bytes[0] ^= 1; return bytes.Length; }, () => {},
+                bytes => { sinkTwo = bytes; return bytes.Length; }, () => {}, 1);
+            Check(mutation.TryCommit(Record(0, new string('0', 64))), "sink return contract only, no durability attestation");
+            Check(Convert.ToBase64String(clean) == Convert.ToBase64String(sinkTwo) && mutation.LastCommittedLineSha256 == Hash(clean), "first sink cannot mutate second bytes or retained hash");
+            for (int missing = 0; missing < 4; missing++) {
+                bool rejected = false;
+                Func<byte[], int> append = bytes => bytes.Length; Action flush = () => {};
+                try { new DualJournalCommitCore(missing == 0 ? null : append, missing == 1 ? null : flush,
+                    missing == 2 ? null : append, missing == 3 ? null : flush, 1); }
+                catch (ArgumentNullException) { rejected = true; }
+                Check(rejected, "missing sink must reject at construction");
+            }
+            bool failNext = false;
+            var suffix = new DualJournalCommitCore(bytes => bytes.Length, () => {}, bytes => bytes.Length,
+                () => { if (failNext) throw new System.IO.IOException("last flush"); }, 3);
+            Check(suffix.TryCommit(Record(0, new string('0', 64))), "prefix committed before failed suffix");
+            string prefixHash = suffix.LastCommittedLineSha256; failNext = true;
+            Check(!suffix.TryCommit(Record(1, prefixHash)), "suffix flush failure returns no new commit");
+            Check(suffix.Failed && suffix.CommittedCount == 1 && suffix.LastCommittedLineSha256 == prefixHash, "failed suffix preserves committed prefix state");
+            Check(CanonicalJson.MaxDocumentBytes == ItemGuard.Recovery.CanonicalDecoder.MaxDocumentBytes, "independent codec line caps match");
+            Console.WriteLine("DUAL_COMMIT checks=" + checks + " failures=0 (pure sinks only)"); return 0;
+        } catch (Exception ex) { Console.WriteLine("FAIL " + ex.Message); return 1; }
+    }
+}

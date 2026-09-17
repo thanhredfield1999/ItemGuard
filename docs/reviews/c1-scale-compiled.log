@@ -1,0 +1,20 @@
+SYNTHETIC_ONLY dir=C:\Users\thanh\AppData\Local\Temp\itemguard-c1-4193620391380697359
+run=0 migration_ms=1370.645 progress_checks=12000 bytes_before=41435136 bytes_after=68591616
+run=0 plan=SEARCH item_history USING INDEX idx_history_identity_time (code=? AND item_uuid=?) history20_ms=[5.2888, 1.084, 0.9019, 0.9197, 0.6965, 0.6316, 0.5169, 0.5452, 0.4994, 0.5358, 0.5272, 0.4581, 0.6516, 0.5459, 0.7111, 0.7405, 0.5866, 0.5639, 0.6056, 0.7911]
+run=0 filter=Blade rows=36 ms=6.0763
+run=0 filter=not-present error=[SQLITE_INTERRUPT] Operation terminated by sqlite3_interrupt() (interrupted) ms=245.0871
+run=0 mixed_30_writes_30_reads_ms=413.033
+run=0 retention_deleted=19999 ms=156.3318
+run=1 migration_ms=1307.587 progress_checks=12000 bytes_before=41435136 bytes_after=68591616
+run=1 plan=SEARCH item_history USING INDEX idx_history_identity_time (code=? AND item_uuid=?) history20_ms=[2.4041, 0.5501, 0.54, 0.5206, 0.4192, 0.528, 0.5211, 0.5452, 0.5073, 0.6329, 0.502, 0.4904, 0.4782, 0.453, 0.4501, 0.4438, 0.7098, 0.5631, 0.4692, 0.3921]
+run=1 filter=Blade rows=36 ms=0.43
+run=1 filter=not-present error=[SQLITE_INTERRUPT] Operation terminated by sqlite3_interrupt() (interrupted) ms=250.6058
+run=1 mixed_30_writes_30_reads_ms=436.2243
+run=1 retention_deleted=19999 ms=167.5311
+run=2 migration_ms=1344.508 progress_checks=12000 bytes_before=41435136 bytes_after=68591616
+run=2 plan=SEARCH item_history USING INDEX idx_history_identity_time (code=? AND item_uuid=?) history20_ms=[2.0085, 0.4638, 0.5831, 0.5283, 0.566, 0.444, 0.4423, 0.4457, 0.433, 0.7624, 0.4324, 0.4829, 0.4633, 0.434, 0.4406, 0.5989, 0.8164, 0.5829, 0.5209, 0.509]
+run=2 filter=Blade rows=36 ms=0.4218
+run=2 filter=not-present error=[SQLITE_INTERRUPT] Operation terminated by sqlite3_interrupt() (interrupted) ms=250.7403
+run=2 mixed_30_writes_30_reads_ms=485.7092
+run=2 retention_deleted=19999 ms=159.5296
+PASS C1 JDBC migration/query/mixed workload; NOT Paper or production SLO

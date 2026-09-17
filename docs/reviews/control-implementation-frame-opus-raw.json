@@ -1,0 +1,80 @@
+{
+  "is_error": false,
+  "duration_api_ms": 48543,
+  "num_turns": 1,
+  "stop_reason": "end_turn",
+  "session_id": "cff095aa-a841-4ec2-9799-c8d89ea8e4e0",
+  "total_cost_usd": 0.1102715,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3466,
+    "cache_read_input_tokens": 3727,
+    "output_tokens": 2824,
+    "output_tokens_details": {
+      "thinking_tokens": 1705
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 3466,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 2824,
+        "cache_read_input_tokens": 3727,
+        "cache_creation_input_tokens": 3466,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 3466
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard"
+  },
+  "modelUsage": {
+    "claude-haiku-4-5-20251001": {
+      "inputTokens": 3073,
+      "outputTokens": 13,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "webSearchRequests": 0,
+      "costUSD": 0.003138,
+      "contextWindow": 200000,
+      "maxOutputTokens": 32000,
+      "canonicalModel": "claude-haiku-4-5",
+      "provider": "firstParty"
+    },
+    "claude-opus-5": {
+      "inputTokens": 2,
+      "outputTokens": 2824,
+      "cacheReadInputTokens": 3727,
+      "cacheCreationInputTokens": 3466,
+      "webSearchRequests": 0,
+      "costUSD": 0.10713349999999999,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 64000,
+      "canonicalModel": "claude-opus-5",
+      "provider": "firstParty"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "## Kết quả: PASS_FOR_OFFLINE_FRAME_READER\n\n**Phạm vi đã kiểm:** chỉ máy trạng thái thuần in-memory, đọc **một** frame; không xét JSON/schema, transport, deadline, hay hành vi OS.\n\n### Các thuộc tính an toàn xác nhận được\n\n- **Chặn trước khi cấp phát:** `length` được ghép từ 4 byte little-endian dưới dạng `uint` (dòng 19–20), kiểm `length == 0 || length > 65536` **trước** `new byte[...]` (dòng 22–23). Giá trị bit cao như `0x80000000` và `uint.MaxValue` rơi vào nhánh `> 65536`, không có tràn dấu; `(int)length` an toàn vì ≤ 65536. Giới hạn trên bao gồm 65536 đúng đặc tả 1..65536.\n- **Phân mảnh tùy ý:** vòng lặp theo từng byte (dòng 15–28) không giả định ranh giới chunk; header có thể tách 1 byte/lần, body cũng vậy. Không có đường nào đọc `body` khi còn `null`, vì `body` luôn được gán tại đúng thời điểm `headerCount` đạt 4, và nhánh lỗi `Reject()` thoát ngay.\n- **Kiểm tra khoảng đệm không tràn:** `offset > chunk.Length - count` (dòng 14) an toàn nhờ `count >= 0` đã được kiểm trước; `offset + count` trong vòng lặp không tràn vì đã bị chặn bởi `chunk.Length`.\n- **Byte thừa và EOF sớm:** byte dôi sau khi đầy body bị `Reject()` (dòng 26), cả cùng chunk lẫn chunk sau. EOF khi còn thiếu byte → `EndOfInput()` gọi `Reject()` (dòng 11).\n- **Sticky, không phục hồi:** `Failed` chỉ chuyển true, `Append` trả false ngay (dòng 13), và `Complete` yêu cầu `!Failed` nên `GetBody()` ném ngoại lệ (dòng 33). Không có API reset — phù hợp thiết kế một frame.\n- **Không rò rỉ tham chiếu:** `GetBody()` trả `Clone()`; sửa mảng trả về không đổi trạng thái nội bộ.\n\n### Ghi chú không chặn\n\n1. `EndOfInput()` có tác dụng phụ (đặt `Failed`) dù tên nghe như truy vấn — nên đổi tên hoặc ghi rõ trong tài liệu.\n2. Thiếu test cho `chunk == null` và cho `Append(..., count: 0)` sau khi frame đã hoàn tất (hiện trả `true`, không đổi trạng thái — đúng, nhưng nên khóa lại bằng test).\n3. Sao chép từng byte cho 64 KiB chậm hơn `Array.Copy`; chỉ là hiệu năng, không phải tính đúng đắn.\n\nKhông tìm được ví dụ đầu vào nào vượt qua bộ đọc mà lại sai đặc tả.",
+  "ttft_ms": 25690,
+  "ttft_stream_ms": 1937,
+  "time_to_request_ms": 64,
+  "type": "result",
+  "duration_ms": 47132,
+  "uuid": "a7872998-2210-47f0-8685-8c2cd6d79d4a"
+}

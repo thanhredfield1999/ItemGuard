@@ -1,0 +1,23 @@
+SYNTHETIC_ONLY dir=C:\Users\thanh\AppData\Local\Temp\itemguard-c1-8563495031681353982
+run=0 migration_ms=1424.936 progress_checks=12000 bytes_before=41435136 bytes_after=68591616
+run=0 plan=SEARCH item_history USING INDEX idx_history_identity_time (code=? AND item_uuid=?) history20_ms=[6.1008, 1.4857, 1.3353, 1.2618, 0.7287, 0.6761, 0.5065, 0.5248, 0.5077, 0.5697, 0.5131, 0.5295, 0.6464, 0.6869, 0.8576, 0.612, 0.6743, 0.6336, 0.5834, 0.5856]
+run=0 filter=Blade rows=36 ms=6.1674
+run=0 filter=not-present error=[SQLITE_INTERRUPT] Operation terminated by sqlite3_interrupt() (interrupted) ms=253.5495
+run=0 filter=RareSuffix error=[SQLITE_INTERRUPT] Operation terminated by sqlite3_interrupt() (interrupted) ms=250.6096
+run=0 mixed_30_writes_30_reads_ms=413.938
+run=0 retention_deleted=19999 ms=147.2636
+run=1 migration_ms=1398.300 progress_checks=12000 bytes_before=41435136 bytes_after=68591616
+run=1 plan=SEARCH item_history USING INDEX idx_history_identity_time (code=? AND item_uuid=?) history20_ms=[1.512, 0.4416, 0.3641, 0.3665, 0.3602, 0.3408, 0.3223, 0.3412, 0.3309, 0.3421, 0.3543, 0.3308, 0.4295, 0.4348, 0.4109, 0.4141, 0.4571, 0.5764, 0.4768, 0.3836]
+run=1 filter=Blade rows=36 ms=0.446
+run=1 filter=not-present error=[SQLITE_INTERRUPT] Operation terminated by sqlite3_interrupt() (interrupted) ms=225.8473
+run=1 filter=RareSuffix error=[SQLITE_INTERRUPT] Operation terminated by sqlite3_interrupt() (interrupted) ms=221.6846
+run=1 mixed_30_writes_30_reads_ms=515.9956
+run=1 retention_deleted=19999 ms=133.0127
+run=2 migration_ms=1508.307 progress_checks=12000 bytes_before=41435136 bytes_after=68591616
+run=2 plan=SEARCH item_history USING INDEX idx_history_identity_time (code=? AND item_uuid=?) history20_ms=[1.4137, 0.3704, 0.4667, 0.4201, 0.5654, 0.3692, 0.3601, 0.3399, 0.3333, 0.3583, 0.3405, 0.3283, 0.3253, 0.3384, 0.3302, 0.6424, 0.6455, 0.4278, 0.4126, 0.4071]
+run=2 filter=Blade rows=36 ms=0.3929
+run=2 filter=not-present error=[SQLITE_INTERRUPT] Operation terminated by sqlite3_interrupt() (interrupted) ms=226.3227
+run=2 filter=RareSuffix error=[SQLITE_INTERRUPT] Operation terminated by sqlite3_interrupt() (interrupted) ms=240.4334
+run=2 mixed_30_writes_30_reads_ms=397.841
+run=2 retention_deleted=19999 ms=133.1446
+PASS C1 JDBC migration/query/mixed workload; NOT Paper or production SLO

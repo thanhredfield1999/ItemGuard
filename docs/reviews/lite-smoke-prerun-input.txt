@@ -1,0 +1,337 @@
+Read-only independent pre-run review; no tools. User explicitly approved separate isolated localhost LITE smoke, not old naturalbreak guardian. One attempt contains2cleanservergenerations. Review supplied controller/helper/bot/verifier for actual safety blockers (wrong target, replay, cleanup, query timing). No production, test-only seeded items, no crash/AV assurance. Six UNIT parser/admission/real-child cleanup tests pass; helper compiled against Paper1.21.11. Return PASS_FOR_SCOPED_SMOKE or BLOCK with concrete corrections <=650 words. Do not broaden to production security or old guardian. Fixture staged but not attempted.
+
+FILE PROTOCOL.md
+# Isolated LITE smoke, separate from successor-35 guardian
+
+User explicitly selected a separate LITE isolated test, not waiting for the old guardian. Scope remains one new fixture, loopback only, new worlds/data, exact candidate SHA d86135e750b31e9271ab08256c8717e42d26c84f999ef15a2535f5dc769a0de8, Paper1.21.11/Java21. No production, no old attempt namespace/receipt, no AV changes and no crash/host-restart/guardian claims.
+
+One attempt contains two server generations separated by exactly one clean stop. No replay on failure. Startup, two offline local bot players, seeded disposable sword, native inventory tracking, staff/member commands, GUI click cancellation, deliberate physical duplicate warning and persistence after clean restart are the only product claims. Seed/clone is test input, not gameplay proof of natural item creation/destruction. No crafting, natural break, scale or visual acceptance claims.
+
+Stage: compile helper, validate exact hashes and free loopback port, write manifest. Run: exclusive immutable attempt lock, recheck hashes/port, start owned Java, wait bounded readiness; owned Node bots only after readiness. Capture stdout/stderr per generation, helpers emit assertions against actual Bukkit/DB state, bots emit received messages/window events. Failure stops owned children gracefully, with bounded forced kill fallback explicitly reported. Independent verifier reads final logs/receipts, requires all case markers and both clean exits; absent/partial/error evidence rejects. No success receipt from a runner alone. No external RCON or public listener.
+
+Guardian scope for natural-break successor35 stays open. This bounded protocol does not provide durable authority against power loss, AV removal, malicious same-user activity or host crash.
+
+
+FILE smoke.py
+"""One approved isolated LITE attempt, with exactly one clean restart."""
+from pathlib import Path
+import hashlib, json, os, shutil, socket, subprocess, sys, threading, time, uuid, zipfile
+ROOT = Path(__file__).resolve().parents[2]
+BASE = Path('E:/AI.WORK/30_KET_QUA_THU_NGHIEM')
+JAVA = 'C:/Program Files/Java/jdk-21/bin/java.exe'
+EXPECTED = 'd86135e750b31e9271ab08256c8717e42d26c84f999ef15a2535f5dc769a0de8'
+HOME = Path(__file__).resolve().parent
+
+def sha(p): return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+def available(port):
+    with socket.socket() as sock: sock.bind(('127.0.0.1', port)); return sock.getsockname()[1]
+def save(path, obj): Path(path).write_text(json.dumps(obj, indent=2), encoding='utf-8')
+
+def stage():
+    product = ROOT / 'target/ItemGuard-LITE-1.0.0-test.jar'
+    if sha(product) != EXPECTED: raise RuntimeError('Candidate mismatch')
+    build = HOME / 'build'; build.mkdir(exist_ok=True)
+    cp = (HOME/'classpath.txt').read_text().strip() + os.pathsep + str(product)
+    subprocess.run(['C:/Program Files/Java/jdk-21/bin/javac.exe','--release','21','-cp',cp,'-d',str(build),str(HOME/'LiteProbe.java')],check=True)
+    helper = build/'LiteProbe.jar'
+    with zipfile.ZipFile(helper,'w') as z:
+        for f in (build/'smoke').rglob('*.class'): z.write(f,f.relative_to(build).as_posix())
+        z.writestr('plugin.yml',"name: LiteProbe\nversion: '1'\nmain: smoke.LiteProbe\napi-version: '1.21.11'\ndepend: [ItemGuard]\ncommands:\n  liteprobe:\n    description: Isolated console-only probe\n")
+    fixture = BASE / ('itemguard-lite-isolated-' + uuid.uuid4().hex[:12]); fixture.mkdir()
+    (fixture/'plugins').mkdir()
+    # Only immutable runtime/dependency artifacts from cache, never worlds/plugin data/receipts.
+    old = Path('E:/AI.WORK/itemguard-paper-smoke')
+    shutil.copy2(old/'paper.jar',fixture/'paper.jar')
+    for directory in ['libraries','versions','cache']:
+        if (old/directory).exists(): shutil.copytree(old/directory,fixture/directory)
+    shutil.copy2(product,fixture/'plugins/ItemGuard-LITE.jar')
+    shutil.copy2(helper,fixture/'plugins/LiteProbe.jar')
+    shutil.copy2(HOME/'bots.cjs',fixture/'bots.cjs')
+    port = available(0)
+    (fixture/'eula.txt').write_text('eula=true\n')
+    props = f'''server-ip=127.0.0.1
+server-port={port}
+online-mode=false
+enforce-secure-profile=false
+enable-rcon=false
+enable-query=false
+max-players=2
+view-distance=3
+simulation-distance=3
+spawn-protection=0
+gamemode=survival
+difficulty=peaceful
+level-type=minecraft:flat
+generator-settings={{"layers":[{{"block":"minecraft:bedrock","height":1}},{{"block":"minecraft:dirt","height":2}},{{"block":"minecraft:grass_block","height":1}}],"biome":"minecraft:plains","features":false,"lakes":false}}
+generate-structures=false
+sync-chunk-writes=true
+allow-flight=true
+'''
+    (fixture/'server.properties').write_text(props,encoding='utf-8')
+    files = [p for p in fixture.rglob('*') if p.is_file()]
+    manifest = {'root':str(fixture),'port':port,'candidate_sha256':EXPECTED,
+                'controller_sha256':sha(__file__),'files':{p.relative_to(fixture).as_posix():sha(p) for p in files}}
+    save(fixture/'stage.json',manifest)
+    print(str(fixture))
+
+def admission(fixture):
+    if fixture.parent.resolve()!=BASE.resolve() or not fixture.name.startswith('itemguard-lite-isolated-'):
+        raise RuntimeError('Wrong fixture namespace')
+    m=json.loads((fixture/'stage.json').read_text())
+    if m['root']!=str(fixture) or m['controller_sha256']!=sha(__file__) or m['candidate_sha256']!=EXPECTED:
+        raise RuntimeError('Admission identity mismatch')
+    for n,h in m['files'].items():
+        p=fixture/n
+        if not p.resolve().is_relative_to(fixture.resolve()) or sha(p)!=h: raise RuntimeError('Artifact mismatch: '+n)
+    if (fixture/'attempt.json').exists() or (fixture/'outcome.json').exists(): raise RuntimeError('Consumed fixture')
+    available(m['port'])
+    return m
+
+class Process:
+    def __init__(self, args, fixture, name):
+        self.lines=[]; self.file=(fixture/(name+'.log')).open('w',encoding='utf-8')
+        self.p=subprocess.Popen(args,cwd=fixture,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,encoding='utf-8',errors='replace')
+        self.thread=threading.Thread(target=self.read,daemon=True);self.thread.start()
+    def read(self):
+        try:
+            for line in self.p.stdout:
+                self.lines.append(line);self.file.write(line);self.file.flush()
+        finally:self.p.stdout.close();self.file.close()
+    def send(self, value):
+        self.p.stdin.write(value+'\n');self.p.stdin.flush()
+    def wait(self, predicate, seconds=40):
+        end=time.monotonic()+seconds
+        while time.monotonic()<end:
+            if any('LITE_PROBE_FAIL' in l or 'BOT_ERROR' in l for l in self.lines): raise RuntimeError('Probe/bot failure; inspect log')
+            if predicate(self.lines):return
+            if self.p.poll() is not None:raise RuntimeError('Child exited before expected evidence')
+            time.sleep(.1)
+        raise TimeoutError('Expected evidence timeout')
+    def has(self, value, seconds=40):self.wait(lambda ls:any(value in l for l in ls),seconds)
+    def stop(self, value):
+        forced=False
+        if self.p.poll() is None:
+            try:self.send(value)
+            except (BrokenPipeError,OSError):pass
+            try:self.p.wait(timeout=60)
+            except subprocess.TimeoutExpired:self.p.kill();self.p.wait(timeout=15);forced=True
+        if self.p.stdin:self.p.stdin.close()
+        self.thread.join(timeout=10)
+        return {'pid':self.p.pid,'exit':self.p.returncode,'forced':forced,'log_closed':not self.thread.is_alive()}
+
+def run(fixture):
+    m=admission(fixture)
+    with (fixture/'attempt.json').open('x') as f:json.dump({'stage_sha256':sha(fixture/'stage.json'),'generations':2,'scope':'separate-lite-smoke'},f)
+    result={'status':'FAILED','cleanup':[]};server=None;bots=None
+    try:
+        for generation in [1,2]:
+            available(m['port'])
+            server=Process([JAVA,'-Xms512M','-Xmx1536M','-jar','paper.jar','--nogui'],fixture,f'server-{generation}')
+            server.has('Done (',180);server.has('LITE_PROBE_BOOT',10)
+            bots=Process(['node','bots.cjs',str(m['port'])],fixture,f'bots-{generation}')
+            bots.wait(lambda ls:sum('"event":"spawn"' in l for l in ls)==2,60)
+            if generation==1:
+                server.send('liteprobe seed');server.has('LITE_CASE permissions PASS')
+                # Query real state only after scheduled publication has had server ticks.
+                bots.send(json.dumps({'player':'LiteStaff','chat':'/ig check'}));bots.has('ItemGuard LITE')
+                server.send('liteprobe identity');server.has('LITE_CASE identity PASS')
+                line=next(l for l in server.lines if 'LITE_CODE ' in l); code=line.split('LITE_CODE ',1)[1].strip()
+                server.send('liteprobe history');server.has('LITE_CASE history PASS')
+                bots.send(json.dumps({'player':'LiteMember','chat':'/ig search #'+code}));bots.has('You do not have permission')
+                bots.send(json.dumps({'player':'LiteStaff','chat':'/ig search #'+code}));bots.has('Recent history')
+                bots.send(json.dumps({'player':'LiteStaff','chat':'/ig gui'}));bots.has('"event":"window"')
+                bots.send(json.dumps({'player':'LiteStaff','click':True}));bots.has('"event":"clicked"')
+                server.send('liteprobe gui');server.has('LITE_CASE gui-click-readonly PASS')
+                server.send('liteprobe duplicate');server.has('ITEMGUARD_DUPLICATE_CONFIRMED',60)
+                # Persist actual warning text for independent adjudication.
+                bots.wait(lambda ls:any('"event":"message"' in l and 'LiteStaff' in l and 'DUPE ALERT!' in l for l in ls),20)
+                server.send('liteprobe duplicatesafe');server.has('LITE_CASE duplicate-not-removed PASS')
+            else:
+                server.send('liteprobe restart');server.has('LITE_CASE restart-history PASS')
+            result['cleanup'].append({'child':f'bots-{generation}',**bots.stop('{"quit":true}')});bots=None
+            result['cleanup'].append({'child':f'server-{generation}',**server.stop('stop')});server=None
+            if any(c['exit']!=0 or c['forced'] or not c['log_closed'] for c in result['cleanup']):raise RuntimeError('Unclean child shutdown')
+            available(m['port'])
+        result['status']='CAPTURED'
+    except BaseException as e:result['error']=repr(e)
+    finally:
+        if bots:result['cleanup'].append({'child':'bots-failure',**bots.stop('{"quit":true}')})
+        if server:result['cleanup'].append({'child':'server-failure',**server.stop('stop')})
+        try:available(m['port']);result['port_released']=True
+        except OSError:result['port_released']=False
+        save(fixture/'outcome.json',result)
+    print(json.dumps(result,indent=2))
+    if result['status']!='CAPTURED':sys.exit(1)
+
+if __name__=='__main__':
+    if sys.argv[1:]==['stage']:stage()
+    elif len(sys.argv)==3 and sys.argv[1]=='run':run(Path(sys.argv[2]))
+    else:raise SystemExit('Usage: smoke.py stage | run EXACT_ROOT')
+
+
+FILE LiteProbe.java
+package smoke;
+
+import com.itemguard.ItemGuard;
+import com.itemguard.tasks.InventoryScanTask;
+import org.bukkit.Bukkit;
+import org.bukkit.Material;
+import org.bukkit.command.Command;
+import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.plugin.java.JavaPlugin;
+import java.util.List;
+
+/** Test-only observer/seed adapter. Never packaged with the product. */
+public final class LiteProbe extends JavaPlugin {
+    private ItemGuard guard;
+    private String code;
+    @Override public void onEnable() {
+        guard = (ItemGuard) Bukkit.getPluginManager().getPlugin("ItemGuard");
+        if (guard == null || !guard.isEnabled() || !guard.isLiteEdition()) throw new IllegalStateException("LITE not enabled");
+        getLogger().info("LITE_PROBE_BOOT");
+    }
+    private Player player(String name) {
+        Player p = Bukkit.getPlayerExact(name);
+        if (p == null) throw new IllegalStateException("player missing: " + name);
+        return p;
+    }
+    private void check(boolean value, String label) {
+        if (!value) throw new IllegalStateException(label);
+        getLogger().info("LITE_CASE " + label + " PASS");
+    }
+    @Override public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (!(sender instanceof org.bukkit.command.ConsoleCommandSender)) return true;
+        try {
+            Player staff = player("LiteStaff");
+            Player member = player("LiteMember");
+            String action = args.length == 0 ? "" : args[0];
+            if (action.equals("seed")) {
+                for (Player p : List.of(staff, member)) { p.setOp(false); p.getInventory().clear(); }
+                var permissions = staff.addAttachment(this);
+                for (String node : List.of("itemguard.search", "itemguard.history.others", "itemguard.stats", "itemguard.notify"))
+                    permissions.setPermission(node, true);
+                staff.getInventory().setItem(0, new ItemStack(Material.DIAMOND_SWORD));
+                staff.getInventory().setHeldItemSlot(0);
+                guard.getTrackingService().scanPlayerInventory(staff);
+                check(!member.hasPermission("itemguard.search") && staff.hasPermission("itemguard.notify"), "permissions");
+            } else if (action.equals("identity")) {
+                ItemStack item = staff.getInventory().getItemInMainHand();
+                code = guard.getTrackingService().getCodeFromItem(item);
+                check(code != null && guard.getTrackingService().isIdentityReady(item), "identity");
+                getConfig().set("expected-code", code);
+                getConfig().set("expected-uuid", guard.getTrackingService().getItemUuidFromItem(item).toString());
+                saveConfig();
+                getLogger().info("LITE_CODE " + code);
+            } else if (action.equals("history")) {
+                guard.getDB().getHistoryAsync(code, 45).whenComplete((rows, failure) -> Bukkit.getScheduler().runTask(this, () -> {
+                    if (failure != null || rows == null || rows.isEmpty()) getLogger().severe("LITE_PROBE_FAIL history");
+                    else check(rows.stream().allMatch(row -> code.equals(row.getCode())), "history");
+                }));
+            } else if (action.equals("gui")) {
+                var view = staff.getOpenInventory();
+                check(view.getTopInventory().getHolder().getClass().getName().equals("com.itemguard.lite.LiteCommand$Preview"), "gui-open");
+                check(view.getTopInventory().getItem(0) != null && view.getTopInventory().getItem(0).getType() == Material.PAPER
+                    && staff.getItemOnCursor().getType().isAir(), "gui-click-readonly");
+                staff.closeInventory();
+            } else if (action.equals("duplicate")) {
+                member.getInventory().setItem(0, staff.getInventory().getItemInMainHand().clone());
+                new InventoryScanTask(guard).run();
+            } else if (action.equals("duplicatesafe")) {
+                check(staff.getInventory().getItem(0) != null && member.getInventory().getItem(0) != null
+                    && code.equals(guard.getTrackingService().getCodeFromItem(staff.getInventory().getItem(0)))
+                    && code.equals(guard.getTrackingService().getCodeFromItem(member.getInventory().getItem(0))), "duplicate-not-removed");
+            } else if (action.equals("restart")) {
+                String expected = getConfig().getString("expected-code");
+                ItemStack item = staff.getInventory().getItem(0);
+                check(expected != null && expected.equals(guard.getTrackingService().getCodeFromItem(item))
+                    && getConfig().getString("expected-uuid").equals(guard.getTrackingService().getItemUuidFromItem(item).toString()), "restart-identity");
+                guard.getDB().getHistoryAsync(expected, 45).whenComplete((rows, failure) -> Bukkit.getScheduler().runTask(this, () -> {
+                    if (failure != null || rows == null || rows.isEmpty()) getLogger().severe("LITE_PROBE_FAIL restart-history");
+                    else check(true, "restart-history");
+                }));
+            } else throw new IllegalArgumentException("unknown probe action");
+        } catch (Throwable failure) {
+            getLogger().log(java.util.logging.Level.SEVERE, "LITE_PROBE_FAIL", failure);
+        }
+        return true;
+    }
+}
+
+
+FILE bots.cjs
+const mineflayer = require('E:/AI.WORK/botcheckerminecraft-botchecker/node_modules/mineflayer');
+const readline = require('node:readline');
+const bots = new Map();
+const emit = (event, data = {}) => console.log(JSON.stringify({event, ...data}));
+let quitting = false, ended = 0;
+for (const username of ['LiteStaff', 'LiteMember']) {
+  const bot = mineflayer.createBot({host:'127.0.0.1', port:Number(process.argv[2]), username, auth:'offline', version:'1.21.11'});
+  bots.set(username, bot);
+  bot.once('spawn', () => emit('spawn', {player:username}));
+  bot.on('messagestr', message => emit('message', {player:username, message}));
+  bot.on('windowOpen', window => emit('window', {player:username, id:window.id, title:window.title}));
+  bot.on('error', error => emit('BOT_ERROR', {player:username, error:String(error)}));
+  bot.on('kicked', reason => { if (!quitting) emit('BOT_ERROR', {player:username, reason}); });
+  bot.on('end', reason => { emit('end', {player:username, reason}); if (++ended === 2) process.exit(quitting ? 0 : 1); });
+}
+readline.createInterface({input:process.stdin}).on('line', async line => {
+  try {
+    const request = JSON.parse(line);
+    if (request.quit) { quitting = true; for (const bot of bots.values()) bot.quit(); return; }
+    const bot = bots.get(request.player);
+    if (!bot) throw new Error('Unknown actor');
+    if (request.chat) { bot.chat(request.chat); emit('sent', request); }
+    else if (request.click) {
+      const window = bot.currentWindow;
+      if (!window || !window.slots[0] || window.slots[0].name !== 'paper') throw new Error('Expected history preview');
+      await bot.clickWindow(0, 0, 0);
+      emit('clicked', {player:request.player, id:window.id});
+    } else throw new Error('Unknown action');
+  } catch (error) { emit('BOT_ERROR', {error:String(error)}); }
+});
+
+
+FILE verify.py
+"""Independent final log adjudicator; no server/process mutation."""
+from pathlib import Path
+import hashlib, json, re, sys
+
+def verify(root):
+    stage=json.loads((root/'stage.json').read_text())
+    attempt=json.loads((root/'attempt.json').read_text())
+    outcome=json.loads((root/'outcome.json').read_text())
+    assert attempt['stage_sha256']==hashlib.sha256((root/'stage.json').read_bytes()).hexdigest(), 'attempt/stage binding'
+    assert outcome['status']=='CAPTURED' and outcome['port_released'], 'incomplete or failed attempt'
+    assert {c['child'] for c in outcome['cleanup']}=={'bots-1','server-1','bots-2','server-2'}, 'cleanup coverage'
+    assert len(outcome['cleanup'])==4 and all(c['exit']==0 and not c['forced'] and c['log_closed'] for c in outcome['cleanup']), 'unclean child exit'
+    for name in ['paper.jar','plugins/ItemGuard-LITE.jar','plugins/LiteProbe.jar','bots.cjs']:
+        assert hashlib.sha256((root/name).read_bytes()).hexdigest()==stage['files'][name], 'changed artifact '+name
+    for generation in [1,2]:
+        server=(root/f'server-{generation}.log').read_text(encoding='utf-8')
+        assert 'Done (' in server and 'LITE_PROBE_BOOT' in server, 'startup missing'
+        assert 'Stopping server' in server and 'All dimensions are saved' in server, 'shutdown missing'
+        assert not re.search(r'\bERROR\b|LITE_PROBE_FAIL|Exception|NoClassDefFound',server), 'server error'
+        cases=['permissions','identity','history','gui-open','gui-click-readonly','duplicate-not-removed'] if generation==1 else ['restart-identity','restart-history']
+        for case in cases: assert server.count('LITE_CASE '+case+' PASS')==1, 'missing/repeated '+case
+        rows=[]
+        for line in (root/f'bots-{generation}.log').read_text(encoding='utf-8').splitlines():
+            if line.startswith('{'):rows.append(json.loads(line))
+        assert not any(x['event']=='BOT_ERROR' for x in rows), 'bot error'
+        assert {x.get('player') for x in rows if x['event']=='spawn'}=={'LiteStaff','LiteMember'}, 'actors missing'
+        assert {x.get('player') for x in rows if x['event']=='end'}=={'LiteStaff','LiteMember'}, 'actor shutdown missing'
+        if generation==1:
+            assert 'ITEMGUARD_DUPLICATE_CONFIRMED' in server, 'duplicate evidence missing'
+            def received(player,text):return any(x['event']=='message' and x.get('player')==player and text in x.get('message','') for x in rows)
+            assert received('LiteMember','You do not have permission'), 'member permission denial missing'
+            assert received('LiteStaff','Recent history'), 'staff history missing'
+            assert received('LiteStaff','DUPE ALERT!'), 'staff warning missing'
+            assert any(x['event']=='clicked' and x['player']=='LiteStaff' for x in rows), 'GUI click input missing'
+    return {'status':'PASS_CONTROLLED_SMOKE','root':str(root),'candidate_sha256':stage['candidate_sha256'],
+            'limitations':['No client visual acceptance','No crafting/natural-break/scale/crash/guardian claims']}
+
+if __name__=='__main__':
+    try: print(json.dumps(verify(Path(sys.argv[1])),indent=2))
+    except (AssertionError,OSError,KeyError,ValueError) as e:
+        print(json.dumps({'status':'REJECTED','reason':str(e)}));sys.exit(1)

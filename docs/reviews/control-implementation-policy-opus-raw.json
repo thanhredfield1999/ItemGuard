@@ -1,0 +1,80 @@
+{
+  "is_error": false,
+  "duration_api_ms": 103465,
+  "num_turns": 1,
+  "stop_reason": "end_turn",
+  "session_id": "cfd57178-844e-43de-bd6a-f2e8e6b1d950",
+  "total_cost_usd": 0.312724,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 12293,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 7313,
+    "output_tokens_details": {
+      "thinking_tokens": 5817
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 12293,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 7313,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 12293,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 12293
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard"
+  },
+  "modelUsage": {
+    "claude-haiku-4-5-20251001": {
+      "inputTokens": 6884,
+      "outputTokens": 15,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "webSearchRequests": 0,
+      "costUSD": 0.006959000000000001,
+      "contextWindow": 200000,
+      "maxOutputTokens": 32000,
+      "canonicalModel": "claude-haiku-4-5",
+      "provider": "firstParty"
+    },
+    "claude-opus-5": {
+      "inputTokens": 2,
+      "outputTokens": 7313,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 12293,
+      "webSearchRequests": 0,
+      "costUSD": 0.305765,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 64000,
+      "canonicalModel": "claude-opus-5",
+      "provider": "firstParty"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "## Verdict: PASS_FOR_OFFLINE_POLICY\n\nTrong phạm vi bounded (pure serialized policy, giả định caller đã validate schema/hash/identity và notification là factual), tôi **không tìm được counterexample** cho các thuộc tính bắt buộc.\n\n### Các bất biến đã kiểm chứng\n\n- **ACK gate khớp exact**: `AcknowledgeWritten` (dòng 82) chặn `id != requestId || hash != requestHash`, và `CanAcknowledge` (33) đòi `stage == Committed`. Không có đường nào tới `Committed` mà không qua `Reading → Ready` (`CompleteFrame`) → `Dispatched` → `CommitRequest(true,true)`. Dual-mirror bắt buộc: `!firstMirror || !secondMirror` → `Reject` (69).\n- **Journal-before-ACK cho close**: `CloseAccepted` chỉ set bên trong `CommitRequest` (71), tức sau khi cả hai mirror durable; ACK chỉ hợp lệ sau đó. Đúng thứ tự spec 631–632.\n- **Monotonicity**: `hasRequestId && id <= requestId` → `Reject` (51) chặn cả replay lẫn giảm dần; test 83–91 phủ cả hai.\n- **Pending-operation**: `CONTROL_CLOSE && hasPendingOperation` → `Reject` (59), và `CloseAccepted` vẫn false (test 55).\n- **Sticky failure**: mọi entry point mở đầu bằng `if (Failed) return false;`, `Failed` không có đường reset; `CannotRevive` phủ 8 action × 8 stage.\n- **Hai thứ tự EOF/exit**: `ObserveEof`/`ObserveExit` độc lập thứ tự, `ClosedCleanly` cần đủ bốn hạng mục gồm `closeAckWritten`. EOF/exit trước close-accepted fail-closed (25, 30) và được test ở stage 0–3. Late-ACK callback sau EOF/exit vẫn hợp lệ — đúng spec 637 \"không suy verdict từ scheduling order\".\n- **SILENT**: `BeginFrame` reject (44), exit không đòi `CloseAccepted` (30), `ClosedCleanly` luôn false.\n\n### Findings không chặn (cần xử lý trước khi lên transport)\n\n1. **`ClosedCleanly` không monotonic.** Từ stage 7 (`ClosedCleanly == true`), một `BeginFrame()` lạc → `Failed = true` → `ClosedCleanly` lật về false (test 49–51 mã hoá hành vi này). Đúng tinh thần fail-closed, nhưng hai caller đọc ở hai thời điểm khác nhau sẽ thấy hai verdict khác nhau. Cần chốt điểm snapshot, hoặc thêm cờ `CloseRevoked` riêng.\n\n2. **`ReleaseCommitted` là gate một lần cho cả session, không phải per-request** (64: gọi lần hai → `Reject`). Sau request đầu, mọi request sau dispatch mà không có release mới (thấy rõ ở `RequestRoundTrip`: release trong request #7, request #8 không cần). Cơ chế này **không xuất hiện trong spec 589–643** — cần đặc tả nó là session-start gate, hoặc siết thành per-request nếu ý định khác.\n\n3. **SILENT + `ObserveEof` → terminal failure** (25, do `CloseAccepted` không bao giờ true). Spec 628 nói exit của SILENT không được gây control-EOF failure. Tên method không phân biệt control-EOF với stdout/stderr EOF; nếu lifecycle dùng chung route EOF vào đây, một SILENT role hoàn toàn đúng đắn sẽ fail, và `ObserveExit` sau đó trả false → clean exit không quan sát được. Đổi tên thành `ObserveControlEof` và bổ sung test khẳng định hành vi.\n\n4. **`TryDispatch` trả `false` mang hai nghĩa**: backpressure (58, không fail) và lỗi terminal (57). Caller buộc phải đọc `Failed`; nên tách thành enum kết quả.",
+  "ttft_ms": 77611,
+  "ttft_stream_ms": 1963,
+  "time_to_request_ms": 110,
+  "type": "result",
+  "duration_ms": 102033,
+  "uuid": "521f9f89-b6f3-4eb4-9cd3-72e3479e54cd"
+}

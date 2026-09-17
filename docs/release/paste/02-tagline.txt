@@ -1,0 +1,1 @@
+Log every valuable item and prove where it came from. Each tool, weapon and armour piece gets a permanent ID plus full history — /ig check answers it instantly. Free, no setup, no database.

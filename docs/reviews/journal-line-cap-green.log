@@ -1,0 +1,5 @@
+OUT=C:/Users/thanh/AppData/Local/Temp/itemguard-codec-bin
+CHAIN_BYTE_MUTATIONS cases=50745 failures=0
+CHAIN cases=25 failures=0
+JOURNAL_LINE_BOUNDS cases=4 failures=0
+EXIT_CODE=0

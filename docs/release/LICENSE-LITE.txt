@@ -1,0 +1,34 @@
+ItemGuard LITE - Licence
+Copyright (c) 2026 thanhredfield1999. All rights reserved.
+
+This is proprietary software. It is offered free of charge, but it is not open source
+and it is not public domain.
+
+You MAY:
+  - Download ItemGuard LITE and run it on any Minecraft server you operate, including
+    commercial and public servers, with no fee and no player limit.
+  - Keep backups of the JAR and of the database it creates.
+  - Edit plugins/ItemGuard/config.yml and the message files for your own server.
+
+You MAY NOT:
+  - Redistribute, re-upload, mirror, resell or bundle the JAR, whether modified or not.
+    Link to the official SpigotMC resource page instead.
+  - Decompile, disassemble, deobfuscate, reverse engineer or modify the JAR, or create
+    derivative works from it, except where that right cannot be waived under the law
+    that applies to you.
+  - Remove or alter the plugin name, author, version string or this licence.
+  - Claim authorship of the plugin or present it as your own work.
+
+No warranty
+The software is provided "as is", without warranty of any kind, express or implied,
+including but not limited to the warranties of merchantability, fitness for a particular
+purpose and non-infringement. The author is not liable for any claim, damages, data loss
+or other liability arising from the software or its use. You are responsible for keeping
+your own backups; see the README for the stopped-server backup procedure.
+
+Third-party components
+This plugin bundles bStats (bstats-bukkit), which is distributed under the MIT licence by
+its own authors and remains subject to that licence.
+
+Contact
+Support and bug reports: https://discord.gg/EnSNSNVV5G

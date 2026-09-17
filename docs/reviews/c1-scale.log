@@ -1,0 +1,4 @@
+SYNTHETIC_ONLY dir=C:\Users\thanh\AppData\Local\Temp\itemguard-c1-12509077417889674557
+Exception in thread "main" java.lang.IllegalAccessError: class com.itemguard.persistence.CatalogC1Probe tried to access method 'void com.itemguard.persistence.SqliteSchemaManager.<init>(int, java.util.function.LongSupplier)' (com.itemguard.persistence.CatalogC1Probe is in unnamed module of loader com.sun.tools.javac.launcher.Main$MemoryClassLoader @3e8c3cb; com.itemguard.persistence.SqliteSchemaManager is in unnamed module of loader 'app')
+	at com.itemguard.persistence.CatalogC1Probe.run(CatalogC1Probe.java:36)
+	at com.itemguard.persistence.CatalogC1Probe.main(CatalogC1Probe.java:16)

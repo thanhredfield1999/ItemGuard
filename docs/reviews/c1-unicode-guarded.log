@@ -1,0 +1,11 @@
+QUERY hex=64-65-66-67-68-69 oracle=[0] indexed=[0] exact=true
+QUERY hex=61-62-63-0-78-79-7a oracle=[1] SQL_ERROR=1
+QUERY hex=0-64-65 oracle=[0] SQL_ERROR=1
+QUERY hex=6b-69-1ebf-6d oracle=[2, 3] indexed=[2, 3] exact=true
+QUERY hex=1f600-96ea-61 oracle=[4] indexed=[4] exact=true
+QUERY hex=69-307-73-74 oracle=[5] indexed=[5] exact=true
+QUERY hex=3bf-3c3-3bf oracle=[6] indexed=[6] exact=true
+QUERY hex=61-22-62 oracle=[7] indexed=[7] exact=true
+QUERY hex=73-75-66-66-69-78 oracle=[8] indexed=[8] exact=true
+MEASURED cases=9 mismatches=0 errors=2; not an acceptance gate
+GUARDED exact=9; NUL/short fallback uses instr, no scale claim

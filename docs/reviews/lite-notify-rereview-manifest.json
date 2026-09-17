@@ -1,0 +1,8 @@
+{
+  "src/main/java/com/itemguard/tasks/InventoryScanTask.java": "fa91fe0db271c9153391e3a3cdf2a00ddaf9f9b2f609dbf2b62acced8efddbc3",
+  "src/test/java/com/itemguard/tasks/LiteDuplicateNotificationTest.java": "a8c25782f0b07f23493b6d1adf695829e3363b167ab8860f235755c7b1ac3bc0",
+  "src/main/java/com/itemguard/config/AntiDupeSettings.java": "384563caa82fb3778318eb47c2a543588e6d9778092bb8f6573e3dae2151560a",
+  "src/main/java/com/itemguard/config/RestartSensitiveSettings.java": "d359c8ff3eda6b934413df3e71b18157032c3b4e79afd18ba5130fbf7a2238f5",
+  "src/main/java/com/itemguard/dupe/ObservationEpochFinalizer.java": "d262906adccc6896907b5be512b3715be622b32a8e8238d1c6d6cc3f50c7f6b1",
+  "src/main/java/com/itemguard/dupe/AntiDupeActionPolicy.java": "ed16969f307c0c12b927c06e1890090225cdfbf421dd4cb7d4c5205f9e608983"
+}

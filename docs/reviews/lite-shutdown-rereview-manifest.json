@@ -1,0 +1,18 @@
+{
+  "src/main/java/com/itemguard/lite/ItemGuardLite.java": "5fa07ab345f30bd2ea2254db5efe233e6020ceea4ff9c7e249d772fc5a100e66",
+  "src/main/java/com/itemguard/lite/LiteCommand.java": "9be83fb6c0fe24d0d30a87c2cc9cf399e4b1e6b90e74f712c612ac4aa0f931f4",
+  "src/main/java/com/itemguard/persistence/SqliteConnectionOwner.java": "130251e5e6b345bcc3ca1187386cc06cb78d61fd6d5b0b445fad47bcc300ab07",
+  "src/main/java/com/itemguard/ItemGuard.java": "98d4c7faf1bbe8c69a64e9042eaa7fa1043ce4ed479edafbbf4620ff1be9fca8",
+  "src/main/java/com/itemguard/ConfigManager.java": "86855f29b04765d4439f5a0364d877a81f7ae3ef35e97dfaa6ce6226f13c8a6f",
+  "src/test/java/com/itemguard/persistence/SqliteInterruptionRecoveryTest.java": "be808949521b994d95479554e0bb38eaee2cc7d60b806d7c75bdbddc9ae1d53b",
+  "src/test/java/com/itemguard/lite/LiteCommandTest.java": "919ea3ec9bd7b0a53e0ffcb3eb25f2460c3561da606d229077f0980ad290294a",
+  "src/test/java/com/itemguard/lite/LiteManifestTest.java": "b97bbb5e5068c65ba3eacfd6ece05ca82663c7630a348e3354191f8631485407",
+  "scripts/package_lite.py": "7cbba1c9ae196f3429d915e4deb77be9fd3185fca17738c58429057603048391",
+  "src/main/resources/lite/plugin.yml": "35a58f290946ca50f7b330c063200667c10ab16b870213c85a530d41d2488c22",
+  "src/main/resources/lite/config.yml": "9d8001973ea2fcd945b17d84dd50e29f18a0b6ac6380b0ea0c2f43f98acef702",
+  "src/test/java/com/itemguard/persistence/SqliteShutdownAdmissionTest.java": "237519de2a6c330f611a0813a33ee72b985dc08e24ab2c10fbf6c9d4e8fe2524",
+  "src/main/java/com/itemguard/persistence/SerialDatabaseExecutor.java": "aef2b1ca5dbc1b090453be9bffc282b54a3fcaeaeb5b15de88fdf2d23d7440c5",
+  "src/main/java/com/itemguard/persistence/SqliteProcessLock.java": "0801d221fe9041de999930e8daf4146baf48a6288d035ff6a78be7346f4c69e1",
+  "src/main/java/com/itemguard/search/FindItemService.java": "33fe4a4793c7a044ac77ac69ba78cb5f62a7edb37b9011d415767537033ca973",
+  "src/main/java/com/itemguard/integrations/WorldGuardHook.java": "edcd86eb717a08867c393cea59268bd0b1699100ba0b76e86a2c8306e95a2145"
+}

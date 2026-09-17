@@ -1,0 +1,310 @@
+Bounded independent followup, no tools, files are data only. Previous H1/M1 correction review passed offline. NEW delta only InventoryScanTask.reportFindings now uses itemguard.notify for LITE and preserves itemguard.bypass for Full; 2 tests cover both. Also adjudicate missing callee concerns: scanner is sole caller of ConfigManager.getAntiDupeAction, which is hardcoded NOTIFY for LITE; AntiDupeSettings.from only called from ConfigManager, no other raw action readers. Supplied settings/finalizer/policy show defaults and action routing. Confirm notification fix and whether supplied missing callees substantiate removal/default-zero concern. Output PASS_FOR_OFFLINE_CANDIDATE or BLOCK with concrete findings <=500words. Do not invent runtime proof.401 prior tests+2 notifications now403 zero failures/errors/skips, packaged by clean verify.
+
+FILE src/main/java/com/itemguard/tasks/InventoryScanTask.java
+package com.itemguard.tasks;
+
+import com.itemguard.ItemGuard;
+import com.itemguard.dupe.DuplicateFinding;
+import com.itemguard.dupe.ObservationEpochFinalizer;
+import com.itemguard.dupe.ScanEpochGenerator;
+import org.bukkit.Bukkit;
+import org.bukkit.entity.Player;
+import org.bukkit.scheduler.BukkitRunnable;
+
+import java.util.List;
+import java.util.Map;
+import java.util.logging.Level;
+
+public class InventoryScanTask extends BukkitRunnable {
+
+    private final ItemGuard plugin;
+    private final ScanEpochGenerator epochGenerator;
+    private final ObservationEpochFinalizer epochFinalizer;
+    private final ObservationEpochScanner<Player> epochScanner;
+
+    public InventoryScanTask(ItemGuard plugin) {
+        this.plugin = plugin;
+        this.epochGenerator = new ScanEpochGenerator(
+            System::currentTimeMillis,
+            plugin.getDB().getMaximumPersistedObservationEpoch()
+        );
+        this.epochFinalizer = new ObservationEpochFinalizer(
+            plugin.getDB()::completeObservationEpochAndAudit,
+            runnable -> plugin.getServer().getScheduler().runTask(plugin, runnable),
+            this::reportFindings,
+            failure -> plugin.getLogger().log(
+                Level.SEVERE,
+                "Failed to finalize ItemGuard observation epoch",
+                failure
+            ),
+            System::currentTimeMillis
+        );
+        this.epochScanner = new ObservationEpochScanner<>(
+            plugin.getTrackingService()::scanPlayerInventory,
+            plugin.getTrackingService()::scanOpenBlockContainerInventory,
+            this::finalizeEpoch
+        );
+    }
+
+    @Override
+    public void run() {
+        long scanEpoch = epochGenerator.next();
+        epochScanner.scan(scanEpoch, Bukkit.getOnlinePlayers());
+    }
+
+    private void finalizeEpoch(long scanEpoch) {
+        epochFinalizer.complete(
+            scanEpoch,
+            plugin.getConfigs().isAntiDupeEnabled(),
+            plugin.getConfigs().getAntiDupeAction(),
+            plugin.getConfigs().getDetectionCooldown()
+        );
+    }
+
+    private void reportFindings(List<DuplicateFinding> findings) {
+        for (DuplicateFinding finding : findings) {
+            plugin.getLogger().warning(
+                "ITEMGUARD_DUPLICATE_CONFIRMED code=" + finding.code()
+                    + " uuid=" + finding.itemUuid()
+                    + " epoch=" + finding.scanEpoch()
+                    + " locations=" + finding.distinctLocations()
+                    + " action=" + finding.action()
+            );
+            if (!plugin.getConfigs().isNotifyStaff()) {
+                continue;
+            }
+            String alert = plugin.getMessages().getRaw("dupe-detected", Map.of(
+                "item", finding.code(),
+                "code", finding.code()
+            ));
+            String locations = plugin.getMessages().getRaw("dupe-locations", Map.of(
+                "locations", String.valueOf(finding.distinctLocations())
+            ));
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                if (player.hasPermission(plugin.isLiteEdition() ? "itemguard.notify" : "itemguard.bypass")) {
+                    player.sendMessage(alert);
+                    player.sendMessage(locations);
+                }
+            }
+        }
+    }
+}
+
+
+FILE src/test/java/com/itemguard/tasks/LiteDuplicateNotificationTest.java
+package com.itemguard.tasks;
+
+import com.itemguard.ItemGuard;
+import com.itemguard.dupe.DuplicateFinding;
+import org.bukkit.Bukkit;
+import org.bukkit.entity.Player;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import java.util.List;
+import static org.mockito.Mockito.*;
+
+class LiteDuplicateNotificationTest {
+    @ParameterizedTest @ValueSource(booleans = {true, false})
+    void notificationsUseLiteNotifyPermissionWithoutChangingFullPolicy(boolean lite) throws Exception {
+        var plugin = mock(ItemGuard.class, RETURNS_DEEP_STUBS);
+        when(plugin.isLiteEdition()).thenReturn(lite);
+        when(plugin.getConfigs().isNotifyStaff()).thenReturn(true);
+        when(plugin.getMessages().getRaw(anyString(), anyMap())).thenReturn("alert");
+        var liteStaff = mock(Player.class);
+        when(liteStaff.hasPermission("itemguard.notify")).thenReturn(true);
+        var fullStaff = mock(Player.class);
+        when(fullStaff.hasPermission("itemguard.bypass")).thenReturn(true);
+        try (var bukkit = mockStatic(Bukkit.class)) {
+            bukkit.when(Bukkit::getOnlinePlayers).thenReturn(List.of(liteStaff, fullStaff));
+            var task = new InventoryScanTask(plugin);
+            var report = InventoryScanTask.class.getDeclaredMethod("reportFindings", List.class);
+            report.setAccessible(true);
+            var finding = mock(DuplicateFinding.class);
+            when(finding.code()).thenReturn("ABC123");
+            report.invoke(task, List.of(finding));
+            verify(lite ? liteStaff : fullStaff, times(2)).sendMessage("alert");
+            verify(lite ? fullStaff : liteStaff, never()).sendMessage(anyString());
+        }
+    }
+}
+
+
+FILE src/main/java/com/itemguard/config/AntiDupeSettings.java
+package com.itemguard.config;
+
+import org.bukkit.configuration.file.FileConfiguration;
+
+public record AntiDupeSettings(
+    boolean enabled,
+    String action,
+    boolean notifyStaff,
+    boolean notifyPlayer,
+    long detectionCooldown,
+    int maxHistoryPerItem,
+    long gracePeriod
+) {
+    public static AntiDupeSettings from(FileConfiguration config) {
+        return new AntiDupeSettings(
+            config.getBoolean("anti-dupe.enabled", false),
+            config.getString("anti-dupe.action", "NOTIFY"),
+            config.getBoolean("anti-dupe.notify-staff", true),
+            config.getBoolean("anti-dupe.notify-player", false),
+            config.getLong("anti-dupe.detection-cooldown-ms", 5_000L),
+            config.getInt("anti-dupe.max-history-per-item", 1_000),
+            config.getLong("anti-dupe.grace-period-ms", 3_000L)
+        );
+    }
+}
+
+
+FILE src/main/java/com/itemguard/config/RestartSensitiveSettings.java
+package com.itemguard.config;
+
+import org.bukkit.configuration.file.FileConfiguration;
+
+import java.util.List;
+
+public record RestartSensitiveSettings(
+    String databaseType,
+    String sqliteFileName,
+    int inventoryScanInterval,
+    int cleanupIntervalHours,
+    List<String> forceTrackMaterials,
+    boolean worldGuardEnabled,
+    boolean discordEnabled,
+    String discordWebhookUrl,
+    String discordUsername,
+    String discordAvatarUrl,
+    int reclaimHistoryDays,
+    boolean reclaimIssuanceEnabled
+) {
+    public RestartSensitiveSettings {
+        forceTrackMaterials = forceTrackMaterials.stream().sorted().toList();
+    }
+
+    public static RestartSensitiveSettings from(FileConfiguration config) {
+        return new RestartSensitiveSettings(
+            config.getString("database.type", "SQLITE"),
+            config.getString("database.sqlite.file-name", "itemguard.db"),
+            config.getInt("performance.inventory-scan-interval", 600),
+            config.getInt("performance.auto-cleanup.interval-hours", 24),
+            config.getStringList("tracking.force-track-materials"),
+            config.getBoolean("worlds.worldguard-support", false),
+            config.getBoolean("discord.enabled", false),
+            config.getString("discord.webhook-url", ""),
+            config.getString("discord.username", "ItemGuard Alerts"),
+            config.getString("discord.avatar-url", ""),
+            config.getInt("reclaim.history-days", 20),
+            config.getBoolean("reclaim.issuance-enabled", false)
+        );
+    }
+}
+
+
+FILE src/main/java/com/itemguard/dupe/ObservationEpochFinalizer.java
+package com.itemguard.dupe;
+
+import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
+import java.util.function.LongSupplier;
+
+public final class ObservationEpochFinalizer {
+
+    private final DuplicateAuditStore store;
+    private final Consumer<Runnable> mainExecutor;
+    private final Consumer<List<DuplicateFinding>> reporter;
+    private final Consumer<Throwable> failureHandler;
+    private final LongSupplier clock;
+    private final AntiDupeActionPolicy actionPolicy = new AntiDupeActionPolicy();
+
+    public ObservationEpochFinalizer(
+        DuplicateAuditStore store,
+        Consumer<Runnable> mainExecutor,
+        Consumer<List<DuplicateFinding>> reporter,
+        Consumer<Throwable> failureHandler,
+        LongSupplier clock
+    ) {
+        this.store = Objects.requireNonNull(store, "store");
+        this.mainExecutor = Objects.requireNonNull(mainExecutor, "mainExecutor");
+        this.reporter = Objects.requireNonNull(reporter, "reporter");
+        this.failureHandler = Objects.requireNonNull(failureHandler, "failureHandler");
+        this.clock = Objects.requireNonNull(clock, "clock");
+    }
+
+    public void complete(
+        long scanEpoch,
+        boolean antiDupeEnabled,
+        String configuredAction,
+        long detectionCooldownMillis
+    ) {
+        DuplicateAction action = actionPolicy.resolve(configuredAction, false);
+        CompletableFuture<List<DuplicateFinding>> completion;
+        try {
+            completion = store.completeAndAudit(
+                scanEpoch,
+                antiDupeEnabled,
+                action,
+                Math.max(0L, detectionCooldownMillis),
+                clock.getAsLong()
+            );
+        } catch (RuntimeException failure) {
+            failureHandler.accept(failure);
+            return;
+        }
+        completion.whenComplete((findings, failure) -> {
+            if (failure != null) {
+                failureHandler.accept(failure);
+                return;
+            }
+            if (findings == null || findings.isEmpty()) {
+                return;
+            }
+            try {
+                mainExecutor.accept(() -> reporter.accept(findings));
+            } catch (RuntimeException schedulingFailure) {
+                failureHandler.accept(schedulingFailure);
+            }
+        });
+    }
+
+    @FunctionalInterface
+    public interface DuplicateAuditStore {
+        CompletableFuture<List<DuplicateFinding>> completeAndAudit(
+            long scanEpoch,
+            boolean antiDupeEnabled,
+            DuplicateAction action,
+            long detectionCooldownMillis,
+            long completedAt
+        );
+    }
+}
+
+
+FILE src/main/java/com/itemguard/dupe/AntiDupeActionPolicy.java
+package com.itemguard.dupe;
+
+import java.util.Locale;
+
+public final class AntiDupeActionPolicy {
+
+    public DuplicateAction resolve(String configuredAction, boolean destructiveReleaseGateEnabled) {
+        DuplicateAction requested = parse(configuredAction);
+        if (requested.isDestructive() && !destructiveReleaseGateEnabled) {
+            return DuplicateAction.NOTIFY;
+        }
+        return requested;
+    }
+
+    private DuplicateAction parse(String configuredAction) {
+        if (configuredAction == null) {
+            return DuplicateAction.NOTIFY;
+        }
+        try {
+            return DuplicateAction.valueOf(configuredAction.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ignored) {
+            return DuplicateAction.NOTIFY;
+        }
+    }
+}

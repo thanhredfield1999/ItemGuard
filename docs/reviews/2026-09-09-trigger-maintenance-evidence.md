@@ -1,0 +1,9 @@
+# Trigger maintenance feasibility — synthetic only
+
+Source search found tracked_items SQL writes in ItemSqliteRepository: upsertItem around1366 and owner/location updates around161/187. This targeted literal search is not exhaustive proof against dynamically assembled SQL, external writers or schema operations. Upsert validates canonical identity and ON CONFLICT(code) updates only same UUID. Search metadata maintenance must cover insert + changed name/material/code; owner filters can read canonical source, not duplicated FTS metadata.
+
+New CatalogTriggerProbe.java creates isolated DB, FTS and INSERT/UPDATE/DELETE triggers. Java21 actual packaged SQLite execution exit0; log c1-trigger-fresh-connection.log. Insert, upsert, rename, owner-only update, delete, transaction rollback and reopen assertions passed. A separate connection with no fold UDF rejects rename; original source/index remain unchanged. This is an experiment, no shipped schema/source edit, no production access.
+
+Initial experiment c1-trigger-probe.log FAILED `missing UDF allowed write` after Function.destroy(c,"fold",1). This is an unresolved unregister/driver-semantics observation, NOT product RED or proof of SQLite fail-open. Revised probe tests a genuinely new unregistered connection; it does not establish unregister safety. Do not use current per-query create/destroy UDF lifecycle for trigger-required normalization. A dedicated connection-lifetime function and compatibility/migration contract are prerequisites.
+
+No migration/backfill/integrity repair, trigger definition validation, REPLACE/rowid-change behavior, long-string boundedness, OS crash durability or actual repository integration verified. Independent earlier Opus critique failed503/502, no PASS. C1 stays OPEN; next gate is bounded maintenance design review before product migration.

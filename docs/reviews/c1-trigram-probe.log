@@ -1,0 +1,13 @@
+SYNTHETIC_ONLY C:\Users\thanh\AppData\Local\Temp\itemguard-trigram-15964591560228798405\probe.db
+BUILD rows=100000 ms=659.765 bytes=5283840
+QUERY text=RareSuffix indexed=true rows=1 ms=3.256 exact=true
+QUERY text=not-present indexed=true rows=0 ms=0.386 exact=true
+QUERY text=KI?M R?NG indexed=true rows=37 ms=17.132 exact=true
+QUERY text=kie??m ro??ng indexed=true rows=37 ms=20.932 exact=true
+QUERY text=%_" indexed=true rows=1 ms=0.428 exact=true
+QUERY text=??  indexed=true rows=1 ms=0.236 exact=true
+QUERY text=Blade indexed=true rows=37 ms=27.512 exact=true
+QUERY text=are indexed=true rows=2 ms=0.383 exact=true
+QUERY text=a indexed=false rows=37 ms=0.133 exact=true
+QUERY text=?? indexed=false rows=1 ms=5.440 exact=true
+MEASUREMENT_COMPLETE not production migration, write-sync, or full-search acceptance

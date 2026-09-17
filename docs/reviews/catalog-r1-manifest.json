@@ -1,0 +1,22 @@
+{
+  "src\\main\\java\\com\\itemguard\\catalog\\CatalogCategory.java": "d4d4518fe84f5c0091e0c74302565f8704d20c70e806d01dc100d05c5be9c751",
+  "src\\main\\java\\com\\itemguard\\catalog\\CatalogController.java": "bede478a082571df6c07bb850a82bb07d5380191dac36d2f847aeee3b91d53c5",
+  "src\\main\\java\\com\\itemguard\\catalog\\CatalogEvent.java": "befcb72082b8cfb54455ac0966370dc43ab8339861e65633b3141d14f08ab8a4",
+  "src\\main\\java\\com\\itemguard\\catalog\\CatalogInventory.java": "5e792e9f84807a612bdc3e5303befc951797e0600ba108b82a12e34863107ba0",
+  "src\\main\\java\\com\\itemguard\\catalog\\CatalogPage.java": "922f2cd9a9d67bd6433a1e69e7d8dcc6a3d99decd8f75ba2f58fb91a15c3bde2",
+  "src\\main\\java\\com\\itemguard\\catalog\\CatalogQuery.java": "5c0e74bbcc2970063924774b1357c32fd0f56675f800b14e5c3bc0bacf9846ed",
+  "src\\main\\java\\com\\itemguard\\catalog\\CatalogRepository.java": "9fb336809bb20e5663dad033772df2513938ccf52934872756e5188ab96f987d",
+  "src\\main\\java\\com\\itemguard\\catalog\\CatalogRow.java": "e7b8ddc9907a9b4266907cf7b0833e3b53b3b8efef121223b9858b751f3b655d",
+  "src\\main\\java\\com\\itemguard\\catalog\\CatalogScreen.java": "ef1f2d6ba14f4e37808b75a64f7bd6802bf0db23fdd51f00485ae25eb931e582",
+  "src\\main\\java\\com\\itemguard\\catalog\\CatalogSession.java": "8673a1026c2fba3b0c2057c81fbf01a7294af92419fdcbb12bdfbb29ad8844a3",
+  "src\\main\\java\\com\\itemguard\\catalog\\CatalogUi.java": "615c5b8b39b599df2c507700d68f062518105bfa2fc1cc2b242cbad3657a9229",
+  "src\\test\\java\\com\\itemguard\\catalog\\CatalogControllerTest.java": "7b85bfd9d71cda6eae9369da884928f16f88fe4b5336d1e8f41e32ea86e524b4",
+  "src\\test\\java\\com\\itemguard\\catalog\\CatalogInventoryTest.java": "d0a856dbfbf6d20a550a915314b2797f0ad664be7d6f72c428eaca7a007fec1c",
+  "src\\test\\java\\com\\itemguard\\catalog\\CatalogRepositoryTest.java": "446276cc583f3b359d721911f0261fc5384515a7f78bbe05c36bdb181a849a28",
+  "src\\test\\java\\com\\itemguard\\catalog\\CatalogSessionTest.java": "a3df104a6a02cbbfb5e105865ab249fdf483152fb5ee8882957612151f308675",
+  "src\\test\\java\\com\\itemguard\\catalog\\CatalogUiTest.java": "515717c1d68c102f0a7b72b3a0e0d01fab2d8da5f84b22d8da0ad9364f86470b",
+  "src\\test\\java\\com\\itemguard\\catalog\\CatalogWiringTest.java": "f9efb04abe5d383e0918a9bf2e7fed4a6d2fe89e2cbbcb8622986a202d64bf37",
+  "src\\main\\java\\com\\itemguard\\ItemGuard.java": "f4e602f2c011bfbc025815e18d0b70a3cd3d0e736908efa9a166329dc67758e4",
+  "src\\main\\java\\com\\itemguard\\data\\DatabaseManager.java": "80d69509a07afe4e877a29c913fec7944fa004ab8965eb71e6b8e9844549288c",
+  "src\\main\\java\\com\\itemguard\\commands\\MainCommand.java": "b765e163f0c05ddfc64f1c399e7f7127a4de29afd3ba77a3bcc39f034a4dabe0"
+}

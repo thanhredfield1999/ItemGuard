@@ -1,0 +1,24 @@
+{
+  "anti_dupe_action": "NOTIFY",
+  "anti_dupe_enabled": false,
+  "candidate_sha256": "0bb8d23b47eea7b10cb40c8db02a392922a924ef660e20b4154b3f2972f8c525",
+  "clone_itemguard_sha256": "9f96899bcdd94f406266c96f8a2003e70958b95ac413655ab18afd45e7465c41",
+  "container_scan_enabled": true,
+  "db": {
+    "duplicate_findings_table": false,
+    "duplicates_detected": 0,
+    "fixture_canonical": 1,
+    "fixture_findings": 0,
+    "fixture_snapshot": 1,
+    "integrity": "ok",
+    "item_snapshots": 503,
+    "pending_claims": 0,
+    "prepared_publications": 0,
+    "reclaim_claims": 9,
+    "schema_version": 6,
+    "tag_publications": 342,
+    "tracked_items": 503
+  },
+  "issuance_enabled": false,
+  "probe_sha256": "467ede3756c5d5a5d4385653a3078acff7250228d9364735d9703d6f02d821ef"
+}

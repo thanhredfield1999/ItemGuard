@@ -1,0 +1,24 @@
+{
+  "db_after_restart_cooldown_epoch": {
+    "duplicates_detected": 1,
+    "fixture_findings": 1,
+    "integrity": "ok",
+    "item_snapshots": 503,
+    "pending_claims": 0,
+    "prepared_publications": 0,
+    "reclaim_claims": 9,
+    "schema_version": 7,
+    "tag_publications": 342,
+    "tracked_items": 503
+  },
+  "restart_marker": {
+    "code": "NZ1GMT",
+    "containerSlot": 3,
+    "holderId": "BLOCK:34486cdf-24f0-4ade-9f92-f820b9605e20:-7:-60:10",
+    "itemUuid": "c9fe8bd1-a7d6-4827-b839-49d1c22425bf",
+    "playerSlot": 8,
+    "playerUuid": "71fcf6be-e1ee-3c92-9a42-893cbe44818c",
+    "serializedSha256": "3449737bcf7a3033fab56e142d7060fdcf70571a7e88fb4476a1b340493ae954",
+    "verifiedAt": 1787559686005
+  }
+}

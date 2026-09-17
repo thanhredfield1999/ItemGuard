@@ -1,0 +1,13 @@
+{
+  "files": {
+    "docs/reviews/obs-review-disposition.md": "4c8419a7b77492530af30316fb1339418cb8343d426d0dc23b528452a7ca2934",
+    "src/main/java/com/itemguard/catalog/CatalogController.java": "95f146bcb73419e0f5beab3f549fa31be20a20631d11c338a0a3fe9ee046a266",
+    "src/main/java/com/itemguard/catalog/CatalogSession.java": "8673a1026c2fba3b0c2057c81fbf01a7294af92419fdcbb12bdfbb29ad8844a3",
+    "src/main/java/com/itemguard/persistence/SqliteConnectionOwner.java": "7aff238c140f0860bfeda96ef7f287ac87e9104a7b98d6707f86734f894f9732",
+    "src/test/java/com/itemguard/catalog/CatalogObservationControllerTest.java": "7246fc74b2f01892cc1768f42de09b7a8a7bce03c45f3e7eac22b8ed43c86475",
+    "src/test/java/com/itemguard/catalog/CatalogObservationRepositoryTest.java": "40f3041fe315a05e8ffa9bc53e507563720383f8f639fc562f62eef512ebe0e7",
+    "src/main/java/com/itemguard/persistence/ItemSqliteRepository.java": "3c0a3b03fc93fa5d0fff072f292291c48d4b5b06510cd61fb780eaa3332d9f32",
+    "src/main/java/com/itemguard/persistence/SqliteSchemaManager.java": "894aa950b3c0c0611b6b230cdf1f14fab4ac79f9e5111e334c232d0ef9817dbf"
+  },
+  "input_sha256": "8617b29ac36fb55bf42bb08a0db5376d33e38cffbee78a1a545015c3b6acc2ab"
+}

@@ -1,0 +1,2002 @@
+Bounded disposition followup ONLY. Assess F1-F6 handling and added coverage, no broad re-review/runtime approval. Original conditional review below. Verdict PASS_FOR_OFFLINE_CANDIDATE if exact dispositions acceptable, otherwise BLOCK and concrete issue. Vietnamese concise. Do not repeat unverified extrapolated safe DB sizing.
+# Review C1 — index lịch sử + phân trang chịu lỗi
+
+**VERDICT: PASS_FOR_OFFLINE_CANDIDATE** (kèm điều kiện bắt buộc trước khi đóng gói artifact)
+
+Không tìm thấy lỗi đúng-sai (correctness blocker) trong đoạn mã được cung cấp. Logic migration fail-closed, rollback giữ nguyên exception gốc, và mô hình "chỉ commit state khi request thành công" của controller là đúng và có test bao phủ. Log calibration tự nhất quán về số học (980.033 dòng sau retention = 1.000.002 + 30 − 19.999; 99 dòng TARGET còn lại; plan không có TEMP B-TREE).
+
+## 1. Đã kiểm và xác nhận đúng
+
+- `SqliteSchemaManager.validateExistingSchema`: chặn autocommit **trước** mọi DDL; `typeof(schema_version)='integer'`, `<1` và `>8` đều fail-closed. Test `autoCommitRejectedBeforeAnyDdl`, `corruptMetadataIsRejectedWithoutCreatingTablesOrChangingStamp` khớp.
+- `validateHistoryIndex`: `CREATE INDEX IF NOT EXISTS` + kiểm tra `index_list` (unique/partial) và `index_xinfo` (tên/desc/coll, bỏ hàng `key=0`) bắt đủ 6 biến thể xung đột, **không** DROP/repair. Vì `id` là `INTEGER PRIMARY KEY`, SQLite ánh xạ `aiColumn = iPKey` nên `index_xinfo.name = 'id'` (không phải NULL) — assertion `"id:1:BINARY"` là hợp lệ.
+- Stamp v8 nằm cùng transaction với DDL; `UPDATE ... WHERE schema_version < 8` chỉ tiến, không lùi.
+- `createHistoryIndex`: `unwrap(SQLiteConnection.class)` cho phép proxy test hoạt động; ProgressHandler được clear trong `finally` **trước** `connection.commit()` — test `progressHandlerIsClearedBeforeCommit` kiểm đúng điều này bằng seam proxy.
+- `CatalogController`: `text/owner/category/cursor/previous/page` chỉ ghi trong nhánh `failure == null`; `retry` trỏ đúng `Request` đã lỗi; `error()` phân tuyến theo `historyFailure` (không hiện `filters()` trên màn lỗi history; không dùng `selected` cũ làm back-target của catalog). Cap 128 trang (`previous.size() < 127`) chính xác.
+- `CatalogReadGate`: `release()` reentrant khi future hoàn tất inline — không deadlock.
+
+## 2. Cần sửa trước khi phát hành (không phải blocker, fix tối thiểu)
+
+**F1 — Không chẩn đoán được khi vượt ngân sách index** *(quan trọng nhất)*
+`SqliteSchemaManager.createHistoryIndex` — khi handler bắn abort, operator chỉ thấy `IllegalStateException: ItemGuard database operation failed` bọc `[SQLITE_INTERRUPT] Operation terminated by sqlite3_interrupt()`. Không có manh mối rằng nguyên nhân là budget migration và DB quá lớn.
+*Fix tối thiểu:* đặt cờ `aborted` trong `progress()`; ở `catch (SQLException failure)` nếu `aborted` thì `throw new SQLException("ItemGuard: tạo idx_history_identity_time vượt ngân sách (checks=N, elapsed=…); DB lớn hơn mức đã hiệu chuẩn", failure)`.
+
+**F2 — Suy ra giới hạn admission và ghi vào release note**
+Từ log: 12.000 callbacks cho 1M dòng ⇒ cap 100.000 tương đương **~8,3 triệu dòng `item_history`**; ràng buộc thời gian (1,31–1,37s so với 30s) rộng hơn nhiều. Ngân sách VM là điều kiện chặn thực tế, không phải 30s. Dung lượng: 41,4MB → 68,6MB ⇒ yêu cầu free space ≥ 2× kích thước DB. Hiện chưa có văn bản nào nêu con số 8,3M này.
+
+**F3 — `finally` nuốt exception gốc**
+`CatalogRepository.bounded`: `finally { try { ProgressHandler.clearHandler(...) } finally { Function.destroy(...) } }`. Nếu `clearHandler` ném SQLException, exception gốc (thường là SQLITE_INTERRUPT) bị **hủy** chứ không suppressed.
+*Fix:* bắt và `addSuppressed` vào lỗi gốc theo đúng mẫu đã dùng ở `SqliteSchemaManager.createHistoryIndex`.
+
+**F4 — Nhánh thành công của `createHistoryIndex` để handler còn armed**
+Khi `original == null` mà `clearHandler` ném, code `throw cleanupFailure` trong lúc handler **vẫn đang cài** → `connection.rollback()` ở catch ngoài chạy dưới progress handler đã hết quota và có thể bị interrupt tiếp.
+*Fix:* thử clear lần hai / hoặc đánh dấu connection là không dùng lại được (owner đã đóng connection khi init fail, nên chỉ cần chú thích + retry clear).
+
+**F5 — `CatalogRepository` không `unwrap`**
+`ProgressHandler.setHandler(connection, ...)` và `Function.create(connection, ...)` nhận `Connection` thô; nếu owner sau này bọc/proxy connection sẽ ném "connection must be to an SQLite db". Thống nhất dùng `connection.unwrap(SQLiteConnection.class)` như schema manager.
+
+**F6 — `CatalogReadGate` kẹt `busy` vĩnh viễn**
+Nếu future trả về không bao giờ hoàn tất (task đã vào queue nhưng executor đóng trước khi chạy), `release()` không bao giờ được gọi ⇒ toàn bộ viewer bị chặn tới khi reload plugin. Đường dẫn hiện tại hiếm (`requireOpen()` ném đồng bộ), nhưng fix rẻ: `whenComplete` kèm timeout, hoặc `SqliteConnectionOwner.close()` complete-exceptionally các future còn treo.
+
+## 3. Test còn thiếu (bắt buộc bổ sung)
+
+1. **Fresh install → v8 + index**: không test nào assert DB mới tạo có `idx_history_identity_time`. `autoCommitRejectedBeforeAnyDdl` dùng DB trống nhưng để reject; `SqliteConnectionOwnerTest` tạo DB mới nhưng không kiểm index.
+2. **v1/v6 → v8**: design nói "existing v1/v6 tests remain" nhưng chúng không có trong snapshot và chắc chắn không assert index mới. Cần ít nhất một fixture legacy cũ hơn v7 chứng minh `CREATE INDEX` không fail trên `item_history` phiên bản cũ.
+3. **Regression F1**: assert message lỗi khi vượt budget có nội dung định hướng được cho operator.
+4. **Filter chọn lọc**: log chỉ đo `Blade` (khớp 100%) và `not-present` (khớp 0%). Thiếu case thực tế — filter khớp ít và nằm cuối thứ tự `code` — đây mới là ca sẽ interrupt trong vận hành thật.
+
+## 4. Chưa xác minh được (không phải lỗi mã)
+
+- **Không có log `mvn clean test package`** trong snapshot: toàn bộ 12 test migration + 15 test controller là *chưa chạy*. Đây là điều kiện chặn của chính design (gate 5), phải có log + hash artifact.
+- Không có trong snapshot, không kết luận được: `CatalogCategory.predicate()` (chuỗi SQL nội suy vào `find` — nếu chứa placeholder sẽ lệch chỉ số tham số 1–7), `CatalogInventory.cancelAndResolve`, `CatalogScreen/Row/Event/Page`, và **`DatabaseManager`** (đã sửa theo git status) — cần xác nhận nó không tự ghi `schema_version` hoặc có logic version riêng xung đột với `CURRENT_SCHEMA_VERSION = 8`.
+
+## 5. Giới hạn đã được tài liệu hóa (không phải regression)
+
+- Cap là **sampled CPU/VM**, không phải deadline I/O/lock/fsync: nếu `CREATE INDEX` chặn ở I/O hoặc lock, callback không chạy và main thread có thể treo quá 30s. Design đã nêu rõ.
+- `instr(...)` contains-search trên `tracked_items` vẫn interrupt ở 100k dòng — index lịch sử không sửa việc này, đúng như design tuyên bố. Thuộc slice sau (C2).
+- Constructor `SqliteConnectionOwner` chặn thread gọi ~1,3s khi migrate 1M dòng. Chấp nhận được cho startup, đã tài liệu hóa.
+
+## 6. Điều kiện của verdict
+
+PASS chỉ có hiệu lực cho **offline candidate**, với điều kiện: hoàn tất F1–F3, bổ sung test (1)(2)(4), và đính kèm log `mvn clean test package` xanh + hash artifact. Không có phê duyệt bật trên môi trường live/Paper/production từ slice này; rollback về JAR cũ vẫn cần backup lúc server dừng.
+
+FILE docs/reviews/c1-review-disposition.md
+# C1 implementation review disposition
+
+Review `c1-implementation-review.json` returned conditional PASS_FOR_OFFLINE_CANDIDATE. Parent does not treat conditions as already satisfied or extrapolated sizing as measured facts.
+
+- F1 CONFIRMED: generic SQLITE_INTERRUPT lacked migration context. Behavioral `c1-diagnosis-red.log` -> `c1-diagnosis-green.log`; adds history-index budget/check/elapsed/startup-denied diagnostic with original SQLite exception as cause. No timeout/cap increase.
+- F2 REJECTED as a supported admission/free-space claim: 8.3M rows / 2x free disk extrapolated from a single shape and 1M workload is not verified across row widths, cache, journal/temp space and disk pressure. Document measured 12k callbacks/100k cap and byte delta only. Larger-size support/required free space needs separate measurements and maintenance approval; never publish 8.3M/2x as safe limits.
+- F3 CONFIRMED pre-existing adjacent cleanup weakness: CatalogRepository cleanup could mask original query failure. Added small package-private cleanup seam, two behavioral RED tests -> GREEN, integrated into actual query finally. Both cleanup actions attempted; original retained with suppressed cleanup errors; success becomes error if cleanup fails. Setup handler now inside try so fold UDF is removed on handler-setup failure. Dependency-level cleanup failure injection not claimed; seam tests plus real JDBC query/error/recovery probe.
+- F4 NO NEW RETRY: schema handler-clear error fails initialization, existing SqliteConnectionOwner closes failed-init connection before ownership release. Rollback can fail and is suppressed; no reuse is promised. Reattempting handler cleanup or live retry to mask errors is not needed for fail-closed slice. No cleanup-native-failure or disk/full power-loss claim.
+- F5 DEFERRED hypothetical future proxy owner: production owner creates direct DriverManager SQLite connection; no proxy there today. Do not expand adapter contract for imagined future owner.
+- F6 NOT CONFIRMED for normal close path: SqliteConnectionOwner closes through queued closeConnection then SerialDatabaseExecutor.shutdown/await; queued pre-close tasks drain first. Close timeout retains lock and does not forcibly discard queue in that branch. Other shutdown/hung-I/O semantics pre-exist and remain fail-closed. Adding timeout-release to gate could admit overlapping reads while old SQL still runs, violating one-inflight. No change.
+
+Required coverage:
+- Added index/query-plan assertions to existing fresh/v1/v6 SqliteSchemaManagerTest; existing v7 fixture remains independent frozen history DDL.
+- Added RareSuffix: one matching item at final code in 100k tracked records. c1-scale-final.log shows bounded SQLITE_INTERRUPT, not false empty; still general-search-scale limitation.
+- Final full Maven c1-full-maven-final.log: 351 tests, failures/errors/skipped 0. C1 scale recompiled against that JAR, all three databases PASS. Previous full tests were 349, not review's inferred test count.
+- DatabaseManager has no schema_version/CURRENT_SCHEMA_VERSION writes; it delegates SqliteConnectionOwner. CatalogCategory predicates are closed enum SQL with no user interpolation or placeholders. Include both plus original legacy tests and final build excerpt in followup.
+
+Followup asks acceptance of these exact dispositions and the F1/F3 patch, not broad new runtime approval. No Paper/production/release authorization.
+
+
+FILE src/main/java/com/itemguard/persistence/SqliteSchemaManager.java
+package com.itemguard.persistence;
+
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+
+public final class SqliteSchemaManager {
+
+    public static final int CURRENT_SCHEMA_VERSION = 8;
+    private final int indexProgressLimit;
+    private final java.util.function.LongSupplier clock;
+
+    public SqliteSchemaManager() { this(100_000, System::nanoTime); }
+
+    SqliteSchemaManager(int indexProgressLimit, java.util.function.LongSupplier clock) {
+        this.indexProgressLimit = indexProgressLimit;
+        this.clock = clock;
+    }
+
+    public void initialize(Connection connection) throws SQLException {
+        if (connection.getAutoCommit()) throw new SQLException("Schema initialization requires a transaction");
+        validateExistingSchema(connection);
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS tracked_items (
+                    code VARCHAR(16) PRIMARY KEY,
+                    item_uuid VARCHAR(36) NOT NULL,
+                    owner_uuid VARCHAR(36),
+                    owner_name VARCHAR(255),
+                    material VARCHAR(64),
+                    item_name VARCHAR(255),
+                    item_lore TEXT,
+                    created_at BIGINT NOT NULL,
+                    last_seen_at BIGINT NOT NULL,
+                    last_action VARCHAR(32),
+                    detection_count INT DEFAULT 0,
+                    last_location TEXT
+                )
+                """);
+            statement.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_item_uuid_unique
+                ON tracked_items(item_uuid)
+                """);
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS item_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    code VARCHAR(16) NOT NULL,
+                    item_uuid VARCHAR(36) NOT NULL,
+                    action VARCHAR(32) NOT NULL,
+                    player_name VARCHAR(255),
+                    player_uuid VARCHAR(36),
+                    location TEXT,
+                    world VARCHAR(64),
+                    x INT,
+                    y INT,
+                    z INT,
+                    timestamp BIGINT NOT NULL,
+                    additional_data TEXT
+                )
+                """);
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS item_observations (
+                    observation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    item_uuid VARCHAR(36) NOT NULL,
+                    code VARCHAR(16) NOT NULL,
+                    scan_epoch BIGINT NOT NULL,
+                    epoch_complete INT NOT NULL DEFAULT 0,
+                    holder_type VARCHAR(32) NOT NULL,
+                    holder_id VARCHAR(255) NOT NULL,
+                    slot INT NOT NULL,
+                    observed_at BIGINT NOT NULL,
+                    UNIQUE(scan_epoch, holder_type, holder_id, slot, item_uuid)
+                )
+                """);
+            statement.execute("""
+                CREATE INDEX IF NOT EXISTS idx_observation_identity_epoch
+                ON item_observations(item_uuid, scan_epoch)
+                """);
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS duplicate_findings (
+                    finding_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    item_uuid VARCHAR(36) NOT NULL,
+                    code VARCHAR(16) NOT NULL,
+                    scan_epoch BIGINT NOT NULL,
+                    status VARCHAR(16) NOT NULL,
+                    distinct_locations INT NOT NULL,
+                    action VARCHAR(16) NOT NULL,
+                    created_at BIGINT NOT NULL,
+                    detail TEXT,
+                    FOREIGN KEY(code) REFERENCES tracked_items(code)
+                )
+                """);
+            statement.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_duplicate_finding_identity_epoch
+                ON duplicate_findings(item_uuid, scan_epoch)
+                """);
+            statement.execute("""
+                CREATE INDEX IF NOT EXISTS idx_duplicate_finding_identity_created
+                ON duplicate_findings(item_uuid, created_at)
+                """);
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS item_search_requests (
+                    code VARCHAR(16) PRIMARY KEY,
+                    mode VARCHAR(16) NOT NULL,
+                    state VARCHAR(16) NOT NULL,
+                    actor_uuid VARCHAR(36),
+                    actor_name VARCHAR(255) NOT NULL,
+                    created_at BIGINT NOT NULL,
+                    expires_at BIGINT NOT NULL,
+                    updated_at BIGINT NOT NULL
+                )
+                """);
+            statement.execute("""
+                CREATE INDEX IF NOT EXISTS idx_search_state_expiry
+                ON item_search_requests(state, expires_at)
+                """);
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS item_snapshots (
+                    code VARCHAR(16) PRIMARY KEY,
+                    snapshot_version INT NOT NULL,
+                    payload BLOB NOT NULL,
+                    sha256 BLOB NOT NULL,
+                    captured_at BIGINT NOT NULL,
+                    FOREIGN KEY(code) REFERENCES tracked_items(code)
+                )
+                """);
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS reclaim_claims (
+                    claim_id VARCHAR(36) PRIMARY KEY,
+                    idempotency_key VARCHAR(128) NOT NULL UNIQUE,
+                    player_uuid VARCHAR(36) NOT NULL,
+                    code VARCHAR(16) NOT NULL,
+                    state VARCHAR(16) NOT NULL,
+                    requested_at BIGINT NOT NULL,
+                    updated_at BIGINT NOT NULL,
+                    detail TEXT,
+                    FOREIGN KEY(code) REFERENCES tracked_items(code)
+                )
+                """);
+            statement.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_reclaim_identity_lock
+                ON reclaim_claims(player_uuid, code)
+                WHERE state IN ('PENDING', 'PREPARED', 'COMMITTED')
+                """);
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS tag_publications (
+                    publication_id VARCHAR(36) PRIMARY KEY,
+                    source_key VARCHAR(255) NOT NULL,
+                    source_digest BLOB NOT NULL,
+                    code VARCHAR(16) NOT NULL,
+                    item_uuid VARCHAR(36) NOT NULL,
+                    owner_uuid VARCHAR(36),
+                    owner_name VARCHAR(255),
+                    material VARCHAR(64),
+                    item_name VARCHAR(255),
+                    item_lore TEXT,
+                    created_item_at BIGINT NOT NULL,
+                    last_seen_at BIGINT NOT NULL,
+                    last_action VARCHAR(32),
+                    detection_count INT NOT NULL,
+                    last_location TEXT,
+                    snapshot_version INT NOT NULL,
+                    payload BLOB NOT NULL,
+                    sha256 BLOB NOT NULL,
+                    captured_at BIGINT NOT NULL,
+                    state VARCHAR(16) NOT NULL,
+                    created_at BIGINT NOT NULL,
+                    updated_at BIGINT NOT NULL,
+                    detail TEXT
+                )
+                """);
+            statement.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_tag_publication_source_lock
+                ON tag_publications(source_key)
+                WHERE state = 'PREPARED'
+                """);
+            statement.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_tag_publication_code_unique
+                ON tag_publications(code)
+                """);
+            statement.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_tag_publication_uuid_unique
+                ON tag_publications(item_uuid)
+                """);
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS plugin_stats (
+                    id INTEGER PRIMARY KEY,
+                    schema_version INT NOT NULL,
+                    duplicates_detected INT DEFAULT 0,
+                    last_updated BIGINT
+                )
+                """);
+            createHistoryIndex(connection, statement);
+            validateHistoryIndex(connection);
+            statement.executeUpdate("""
+                INSERT OR IGNORE INTO plugin_stats
+                (id, schema_version, duplicates_detected, last_updated)
+                VALUES (1, %d, 0, 0)
+                """.formatted(CURRENT_SCHEMA_VERSION));
+            statement.executeUpdate("""
+                UPDATE plugin_stats
+                SET schema_version = %d
+                WHERE id = 1 AND schema_version < %d
+                """.formatted(CURRENT_SCHEMA_VERSION, CURRENT_SCHEMA_VERSION));
+            connection.commit();
+        } catch (SQLException exception) {
+            try { connection.rollback(); }
+            catch (SQLException rollbackFailure) { exception.addSuppressed(rollbackFailure); }
+            throw exception;
+        }
+    }
+
+    private void createHistoryIndex(Connection connection, Statement statement) throws SQLException {
+        var sqlite = connection.unwrap(org.sqlite.SQLiteConnection.class);
+        long started = clock.getAsLong();
+        var budget = new org.sqlite.ProgressHandler() {
+            private int calls;
+            private boolean aborted;
+            @Override protected int progress() {
+                aborted = ++calls >= indexProgressLimit || clock.getAsLong() - started > 30_000_000_000L;
+                return aborted ? 1 : 0;
+            }
+        };
+        org.sqlite.ProgressHandler.setHandler(sqlite, 1000, budget);
+        SQLException original = null;
+        try {
+            statement.execute("""
+                CREATE INDEX IF NOT EXISTS idx_history_identity_time
+                ON item_history(code,item_uuid,timestamp DESC,id DESC)
+                """);
+        } catch (SQLException failure) {
+            original = budget.aborted ? new SQLException(
+                "ItemGuard history index migration budget exceeded (checks=" + budget.calls
+                    + ", elapsed_ms=" + (clock.getAsLong() - started) / 1_000_000L
+                    + "); startup denied. Keep the database and use a reviewed maintenance migration; do not downgrade its version.",
+                failure) : failure;
+            throw original;
+        } finally {
+            try { org.sqlite.ProgressHandler.clearHandler(sqlite); }
+            catch (SQLException cleanupFailure) {
+                if (original != null) original.addSuppressed(cleanupFailure);
+                else throw cleanupFailure;
+            }
+        }
+    }
+
+    private void validateHistoryIndex(Connection connection) throws SQLException {
+        boolean found = false;
+        try (var statement = connection.createStatement();
+             var rows = statement.executeQuery("PRAGMA index_list('item_history')")) {
+            while (rows.next()) {
+                if (!"idx_history_identity_time".equals(rows.getString("name"))) continue;
+                found = rows.getInt("unique") == 0 && rows.getInt("partial") == 0;
+            }
+        }
+        if (!found) throw new SQLException("Missing or incompatible history index");
+        String[] columns = {"code", "item_uuid", "timestamp", "id"};
+        int[] descending = {0, 0, 1, 1};
+        int position = 0;
+        try (var statement = connection.createStatement();
+             var rows = statement.executeQuery("PRAGMA index_xinfo('idx_history_identity_time')")) {
+            while (rows.next()) {
+                if (rows.getInt("key") == 0) continue;
+                if (position >= columns.length || !columns[position].equals(rows.getString("name"))
+                    || rows.getInt("desc") != descending[position]
+                    || !"BINARY".equals(rows.getString("coll"))) {
+                    throw new SQLException("Incompatible history index definition");
+                }
+                position++;
+            }
+        }
+        if (position != columns.length) throw new SQLException("Incomplete history index definition");
+    }
+
+    private void validateExistingSchema(Connection connection) throws SQLException {
+        try (var metadata = connection.prepareStatement(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'plugin_stats'");
+             ResultSet table = metadata.executeQuery()) {
+            if (!table.next()) {
+                return;
+            }
+        }
+
+        try (Statement statement = connection.createStatement();
+             ResultSet result = statement.executeQuery(
+                 "SELECT schema_version, typeof(schema_version) FROM plugin_stats WHERE id = 1")) {
+            if (!result.next()) {
+                throw new SQLException("ItemGuard schema metadata is missing row id=1");
+            }
+            long schemaVersion = result.getLong(1);
+            if (!"integer".equals(result.getString(2)) || schemaVersion < 1) {
+                throw new SQLException("Invalid ItemGuard schema version metadata");
+            }
+            if (schemaVersion > CURRENT_SCHEMA_VERSION) {
+                throw new SQLException(
+                    "Unsupported future ItemGuard schema version: " + schemaVersion
+                );
+            }
+        }
+    }
+}
+
+
+FILE src/main/java/com/itemguard/catalog/CatalogRepository.java
+package com.itemguard.catalog;
+
+import com.itemguard.persistence.SqliteConnectionOwner;
+import java.util.ArrayList;
+import java.util.concurrent.CompletableFuture;
+import org.sqlite.ProgressHandler;
+
+/** Bounded SELECT-only catalog; no world scan or item mutation. */
+public final class CatalogRepository {
+    private final SqliteConnectionOwner owner;
+    private final int progressLimit;
+    public CatalogRepository(SqliteConnectionOwner owner) { this(owner, 2000); }
+    CatalogRepository(SqliteConnectionOwner owner, int progressLimit) {
+        this.owner = java.util.Objects.requireNonNull(owner);
+        if (progressLimit < 1) throw new IllegalArgumentException("progressLimit");
+        this.progressLimit = progressLimit;
+    }
+    public CompletableFuture<java.util.List<CatalogEvent>> history(String code, String itemUuid) {
+        java.util.Objects.requireNonNull(code);
+        java.util.Objects.requireNonNull(itemUuid);
+        return bounded(connection -> {
+            var events = new ArrayList<CatalogEvent>();
+            try (var statement = connection.prepareStatement("""
+                SELECT id,action,player_name,player_uuid,location,timestamp,additional_data
+                FROM item_history WHERE code = ? AND item_uuid = ?
+                ORDER BY timestamp DESC, id DESC LIMIT 100
+                """)) {
+                statement.setString(1, code);
+                statement.setString(2, itemUuid);
+                try (var result = statement.executeQuery()) {
+                    while (result.next()) events.add(new CatalogEvent(result.getLong(1), result.getString(2),
+                        result.getString(3), result.getString(4), result.getString(5), result.getLong(6), result.getString(7)));
+                }
+            }
+            return java.util.List.copyOf(events);
+        });
+    }
+
+    public CompletableFuture<CatalogPage> find(CatalogQuery query) {
+        java.util.Objects.requireNonNull(query);
+        return bounded(connection -> {
+            var rows = new ArrayList<CatalogRow>();
+            String sql = """
+                SELECT code,item_uuid,material,item_name,owner_name,last_location,last_seen_at
+                FROM tracked_items WHERE code > ?
+                AND (? = '' OR instr(ig_catalog_fold(COALESCE(item_name,'')), ig_catalog_fold(?)) > 0
+                    OR instr(ig_catalog_fold(code),ig_catalog_fold(?)) > 0 OR instr(ig_catalog_fold(COALESCE(material,'')),ig_catalog_fold(?)) > 0)
+                AND (? = '' OR owner_name = ? COLLATE NOCASE)
+                AND %s ORDER BY code ASC LIMIT 37
+                """.formatted(query.category().predicate());
+            try (var statement = connection.prepareStatement(sql)) {
+                statement.setString(1, query.afterCode());
+                for (int i = 2; i <= 5; i++) statement.setString(i, query.text());
+                statement.setString(6, query.ownerName());
+                statement.setString(7, query.ownerName());
+                try (var result = statement.executeQuery()) {
+                    while (result.next()) rows.add(new CatalogRow(
+                        result.getString(1), result.getString(2), result.getString(3),
+                        result.getString(4), result.getString(5), result.getString(6), result.getLong(7)));
+                }
+            }
+            boolean more = rows.size() > 36;
+            if (more) rows.removeLast();
+            return new CatalogPage(rows, more);
+        });
+    }
+
+    @FunctionalInterface
+    interface Cleanup { void run() throws java.sql.SQLException; }
+
+    static void cleanup(Throwable original, Cleanup... actions) throws java.sql.SQLException {
+        Throwable first = original;
+        for (var action : actions) {
+            try { action.run(); }
+            catch (java.sql.SQLException failure) {
+                if (first == null) first = failure;
+                else if (first != failure) first.addSuppressed(failure);
+            }
+        }
+        if (original == null && first != null) throw (java.sql.SQLException) first;
+    }
+
+    private <T> CompletableFuture<T> bounded(SqliteConnectionOwner.SqliteOperation<T> operation) {
+        return owner.callAsync(connection -> {
+            long started = System.nanoTime();
+            org.sqlite.Function.create(connection, "ig_catalog_fold", new org.sqlite.Function() {
+                @Override protected void xFunc() throws java.sql.SQLException {
+                    String value=value_text(0);
+                    result(java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFC).toLowerCase(java.util.Locale.ROOT));
+                }
+            }, 1, org.sqlite.Function.FLAG_DETERMINISTIC);
+            Throwable original = null;
+            try {
+                ProgressHandler.setHandler(connection, 1000, new ProgressHandler() {
+                    private int calls;
+                    @Override protected int progress() {
+                        return ++calls >= progressLimit || System.nanoTime() - started > 250_000_000L ? 1 : 0;
+                    }
+                });
+                return operation.apply(connection);
+            } catch (Exception | Error failure) {
+                original = failure; throw failure;
+            } finally {
+                cleanup(original, () -> ProgressHandler.clearHandler(connection),
+                    () -> org.sqlite.Function.destroy(connection, "ig_catalog_fold", 1));
+            }
+        });
+    }
+}
+
+
+FILE src/test/java/com/itemguard/catalog/CatalogCleanupTest.java
+package com.itemguard.catalog;
+
+import org.junit.jupiter.api.Test;
+import java.sql.SQLException;
+import static org.junit.jupiter.api.Assertions.*;
+
+class CatalogCleanupTest {
+    @Test void originalQueryErrorSurvivesBothCleanupFailures() {
+        var original=new SQLException("query interrupted");
+        var clear=new SQLException("clear failed"); var destroy=new SQLException("destroy failed");
+        assertDoesNotThrow(()->CatalogRepository.cleanup(original,()->{throw clear;},()->{throw destroy;}),
+            "cleanup must retain original query error");
+        assertArrayEquals(new Throwable[]{clear,destroy},original.getSuppressed());
+    }
+    @Test void successfulQueryStillFailsIfCleanupFailsAndRunsBothActions() {
+        var clear=new SQLException("clear failed"); var destroy=new SQLException("destroy failed");
+        var failure=assertThrows(SQLException.class,()->CatalogRepository.cleanup(null,()->{throw clear;},()->{throw destroy;}));
+        assertSame(clear,failure); assertArrayEquals(new Throwable[]{destroy},failure.getSuppressed());
+    }
+}
+
+
+FILE src/test/java/com/itemguard/persistence/SqliteHistoryMigrationTest.java
+package com.itemguard.persistence;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import java.nio.file.Path;
+import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
+import static org.junit.jupiter.api.Assertions.*;
+
+class SqliteHistoryMigrationTest {
+    @TempDir Path temp;
+
+    @Test void versionSevenPreservesHistoryAndUnknownDataWithOrderedIndexOnReopen() throws Exception {
+        Path db = temp.resolve("upgrade.db");
+        try (var c = connect(db)) {
+            legacy(c);
+            new SqliteSchemaManager().initialize(c);
+            assertEquals(8, version(c), "successful migration must publish schema eight");
+            assertHistoryIndex(c);
+            assertLegacyData(c);
+        }
+        try (var c = connect(db)) {
+            new SqliteSchemaManager().initialize(c);
+            assertEquals(8, version(c));
+            assertHistoryIndex(c);
+            assertLegacyData(c);
+        }
+    }
+
+    @Test void incompatibleNamedIndexesAreRejectedWithoutRepairOrVersionStamp() throws Exception {
+        var definitions=List.of(
+            "CREATE INDEX idx_history_identity_time ON item_history(action)",
+            "CREATE INDEX idx_history_identity_time ON item_history(code,item_uuid,timestamp,id)",
+            "CREATE INDEX idx_history_identity_time ON item_history(code COLLATE NOCASE,item_uuid,timestamp DESC,id DESC)",
+            "CREATE UNIQUE INDEX idx_history_identity_time ON item_history(code,item_uuid,timestamp DESC,id DESC)",
+            "CREATE INDEX idx_history_identity_time ON item_history(code,item_uuid,timestamp DESC,id DESC) WHERE id>0",
+            "CREATE INDEX idx_history_identity_time ON unknown_extension(k)"
+        );
+        for(int i=0;i<definitions.size();i++) {
+            Path db=temp.resolve("conflict-"+i+".db");
+            try(var c=connect(db)) {
+                legacy(c);
+                try(var s=c.createStatement()) { s.execute(definitions.get(i)); c.commit(); }
+                assertThrows(SQLException.class,()->new SqliteSchemaManager().initialize(c),"incompatible index must reject");
+                assertEquals(7,version(c)); assertLegacyData(c);
+            }
+            try(var c=connect(db)) { assertEquals(7,version(c)); assertLegacyData(c); }
+        }
+    }
+
+    @Test void corruptMetadataIsRejectedWithoutCreatingTablesOrChangingStamp() throws Exception {
+        var values=List.of("'broken'", "0", "-1", "7.5", "99", "4294967303");
+        for(int i=0;i<values.size();i++) {
+            try(var c=connect(temp.resolve("metadata-"+i+".db"))) {
+                legacy(c);
+                try(var s=c.createStatement()) { s.execute("UPDATE plugin_stats SET schema_version="+values.get(i)); c.commit(); }
+                String before=metadata(c);
+                assertThrows(SQLException.class,()->new SqliteSchemaManager().initialize(c),"invalid metadata must reject");
+                assertEquals(before,metadata(c)); assertFalse(objectExists(c,"tracked_items")); assertLegacyRows(c);
+            }
+        }
+    }
+
+    @Test void autoCommitRejectedBeforeAnyDdl() throws Exception {
+        try(var c=DriverManager.getConnection("jdbc:sqlite:"+temp.resolve("autocommit.db"))) {
+            assertThrows(SQLException.class,()->new SqliteSchemaManager().initialize(c));
+            assertFalse(objectExists(c,"tracked_items"),"autocommit rejection must precede DDL");
+        }
+    }
+
+    static boolean objectExists(Connection c,String name) throws SQLException {
+        try(var s=c.prepareStatement("SELECT 1 FROM sqlite_master WHERE name=?")) {
+            s.setString(1,name); try(var r=s.executeQuery()) { return r.next(); }
+        }
+    }
+    static String metadata(Connection c) throws SQLException {
+        try(var s=c.createStatement(); var r=s.executeQuery("SELECT typeof(schema_version)||':'||schema_version FROM plugin_stats WHERE id=1")) { assertTrue(r.next()); return r.getString(1); }
+    }
+    static void assertLegacyRows(Connection c) throws SQLException {
+        try(var s=c.createStatement();var r=s.executeQuery("SELECT count(*) FROM item_history")) { assertTrue(r.next()); assertEquals(2,r.getInt(1)); }
+    }
+
+    @Test void stampFailureRollsBackIndexAndSchemaOnDisk() throws Exception {
+        Path db=temp.resolve("stamp-failure.db");
+        try(var c=connect(db)) {
+            legacy(c);
+            try(var s=c.createStatement()) { s.execute("CREATE TRIGGER reject_stamp BEFORE UPDATE ON plugin_stats BEGIN SELECT RAISE(ABORT,'stamp blocked'); END"); c.commit(); }
+            SQLException failure=assertThrows(SQLException.class,()->new SqliteSchemaManager().initialize(c));
+            assertTrue(failure.getMessage().contains("stamp blocked"));
+            assertFalse(objectExists(c,"idx_history_identity_time")); assertFalse(objectExists(c,"tracked_items"));
+        }
+        try(var c=connect(db)) {
+            assertEquals(7,version(c)); assertLegacyData(c);
+            assertFalse(objectExists(c,"idx_history_identity_time"));
+            try(var s=c.createStatement()) { s.execute("DROP TRIGGER reject_stamp"); c.commit(); }
+            new SqliteSchemaManager().initialize(c); assertEquals(8,version(c)); assertHistoryIndex(c);
+        }
+    }
+
+    @Test void rollbackFailureDoesNotHideOriginalMigrationFailure() throws Exception {
+        try(var c=connect(temp.resolve("rollback-failure.db"))) {
+            legacy(c);
+            try(var s=c.createStatement()) { s.execute("CREATE TRIGGER reject_stamp BEFORE UPDATE ON plugin_stats BEGIN SELECT RAISE(ABORT,'stamp blocked'); END"); c.commit(); }
+            Connection proxy=(Connection)java.lang.reflect.Proxy.newProxyInstance(Connection.class.getClassLoader(),new Class[]{Connection.class},(obj,method,args)->{
+                if(method.getName().equals("rollback")) throw new SQLException("rollback blocked");
+                try { return method.invoke(c,args); } catch(java.lang.reflect.InvocationTargetException e) { throw e.getCause(); }
+            });
+            SQLException failure=assertThrows(SQLException.class,()->new SqliteSchemaManager().initialize(proxy));
+            assertTrue(failure.getMessage().contains("stamp blocked"),"original migration error must survive rollback failure");
+            assertEquals("rollback blocked",failure.getSuppressed()[0].getMessage());
+            c.rollback();
+        }
+    }
+
+    @Test void interruptedIndexRollsBackAndClearsHandlerForNextOperation() throws Exception {
+        for(boolean elapsed:List.of(false,true)) {
+            Path db=temp.resolve("interrupt-"+elapsed+".db");
+            try(var c=connect(db)) {
+                legacy(c);
+                try(var s=c.createStatement()) {
+                    s.execute("WITH RECURSIVE seq(n) AS (SELECT 100 UNION ALL SELECT n+1 FROM seq WHERE n<10000) INSERT INTO item_history(code,item_uuid,action,timestamp) SELECT 'NOISE','noise','SYNTHETIC',n FROM seq"); c.commit();
+                }
+                var calls=new java.util.concurrent.atomic.AtomicInteger();
+                var manager=new SqliteSchemaManager(elapsed?100000:1,()->elapsed && calls.getAndIncrement()>0?30_000_000_001L:0L);
+                SQLException failure=assertThrows(SQLException.class,()->manager.initialize(c),"index budget must interrupt before stamp");
+                assertTrue(failure.getMessage().contains("history index migration budget exceeded"),"budget failure needs actionable migration diagnosis");
+                assertNotNull(failure.getCause());
+                assertTrue(failure.getCause().getMessage().contains("SQLITE_INTERRUPT"));
+                assertEquals(7,version(c)); assertFalse(objectExists(c,"idx_history_identity_time"));
+                try(var s=c.createStatement();var r=s.executeQuery("SELECT sum(timestamp) FROM item_history")) { assertTrue(r.next()); assertTrue(r.getLong(1)>0); }
+                // SQLITE_INTERRUPT can auto-rollback SQLite's transaction. The owner
+                // closes a failed initialization connection; recovery uses reopen.
+            }
+            try(var c=connect(db)) { assertEquals(7,version(c)); new SqliteSchemaManager().initialize(c); assertHistoryIndex(c); }
+        }
+    }
+
+    @Test void progressHandlerIsClearedBeforeCommit() throws Exception {
+        try(var c=connect(temp.resolve("clear-before-commit.db"))) {
+            legacy(c);
+            var ticks=new java.util.concurrent.atomic.AtomicLong();
+            var checked=new java.util.concurrent.atomic.AtomicBoolean();
+            Connection proxy=(Connection)java.lang.reflect.Proxy.newProxyInstance(Connection.class.getClassLoader(),new Class[]{Connection.class},(obj,method,args)->{
+                if(method.getName().equals("commit")) {
+                    ticks.set(31_000_000_000L);
+                    try(var s=c.createStatement();var r=s.executeQuery("WITH RECURSIVE seq(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM seq WHERE n<10000) SELECT sum(n) FROM seq")) {
+                        assertTrue(r.next()); assertEquals(50005000L,r.getLong(1)); checked.set(true);
+                    }
+                }
+                try { return method.invoke(c,args); } catch(java.lang.reflect.InvocationTargetException e) { throw e.getCause(); }
+            });
+            new SqliteSchemaManager(100000,ticks::get).initialize(proxy);
+            assertTrue(checked.get()); assertEquals(8,version(c));
+        }
+    }
+
+    @Test void missingOrNullMetadataIsRejected() throws Exception {
+        for(boolean missing:List.of(true,false)) {
+            try(var c=connect(temp.resolve("missing-"+missing+".db"))) {
+                try(var s=c.createStatement()) {
+                    s.execute("CREATE TABLE plugin_stats(id INTEGER PRIMARY KEY,schema_version INT,duplicates_detected INT,last_updated BIGINT)");
+                    if(!missing) s.execute("INSERT INTO plugin_stats VALUES(1,NULL,0,0)"); c.commit();
+                }
+                assertThrows(SQLException.class,()->new SqliteSchemaManager().initialize(c));
+                assertFalse(objectExists(c,"tracked_items")); assertFalse(objectExists(c,"idx_history_identity_time"));
+            }
+        }
+    }
+
+    static Connection connect(Path path) throws SQLException {
+        var c = DriverManager.getConnection("jdbc:sqlite:" + path);
+        c.setAutoCommit(false);
+        return c;
+    }
+    // Frozen pre-index DDL, independent of the initializer under test.
+    static void legacy(Connection c) throws SQLException {
+        try (var s = c.createStatement()) {
+            s.execute("CREATE TABLE plugin_stats(id INTEGER PRIMARY KEY,schema_version INT NOT NULL,duplicates_detected INT DEFAULT 0,last_updated BIGINT)");
+            s.execute("INSERT INTO plugin_stats VALUES(1,7,17,123)");
+            s.execute("CREATE TABLE item_history(id INTEGER PRIMARY KEY AUTOINCREMENT,code VARCHAR(16) NOT NULL,item_uuid VARCHAR(36) NOT NULL,action VARCHAR(32) NOT NULL,player_name VARCHAR(255),player_uuid VARCHAR(36),location TEXT,world VARCHAR(64),x INT,y INT,z INT,timestamp BIGINT NOT NULL,additional_data TEXT)");
+            s.execute("INSERT INTO item_history(id,code,item_uuid,action,timestamp,additional_data) VALUES(41,'ABC123','identity','DROP',100,'unknown payload'),(42,'ABC123','identity','PICKUP',100,'keep')");
+            s.execute("CREATE TABLE unknown_extension(k TEXT,v BLOB)");
+            s.execute("INSERT INTO unknown_extension VALUES('opaque',X'0001FEFF')");
+            s.execute("CREATE INDEX unknown_history_index ON item_history(action)");
+            c.commit();
+        }
+    }
+    static int version(Connection c) throws SQLException {
+        try (var s=c.createStatement(); var r=s.executeQuery("SELECT schema_version FROM plugin_stats WHERE id=1")) { assertTrue(r.next()); return r.getInt(1); }
+    }
+    static void assertHistoryIndex(Connection c) throws SQLException {
+        List<String> keys=new ArrayList<>();
+        try (var s=c.createStatement(); var r=s.executeQuery("PRAGMA index_xinfo('idx_history_identity_time')")) {
+            while(r.next()) if(r.getInt("key")==1) keys.add(r.getString("name")+":"+r.getInt("desc")+":"+r.getString("coll"));
+        }
+        assertEquals(List.of("code:0:BINARY","item_uuid:0:BINARY","timestamp:1:BINARY","id:1:BINARY"),keys);
+        try (var s=c.createStatement(); var r=s.executeQuery("EXPLAIN QUERY PLAN SELECT id,action FROM item_history WHERE code='ABC123' AND item_uuid='identity' ORDER BY timestamp DESC,id DESC LIMIT 100")) {
+            String plan=""; while(r.next()) plan+=r.getString(4);
+            assertTrue(plan.contains("idx_history_identity_time"),plan);
+            assertFalse(plan.contains("TEMP B-TREE"),plan);
+        }
+    }
+    static void assertLegacyData(Connection c) throws SQLException {
+        try(var s=c.createStatement(); var r=s.executeQuery("SELECT id,additional_data FROM item_history ORDER BY id")) {
+            assertTrue(r.next()); assertEquals(41,r.getInt(1)); assertEquals("unknown payload",r.getString(2));
+            assertTrue(r.next()); assertEquals(42,r.getInt(1)); assertEquals("keep",r.getString(2)); assertFalse(r.next());
+        }
+        try(var s=c.createStatement(); var r=s.executeQuery("SELECT hex(v) FROM unknown_extension")) { assertTrue(r.next()); assertEquals("0001FEFF",r.getString(1)); }
+        try(var s=c.createStatement(); var r=s.executeQuery("SELECT duplicates_detected,last_updated FROM plugin_stats WHERE id=1")) { assertTrue(r.next()); assertEquals(17,r.getInt(1)); assertEquals(123,r.getInt(2)); }
+        try(var s=c.createStatement(); var r=s.executeQuery("SELECT 1 FROM sqlite_master WHERE name='unknown_history_index'")) { assertTrue(r.next()); }
+    }
+}
+
+
+FILE src/test/java/com/itemguard/persistence/SqliteSchemaManagerTest.java
+package com.itemguard.persistence;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class SqliteSchemaManagerTest {
+
+    @TempDir
+    Path tempDir;
+
+    @Test
+    void freshDatabaseCreatesCurrentSchemaAndObservationLedger() throws Exception {
+        Path database = tempDir.resolve("fresh.db");
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + database)) {
+            connection.setAutoCommit(false);
+
+            new SqliteSchemaManager().initialize(connection);
+
+            assertEquals(SqliteSchemaManager.CURRENT_SCHEMA_VERSION, schemaVersion(connection));
+            assertTrue(tableExists(connection, "tracked_items"));
+            assertTrue(tableExists(connection, "item_history"));
+            assertTrue(tableExists(connection, "item_observations"));
+            assertTrue(tableExists(connection, "item_search_requests"));
+            assertTrue(tableExists(connection, "item_snapshots"));
+            assertTrue(tableExists(connection, "reclaim_claims"));
+            assertTrue(tableExists(connection, "tag_publications"));
+            assertTrue(tableExists(connection, "duplicate_findings"));
+            assertTrue(indexIsUnique(connection, "idx_item_uuid_unique"));
+            SqliteHistoryMigrationTest.assertHistoryIndex(connection);
+        }
+    }
+
+    @Test
+    void versionSixDatabaseAddsDuplicateFindingAuditWithoutLosingCanonicalItem()
+        throws Exception {
+        Path database = tempDir.resolve("version-six.db");
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + database)) {
+            connection.setAutoCommit(false);
+            createVersionSixSchema(connection);
+            try (Statement statement = connection.createStatement()) {
+                statement.executeUpdate("""
+                    INSERT INTO tracked_items
+                    (code, item_uuid, created_at, last_seen_at)
+                    VALUES ('AB12CD', '00000000-0000-0000-0000-000000000001', 10, 20)
+                    """);
+                connection.commit();
+            }
+
+            new SqliteSchemaManager().initialize(connection);
+
+            assertEquals(SqliteSchemaManager.CURRENT_SCHEMA_VERSION, schemaVersion(connection));
+            assertEquals(1, countRows(connection, "tracked_items"));
+            assertTrue(tableExists(connection, "duplicate_findings"));
+            assertTrue(indexIsUnique(connection, "idx_duplicate_finding_identity_epoch"));
+            SqliteHistoryMigrationTest.assertHistoryIndex(connection);
+        }
+    }
+
+    @Test
+    void futureSchemaIsRejectedWithoutMutation() throws Exception {
+        Path database = tempDir.resolve("future.db");
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + database)) {
+            connection.setAutoCommit(false);
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("""
+                    CREATE TABLE plugin_stats (
+                        id INTEGER PRIMARY KEY,
+                        schema_version INT NOT NULL,
+                        duplicates_detected INT DEFAULT 0,
+                        last_updated BIGINT
+                    )
+                    """);
+                statement.executeUpdate("""
+                    INSERT INTO plugin_stats
+                    (id, schema_version, duplicates_detected, last_updated)
+                    VALUES (1, 99, 0, 0)
+                    """);
+                connection.commit();
+            }
+
+            assertThrows(SQLException.class, () -> new SqliteSchemaManager().initialize(connection));
+
+            assertEquals(99, schemaVersion(connection));
+            assertFalse(tableExists(connection, "item_observations"));
+        }
+    }
+
+    @Test
+    void versionOneDatabaseMigratesWithoutLosingTrackedItems() throws Exception {
+        Path database = tempDir.resolve("version-one.db");
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + database)) {
+            connection.setAutoCommit(false);
+            createVersionOneSchema(connection);
+            try (Statement statement = connection.createStatement()) {
+                statement.executeUpdate("""
+                    INSERT INTO tracked_items
+                    (code, item_uuid, created_at, last_seen_at)
+                    VALUES ('AB12CD', '00000000-0000-0000-0000-000000000001', 10, 20)
+                    """);
+                connection.commit();
+            }
+
+            new SqliteSchemaManager().initialize(connection);
+
+            assertEquals(SqliteSchemaManager.CURRENT_SCHEMA_VERSION, schemaVersion(connection));
+            assertEquals(1, countRows(connection, "tracked_items"));
+            assertTrue(tableExists(connection, "item_observations"));
+            assertTrue(indexIsUnique(connection, "idx_item_uuid_unique"));
+            SqliteHistoryMigrationTest.assertHistoryIndex(connection);
+        }
+    }
+
+    @Test
+    void duplicateLegacyIdentityRejectsMigrationWithoutDeletingData() throws Exception {
+        Path database = tempDir.resolve("duplicate-legacy.db");
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + database)) {
+            connection.setAutoCommit(false);
+            createVersionOneSchema(connection);
+            try (Statement statement = connection.createStatement()) {
+                statement.executeUpdate("""
+                    INSERT INTO tracked_items
+                    (code, item_uuid, created_at, last_seen_at)
+                    VALUES
+                    ('AB12CD', '00000000-0000-0000-0000-000000000001', 10, 20),
+                    ('EF34GH', '00000000-0000-0000-0000-000000000001', 11, 21)
+                    """);
+                connection.commit();
+            }
+
+            assertThrows(SQLException.class, () -> new SqliteSchemaManager().initialize(connection));
+
+            assertEquals(1, schemaVersion(connection));
+            assertEquals(2, countRows(connection, "tracked_items"));
+            assertFalse(tableExists(connection, "item_observations"));
+        }
+    }
+
+    @Test
+    void versionThreeDatabaseMigratesToSnapshotSchemaWithoutLosingSearchRequest() throws Exception {
+        Path database = tempDir.resolve("version-three.db");
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + database)) {
+            connection.setAutoCommit(false);
+            new SqliteSchemaManager().initialize(connection);
+            try (Statement statement = connection.createStatement()) {
+                statement.executeUpdate(
+                    "UPDATE plugin_stats SET schema_version = 3 WHERE id = 1"
+                );
+                statement.executeUpdate("""
+                    INSERT INTO item_search_requests
+                    (code, mode, state, actor_name, created_at, expires_at, updated_at)
+                    VALUES ('AB12CD', 'FIND', 'ACTIVE', 'Admin', 10, 20, 10)
+                    """);
+                statement.execute("DROP TABLE item_snapshots");
+                connection.commit();
+            }
+
+            new SqliteSchemaManager().initialize(connection);
+
+            assertEquals(SqliteSchemaManager.CURRENT_SCHEMA_VERSION, schemaVersion(connection));
+            assertTrue(tableExists(connection, "item_snapshots"));
+            assertEquals(1, countRows(connection, "item_search_requests"));
+        }
+    }
+
+    private void createVersionOneSchema(Connection connection) throws Exception {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("""
+                CREATE TABLE tracked_items (
+                    code VARCHAR(16) PRIMARY KEY,
+                    item_uuid VARCHAR(36) NOT NULL,
+                    owner_uuid VARCHAR(36),
+                    owner_name VARCHAR(255),
+                    material VARCHAR(64),
+                    item_name VARCHAR(255),
+                    item_lore TEXT,
+                    created_at BIGINT NOT NULL,
+                    last_seen_at BIGINT NOT NULL,
+                    last_action VARCHAR(32),
+                    detection_count INT DEFAULT 0,
+                    last_location TEXT
+                )
+                """);
+            statement.execute("""
+                CREATE TABLE plugin_stats (
+                    id INTEGER PRIMARY KEY,
+                    schema_version INT NOT NULL,
+                    duplicates_detected INT DEFAULT 0,
+                    last_updated BIGINT
+                )
+                """);
+            statement.executeUpdate("""
+                INSERT INTO plugin_stats
+                (id, schema_version, duplicates_detected, last_updated)
+                VALUES (1, 1, 0, 0)
+                """);
+            connection.commit();
+        }
+    }
+
+    private void createVersionSixSchema(Connection connection) throws Exception {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("""
+                CREATE TABLE tracked_items (
+                    code VARCHAR(16) PRIMARY KEY,
+                    item_uuid VARCHAR(36) NOT NULL,
+                    owner_uuid VARCHAR(36),
+                    owner_name VARCHAR(255),
+                    material VARCHAR(64),
+                    item_name VARCHAR(255),
+                    item_lore TEXT,
+                    created_at BIGINT NOT NULL,
+                    last_seen_at BIGINT NOT NULL,
+                    last_action VARCHAR(32),
+                    detection_count INT DEFAULT 0,
+                    last_location TEXT
+                )
+                """);
+            statement.execute("""
+                CREATE TABLE plugin_stats (
+                    id INTEGER PRIMARY KEY,
+                    schema_version INT NOT NULL,
+                    duplicates_detected INT DEFAULT 0,
+                    last_updated BIGINT
+                )
+                """);
+            statement.executeUpdate("""
+                INSERT INTO plugin_stats
+                (id, schema_version, duplicates_detected, last_updated)
+                VALUES (1, 6, 0, 0)
+                """);
+            connection.commit();
+        }
+    }
+
+    private int countRows(Connection connection, String table) throws Exception {
+        try (Statement statement = connection.createStatement();
+             ResultSet result = statement.executeQuery("SELECT COUNT(*) FROM " + table)) {
+            result.next();
+            return result.getInt(1);
+        }
+    }
+
+    private int schemaVersion(Connection connection) throws Exception {
+        try (Statement statement = connection.createStatement();
+             ResultSet result = statement.executeQuery(
+                 "SELECT schema_version FROM plugin_stats WHERE id = 1")) {
+            result.next();
+            return result.getInt(1);
+        }
+    }
+
+    private boolean tableExists(Connection connection, String table) throws Exception {
+        try (var statement = connection.prepareStatement(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")) {
+            statement.setString(1, table);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next();
+            }
+        }
+    }
+
+    private boolean indexIsUnique(Connection connection, String index) throws Exception {
+        try (var statement = connection.prepareStatement(
+            "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?")) {
+            statement.setString(1, index);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next() && result.getString(1).contains("UNIQUE INDEX");
+            }
+        }
+    }
+}
+
+
+FILE src/main/java/com/itemguard/persistence/SqliteConnectionOwner.java
+package com.itemguard.persistence;
+
+import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.time.Duration;
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
+
+public final class SqliteConnectionOwner implements AutoCloseable {
+
+    private static final Duration DEFAULT_CLOSE_TIMEOUT = Duration.ofSeconds(10);
+
+    private final SerialDatabaseExecutor executor;
+    private final Consumer<Throwable> failureHandler;
+    private final SqliteProcessLock processLock;
+    private final Duration initializationCleanupTimeout;
+    private final Consumer<SqliteProcessLock> processLockReleaser;
+    private final AtomicBoolean closed = new AtomicBoolean();
+    private volatile boolean closeSucceeded;
+    private Connection connection;
+
+    public SqliteConnectionOwner(Path databasePath) {
+        this(databasePath, failure -> {});
+    }
+
+    public SqliteConnectionOwner(Path databasePath, Consumer<Throwable> failureHandler) {
+        this(
+            databasePath,
+            failureHandler,
+            DEFAULT_CLOSE_TIMEOUT,
+            () -> {},
+            SqliteProcessLock::close
+        );
+    }
+
+    SqliteConnectionOwner(
+        Path databasePath,
+        Consumer<Throwable> failureHandler,
+        Duration initializationCleanupTimeout,
+        Runnable beforeInitialization,
+        Consumer<SqliteProcessLock> processLockReleaser
+    ) {
+        Objects.requireNonNull(databasePath, "databasePath");
+        this.failureHandler = Objects.requireNonNull(failureHandler, "failureHandler");
+        this.initializationCleanupTimeout = Objects.requireNonNull(
+            initializationCleanupTimeout,
+            "initializationCleanupTimeout"
+        );
+        Objects.requireNonNull(beforeInitialization, "beforeInitialization");
+        this.processLockReleaser = Objects.requireNonNull(
+            processLockReleaser,
+            "processLockReleaser"
+        );
+        this.processLock = SqliteProcessLock.acquire(databasePath);
+        this.executor = new SerialDatabaseExecutor("ItemGuard-DB");
+
+        Future<Void> initialization = executor.submit(() -> {
+            try {
+                beforeInitialization.run();
+                connection = DriverManager.getConnection(
+                    "jdbc:sqlite:" + databasePath.toAbsolutePath()
+                );
+                try (var statement = connection.createStatement()) {
+                    statement.execute("PRAGMA foreign_keys = ON");
+                }
+                connection.setAutoCommit(false);
+                new SqliteSchemaManager().initialize(connection);
+                return null;
+            } catch (Throwable failure) {
+                if (connection != null) {
+                    try {
+                        connection.close();
+                    } catch (SQLException closeFailure) {
+                        failure.addSuppressed(closeFailure);
+                    } finally {
+                        connection = null;
+                    }
+                }
+                throw failure;
+            }
+        });
+        try {
+            awaitInitialization(initialization);
+        } catch (RuntimeException failure) {
+            if (cleanupAfterInitializationFailure(failure)) {
+                try {
+                    processLockReleaser.accept(processLock);
+                } catch (RuntimeException releaseFailure) {
+                    failure.addSuppressed(releaseFailure);
+                    processLock.retainUntilProcessExit();
+                }
+            } else {
+                processLock.retainUntilProcessExit();
+            }
+            throw failure;
+        }
+    }
+
+    public void execute(SqliteOperation<Void> operation) {
+        requireOpen();
+        executor.execute(() -> {
+            try {
+                runTransaction(operation);
+            } catch (RuntimeException failure) {
+                reportFailure(failure);
+            }
+        });
+    }
+
+    public <T> T call(SqliteOperation<T> operation) {
+        requireOpen();
+        Future<T> future = executor.submit(() -> runTransaction(operation));
+        try {
+            return future.get();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting for ItemGuard database", interrupted);
+        } catch (ExecutionException failure) {
+            throw propagate(failure.getCause());
+        }
+    }
+
+    public <T> CompletableFuture<T> callAsync(SqliteOperation<T> operation) {
+        requireOpen();
+        Objects.requireNonNull(operation, "operation");
+        CompletableFuture<T> completion = new CompletableFuture<>();
+        executor.execute(() -> {
+            try {
+                completion.complete(runTransaction(operation));
+            } catch (RuntimeException failure) {
+                reportFailure(failure);
+                completion.completeExceptionally(failure);
+            }
+        });
+        return completion;
+    }
+
+    public void flush() {
+        call(connection -> null);
+    }
+
+    public synchronized boolean close(Duration timeout) {
+        Objects.requireNonNull(timeout, "timeout");
+        if (!closed.compareAndSet(false, true)) {
+            return closeSucceeded;
+        }
+
+        long deadline = System.nanoTime() + timeout.toNanos();
+        Future<Void> closeConnection = executor.submit(() -> {
+            if (connection != null && !connection.isClosed()) {
+                connection.close();
+            }
+            return null;
+        });
+
+        try {
+            closeConnection.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            processLock.retainUntilProcessExit();
+            closeSucceeded = false;
+            return false;
+        } catch (ExecutionException | TimeoutException failure) {
+            reportFailure(failure);
+            processLock.retainUntilProcessExit();
+            closeSucceeded = false;
+            return false;
+        }
+
+        long remainingNanos = Math.max(0L, deadline - System.nanoTime());
+        if (!executor.close(Duration.ofNanos(remainingNanos))) {
+            processLock.retainUntilProcessExit();
+            closeSucceeded = false;
+            return false;
+        }
+        try {
+            processLockReleaser.accept(processLock);
+            closeSucceeded = true;
+            return true;
+        } catch (RuntimeException releaseFailure) {
+            reportFailure(releaseFailure);
+            processLock.retainUntilProcessExit();
+            closeSucceeded = false;
+            return false;
+        }
+    }
+
+    @Override
+    public void close() {
+        close(DEFAULT_CLOSE_TIMEOUT);
+    }
+
+    private <T> T runTransaction(SqliteOperation<T> operation) {
+        try {
+            T result = operation.apply(connection);
+            connection.commit();
+            return result;
+        } catch (Throwable failure) {
+            rollback(failure);
+            throw propagate(failure);
+        }
+    }
+
+    private void rollback(Throwable originalFailure) {
+        try {
+            connection.rollback();
+        } catch (SQLException rollbackFailure) {
+            originalFailure.addSuppressed(rollbackFailure);
+        }
+    }
+
+    private void requireOpen() {
+        if (closed.get()) {
+            throw new RejectedExecutionException("ItemGuard database owner is closed");
+        }
+    }
+
+    private void awaitInitialization(Future<Void> initialization) {
+        try {
+            initialization.get();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while initializing ItemGuard database", interrupted);
+        } catch (ExecutionException failure) {
+            throw propagate(failure.getCause());
+        }
+    }
+
+    private boolean cleanupAfterInitializationFailure(RuntimeException originalFailure) {
+        long deadline = System.nanoTime() + initializationCleanupTimeout.toNanos();
+        Future<Void> cleanup;
+        try {
+            cleanup = executor.submit(() -> {
+                if (connection != null) {
+                    try {
+                        connection.close();
+                    } finally {
+                        connection = null;
+                    }
+                }
+                return null;
+            });
+        } catch (RuntimeException submissionFailure) {
+            originalFailure.addSuppressed(submissionFailure);
+            return false;
+        }
+
+        boolean interrupted = Thread.interrupted();
+        boolean cleanupSucceeded = false;
+        try {
+            while (true) {
+                try {
+                    long remainingNanos = Math.max(0L, deadline - System.nanoTime());
+                    cleanup.get(remainingNanos, TimeUnit.NANOSECONDS);
+                    cleanupSucceeded = true;
+                    break;
+                } catch (InterruptedException ignored) {
+                    interrupted = true;
+                } catch (ExecutionException cleanupFailure) {
+                    originalFailure.addSuppressed(cleanupFailure.getCause());
+                    break;
+                } catch (TimeoutException timeout) {
+                    originalFailure.addSuppressed(new IllegalStateException(
+                        "Timed out cleaning up ItemGuard database initialization",
+                        timeout
+                    ));
+                    break;
+                }
+            }
+            long remainingNanos = Math.max(0L, deadline - System.nanoTime());
+            boolean terminated = executor.close(Duration.ofNanos(remainingNanos));
+            if (!terminated) {
+                originalFailure.addSuppressed(new IllegalStateException(
+                    "ItemGuard database executor did not terminate after initialization failure"
+                ));
+            }
+            return cleanupSucceeded && terminated;
+        } finally {
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    private RuntimeException propagate(Throwable failure) {
+        if (failure instanceof RuntimeException runtimeFailure) {
+            return runtimeFailure;
+        }
+        return new IllegalStateException("ItemGuard database operation failed", failure);
+    }
+
+    private void reportFailure(Throwable failure) {
+        try {
+            failureHandler.accept(failure);
+        } catch (Throwable handlerFailure) {
+            failure.addSuppressed(handlerFailure);
+        }
+    }
+
+    @FunctionalInterface
+    public interface SqliteOperation<T> {
+        T apply(Connection connection) throws Exception;
+    }
+}
+
+
+FILE src/main/java/com/itemguard/persistence/SerialDatabaseExecutor.java
+package com.itemguard.persistence;
+
+import java.time.Duration;
+import java.util.Objects;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+
+public final class SerialDatabaseExecutor implements AutoCloseable {
+
+    private static final Duration DEFAULT_CLOSE_TIMEOUT = Duration.ofSeconds(10);
+
+    private final ExecutorService executor;
+
+    public SerialDatabaseExecutor(String threadName) {
+        Objects.requireNonNull(threadName, "threadName");
+        this.executor = Executors.newSingleThreadExecutor(runnable -> {
+            Thread thread = new Thread(runnable, threadName);
+            thread.setDaemon(true);
+            return thread;
+        });
+    }
+
+    public void execute(Runnable task) {
+        executor.execute(task);
+    }
+
+    public <T> Future<T> submit(Callable<T> task) {
+        return executor.submit(task);
+    }
+
+    public boolean close(Duration timeout) {
+        Objects.requireNonNull(timeout, "timeout");
+        executor.shutdown();
+        try {
+            if (executor.awaitTermination(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
+                return true;
+            }
+            executor.shutdownNow();
+            return executor.awaitTermination(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException interrupted) {
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
+    @Override
+    public void close() {
+        close(DEFAULT_CLOSE_TIMEOUT);
+    }
+}
+
+
+FILE src/main/java/com/itemguard/catalog/CatalogCategory.java
+package com.itemguard.catalog;
+
+public enum CatalogCategory {
+    ALL, SWORD, ARMOR, TOOLS, RANGED, OTHER;
+
+    String predicate() {
+        String sword = "material GLOB '*_SWORD'";
+        String armor = "(material GLOB '*_HELMET' OR material GLOB '*_CHESTPLATE' OR material GLOB '*_LEGGINGS' OR material GLOB '*_BOOTS' OR material = 'ELYTRA')";
+        String tools = "(material GLOB '*_AXE' OR material GLOB '*_PICKAXE' OR material GLOB '*_SHOVEL' OR material GLOB '*_HOE' OR material IN ('SHEARS','FISHING_ROD','FLINT_AND_STEEL'))";
+        String ranged = "material IN ('BOW','CROSSBOW','TRIDENT')";
+        return switch (this) {
+            case ALL -> "1=1";
+            case SWORD -> sword;
+            case ARMOR -> armor;
+            case TOOLS -> tools;
+            case RANGED -> ranged;
+            case OTHER -> "NOT COALESCE((" + sword + " OR " + armor + " OR " + tools + " OR " + ranged + "),0)";
+        };
+    }
+}
+
+
+FILE src/main/java/com/itemguard/data/DatabaseManager.java
+package com.itemguard.data;
+
+import com.itemguard.ItemGuard;
+import com.itemguard.catalog.CatalogRepository;
+import com.itemguard.persistence.DatabaseBackendPolicy;
+import com.itemguard.persistence.ItemSqliteRepository;
+import com.itemguard.persistence.SqliteConnectionOwner;
+import com.itemguard.dupe.ItemObservation;
+import com.itemguard.dupe.DuplicateAction;
+import com.itemguard.dupe.DuplicateFinding;
+import com.itemguard.search.ItemSearchRequest;
+import com.itemguard.search.SearchRequestStore;
+import com.itemguard.snapshot.ItemSnapshot;
+import com.itemguard.reclaim.ReclaimClaim;
+import com.itemguard.reclaim.ReclaimClaimState;
+import com.itemguard.reclaim.ReclaimClaimStore;
+import com.itemguard.tracking.TagPublication;
+import com.itemguard.tracking.TagReconciliationReceipt;
+import com.itemguard.tracking.TagPublicationStore;
+import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.Material;
+import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
+
+import java.io.File;
+import java.time.Duration;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.logging.Level;
+
+public final class DatabaseManager implements
+    SearchRequestStore,
+    ReclaimClaimStore,
+    TagPublicationStore {
+
+    private static final String KEY_NAMESPACE = "itemguard";
+    private static final String KEY_ITEM_CODE = "item_code";
+    private static final Duration CLOSE_TIMEOUT = Duration.ofSeconds(10);
+
+    private final ItemGuard plugin;
+    private final SqliteConnectionOwner connectionOwner;
+    private final ItemSqliteRepository repository;
+    private final CatalogRepository catalog;
+
+    public DatabaseManager(ItemGuard plugin) {
+        this.plugin = plugin;
+        new DatabaseBackendPolicy().requireSupported(plugin.getConfigs().getDatabaseType());
+
+        plugin.getDataFolder().mkdirs();
+        File databaseFile = new File(
+            plugin.getDataFolder(),
+            plugin.getConfigs().getSqliteFileName()
+        );
+        this.connectionOwner = new SqliteConnectionOwner(
+            databaseFile.toPath(),
+            failure -> plugin.getLogger().log(
+                Level.SEVERE,
+                "ItemGuard database operation failed",
+                failure
+            )
+        );
+        this.repository = new ItemSqliteRepository(connectionOwner);
+        this.catalog = new CatalogRepository(connectionOwner);
+        int recoveredClaims = repository.recoverPendingReclaimClaims(
+            System.currentTimeMillis(),
+            "STARTUP_RECOVERY"
+        );
+        plugin.getLogger().info("SQLite database initialized: " + databaseFile.getName());
+        if (recoveredClaims > 0) {
+            plugin.getLogger().warning(
+                "Denied " + recoveredClaims
+                    + " pending reclaim claim(s) left by an earlier shutdown"
+            );
+        }
+    }
+
+    public CatalogRepository getCatalog() { return catalog; }
+
+    public void saveItem(ItemData item) {
+        repository.saveItem(item);
+    }
+
+    public void saveItemWithSnapshot(
+        ItemData item,
+        ItemSnapshot snapshot,
+        long capturedAt
+    ) {
+        repository.saveItemWithSnapshot(item, snapshot, capturedAt);
+    }
+
+    public Optional<ItemSnapshot> getSnapshot(String code) {
+        return repository.getSnapshot(code);
+    }
+
+    @Override
+    public CompletableFuture<TagPublication> reserve(TagPublication proposed) {
+        return repository.reserve(proposed);
+    }
+
+    @Override
+    public CompletableFuture<Boolean> publish(UUID publicationId, long updatedAt) {
+        return repository.publish(publicationId, updatedAt);
+    }
+
+    @Override
+    public CompletableFuture<Boolean> reconcile(
+        TagReconciliationReceipt receipt,
+        long updatedAt
+    ) {
+        return repository.reconcile(receipt, updatedAt);
+    }
+
+    @Override
+    public CompletableFuture<Boolean> abort(
+        UUID publicationId,
+        long updatedAt,
+        String detail
+    ) {
+        return repository.abort(publicationId, updatedAt, detail);
+    }
+
+    @Override
+    public boolean beginReclaimClaim(ReclaimClaim claim) {
+        return repository.beginReclaimClaim(claim);
+    }
+
+    @Override
+    public boolean transitionReclaimClaim(
+        UUID claimId,
+        ReclaimClaimState expectedState,
+        ReclaimClaimState targetState,
+        long updatedAt,
+        String detail
+    ) {
+        return repository.transitionReclaimClaim(
+            claimId,
+            expectedState,
+            targetState,
+            updatedAt,
+            detail
+        );
+    }
+
+    @Override
+    public Optional<ReclaimClaim> getReclaimClaim(UUID claimId) {
+        return repository.getReclaimClaim(claimId);
+    }
+
+    public void updateItemLastAction(
+        String code,
+        String action,
+        Location location,
+        String ownerName,
+        UUID ownerUuid
+    ) {
+        repository.updateLastAction(
+            code,
+            action,
+            formatLocation(location),
+            ownerName,
+            ownerUuid,
+            System.currentTimeMillis()
+        );
+    }
+
+    public void updateItemLocationOnly(
+        String code,
+        Location location,
+        String ownerName,
+        UUID ownerUuid
+    ) {
+        repository.updateLocation(
+            code,
+            formatLocation(location),
+            ownerName,
+            ownerUuid,
+            System.currentTimeMillis()
+        );
+    }
+
+    public void logHistory(ItemHistory history) {
+        repository.logHistory(history);
+    }
+
+    public void incrementDuplicateCount() {
+        repository.incrementDuplicateCount(System.currentTimeMillis());
+    }
+
+    public void recordObservation(ItemObservation observation) {
+        repository.recordObservation(observation);
+    }
+
+    public void completeObservationEpoch(long scanEpoch) {
+        repository.completeObservationEpoch(scanEpoch);
+    }
+
+    public CompletableFuture<List<DuplicateFinding>> completeObservationEpochAndAudit(
+        long scanEpoch,
+        boolean antiDupeEnabled,
+        DuplicateAction action,
+        long detectionCooldownMillis,
+        long completedAt
+    ) {
+        return repository.completeObservationEpochAndAudit(
+            scanEpoch,
+            antiDupeEnabled,
+            action,
+            detectionCooldownMillis,
+            completedAt
+        );
+    }
+
+    public long getMaximumPersistedObservationEpoch() {
+        return repository.getMaximumPersistedObservationEpoch();
+    }
+
+    public Optional<ItemData> getItem(String code) {
+        return repository.getItem(code);
+    }
+
+    public CompletableFuture<Optional<ItemData>> getItemAsync(String code) {
+        return repository.getItemAsync(code);
+    }
+
+    public Optional<ItemData> getItemByUuid(UUID itemUuid) {
+        return repository.getItemByUuid(itemUuid);
+    }
+
+    public List<ItemHistory> getHistory(String code, int limit) {
+        return repository.getHistory(code, limit);
+    }
+
+    public CompletableFuture<List<ItemHistory>> getHistoryAsync(String code, int limit) {
+        return repository.getHistoryAsync(code, limit);
+    }
+
+    public CompletableFuture<List<ItemHistory>> getHistoryByPlayerAsync(
+        UUID playerUuid,
+        int limit
+    ) {
+        return repository.getHistoryByPlayerAsync(playerUuid, limit);
+    }
+
+    public List<ItemData> getItemsByPlayer(UUID playerUuid) {
+        return repository.getItemsByPlayer(playerUuid);
+    }
+
+    public CompletableFuture<List<ItemData>> getItemsByPlayerAsync(UUID playerUuid) {
+        return repository.getItemsByPlayerAsync(playerUuid);
+    }
+
+    public List<ItemData> searchItems(String query) {
+        return repository.searchItems(query);
+    }
+
+    public CompletableFuture<List<ItemData>> searchItemsAsync(String query) {
+        return repository.searchItemsAsync(query);
+    }
+
+    @Override
+    public boolean startSearchRequest(ItemSearchRequest request) {
+        return repository.startSearchRequest(request);
+    }
+
+    @Override
+    public boolean stopSearchRequest(String code, long updatedAt) {
+        return repository.stopSearchRequest(code, updatedAt);
+    }
+
+    @Override
+    public Optional<ItemSearchRequest> getSearchRequest(String code) {
+        return repository.getSearchRequest(code);
+    }
+
+    @Override
+    public List<ItemSearchRequest> listActiveSearchRequests(
+        long now,
+        int offset,
+        int limit
+    ) {
+        return repository.listActiveSearchRequests(now, offset, limit);
+    }
+
+    @Override
+    public boolean removeSearchRequest(String code) {
+        return repository.removeSearchRequest(code);
+    }
+
+    @Override
+    public int clearSearchRequests() {
+        return repository.clearSearchRequests();
+    }
+
+    public int getHistoryCount(String code) {
+        return repository.getHistoryCount(code);
+    }
+
+    public PluginStats getStats() {
+        return repository.getStats();
+    }
+
+    public CompletableFuture<PluginStats> getStatsAsync() {
+        return repository.getStatsAsync();
+    }
+
+    public int getOnlineTrackedCount() {
+        int count = 0;
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            for (ItemStack item : player.getInventory().getContents()) {
+                if (item != null && item.getType() != Material.AIR) {
+                    count++;
+                    break;
+                }
+            }
+        }
+        return count;
+    }
+
+    public void deleteOldHistory(int keepDays) {
+        if (keepDays < 0) {
+            throw new IllegalArgumentException("History retention days cannot be negative");
+        }
+        long cutoff = System.currentTimeMillis() - Math.multiplyExact(keepDays, 86_400_000L);
+        int deleted = repository.deleteHistoryBefore(cutoff);
+        plugin.getLogger().info(
+            "Deleted " + deleted + " old history entries (older than " + keepDays + " days)"
+        );
+    }
+
+    public void flush() {
+        connectionOwner.flush();
+    }
+
+    public void close() {
+        if (!connectionOwner.close(CLOSE_TIMEOUT)) {
+            plugin.getLogger().severe(
+                "ItemGuard database did not close cleanly within " + CLOSE_TIMEOUT.toSeconds() + " seconds"
+            );
+            return;
+        }
+        plugin.getLogger().info("Database connection closed");
+    }
+
+    private String formatLocation(Location location) {
+        if (location == null || location.getWorld() == null) {
+            return "Unknown";
+        }
+        return String.format(
+            "%s (%d, %d, %d)",
+            location.getWorld().getName(),
+            location.getBlockX(),
+            location.getBlockY(),
+            location.getBlockZ()
+        );
+    }
+
+    public static String getKeyNamespace() {
+        return KEY_NAMESPACE;
+    }
+
+    public static String getKeyItemCode() {
+        return KEY_ITEM_CODE;
+    }
+}
+
+FILE tools/catalog/CatalogC1Probe.java
+package com.itemguard.persistence;
+
+import com.itemguard.catalog.*;
+import java.nio.file.*;
+import java.sql.*;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/** Synthetic JDBC only: creates new databases, never accepts an existing path. */
+public final class CatalogC1Probe {
+    public static void main(String[] args) throws Exception {
+        if(args.length!=0) throw new IllegalArgumentException("No existing database paths accepted");
+        Path dir=Files.createTempDirectory("itemguard-c1-");
+        System.out.println("SYNTHETIC_ONLY dir="+dir);
+        for(int run=0;run<3;run++) run(dir.resolve("run-"+run+".db"),run);
+        System.out.println("PASS C1 JDBC migration/query/mixed workload; NOT Paper or production SLO");
+    }
+    static void run(Path db,int run) throws Exception {
+        try(var c=DriverManager.getConnection("jdbc:sqlite:"+db)) {
+            c.setAutoCommit(false);
+            try(var s=c.createStatement()) {
+                s.execute("CREATE TABLE plugin_stats(id INTEGER PRIMARY KEY,schema_version INT NOT NULL,duplicates_detected INT DEFAULT 0,last_updated BIGINT)");
+                s.execute("INSERT INTO plugin_stats VALUES(1,7,0,0)");
+                s.execute("CREATE TABLE item_history(id INTEGER PRIMARY KEY AUTOINCREMENT,code TEXT NOT NULL,item_uuid TEXT NOT NULL,action TEXT NOT NULL,player_name TEXT,player_uuid TEXT,location TEXT,world TEXT,x INT,y INT,z INT,timestamp BIGINT NOT NULL,additional_data TEXT)");
+                s.execute("WITH RECURSIVE seq(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM seq WHERE n<1000000) INSERT INTO item_history(code,item_uuid,action,timestamp) SELECT CASE WHEN n%10000=0 THEN 'TARGET' ELSE 'OTHER1' END,CASE WHEN n%10000=0 THEN 'identity' ELSE 'noise' END,'SYNTHETIC',n/20000 FROM seq");
+                s.execute("INSERT INTO item_history(code,item_uuid,action,timestamp) VALUES('TARGET','wrong','IMPOSTOR',9999),('WRONG','identity','IMPOSTOR',9999)");
+                c.commit();
+            }
+        }
+        long before=Files.size(db),start=System.nanoTime();
+        var ticks=new AtomicInteger();
+        // Same policy and real clock; count callback reads, not a lowered test budget.
+        try(var c=DriverManager.getConnection("jdbc:sqlite:"+db)) {
+            c.setAutoCommit(false);
+            new SqliteSchemaManager(100000,()->{ticks.incrementAndGet();return System.nanoTime();}).initialize(c);
+        }
+        System.out.printf(Locale.ROOT,"run=%d migration_ms=%.3f progress_checks=%d bytes_before=%d bytes_after=%d%n",run,ms(start),ticks.get()-1,before,Files.size(db));
+        try(var owner=new SqliteConnectionOwner(db)) {
+            var repo=new CatalogRepository(owner);
+            String plan=owner.call(c->{try(var s=c.createStatement();var r=s.executeQuery("EXPLAIN QUERY PLAN SELECT id,action,player_name,player_uuid,location,timestamp,additional_data FROM item_history WHERE code='TARGET' AND item_uuid='identity' ORDER BY timestamp DESC,id DESC LIMIT 100")) {String p="";while(r.next())p+=r.getString(4);return p;}});
+            check(plan.contains("idx_history_identity_time")&&!plan.contains("TEMP B-TREE"),plan);
+            List<Double> times=new ArrayList<>();
+            for(int i=0;i<20;i++) { start=System.nanoTime(); exact(repo.history("TARGET","identity").get(10,TimeUnit.SECONDS)); times.add(ms(start)); }
+            System.out.println("run="+run+" plan="+plan+" history20_ms="+times);
+            owner.call(c->{try(var s=c.createStatement()) {
+                s.execute("WITH RECURSIVE seq(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM seq WHERE n<100000) INSERT INTO tracked_items(code,item_uuid,material,item_name,owner_name,created_at,last_seen_at) SELECT printf('C%06d',n),'u-'||n,'DIAMOND_SWORD','Blade','Lan',1,1 FROM seq");
+                s.execute("UPDATE tracked_items SET item_name='RareSuffix' WHERE code='C100000'");
+            }return null;});
+            check(repo.find(new CatalogQuery("","",CatalogCategory.ALL,"")).get(10,TimeUnit.SECONDS).items().size()==36,"first page");
+            for(String query:List.of("Blade","not-present","RareSuffix")) {
+                start=System.nanoTime();
+                try { var rows=repo.find(new CatalogQuery(query,"",CatalogCategory.ALL,"")).get(10,TimeUnit.SECONDS); System.out.println("run="+run+" filter="+query+" rows="+rows.items().size()+" ms="+ms(start)); }
+                catch(ExecutionException failure) { Throwable cause=failure;while(cause.getCause()!=null)cause=cause.getCause();System.out.println("run="+run+" filter="+query+" error="+cause.getMessage()+" ms="+ms(start)); }
+            }
+            // Same serial-owner transaction path; SQL insert seam, not gameplay tracking.
+            start=System.nanoTime();
+            List<CompletableFuture<?>> work=new ArrayList<>();
+            for(int i=0;i<30;i++) {
+                work.add(owner.callAsync(c->{try(var s=c.createStatement()) {s.execute("INSERT INTO item_history(code,item_uuid,action,timestamp) VALUES('WRITE1','writer','MIXED',8888)");}return null;}));
+                work.add(repo.history("TARGET","identity").thenAccept(CatalogC1Probe::exact));
+            }
+            CompletableFuture.allOf(work.toArray(CompletableFuture[]::new)).get(20,TimeUnit.SECONDS);
+            check(owner.call(c->{try(var s=c.createStatement();var r=s.executeQuery("SELECT count(*) FROM item_history WHERE action='MIXED'")){r.next();return r.getInt(1);}})==30,"mixed writes missing");
+            System.out.println("run="+run+" mixed_30_writes_30_reads_ms="+ms(start));
+            start=System.nanoTime();
+            int deleted=owner.call(c->{try(var s=c.prepareStatement("DELETE FROM item_history WHERE timestamp < ?")){s.setLong(1,1);return s.executeUpdate();}});
+            check(deleted==19999,"retention count "+deleted);
+            check(repo.history("TARGET","identity").get(10,TimeUnit.SECONDS).size()==99,"retained target count");
+            System.out.println("run="+run+" retention_deleted="+deleted+" ms="+ms(start));
+        }
+        try(var owner=new SqliteConnectionOwner(db)) {
+            check(owner.call(c->{try(var s=c.createStatement();var r=s.executeQuery("SELECT count(*) FROM item_history")){r.next();return r.getInt(1);}})==980033,"reopen row count");
+            check(new CatalogRepository(owner).history("TARGET","identity").get(10,TimeUnit.SECONDS).size()==99,"reopen query");
+        }
+    }
+    static void exact(List<CatalogEvent> rows) {
+        check(rows.size()==100,"history row count");
+        for(int i=0;i<100;i++) {long id=1000000L-i*10000L;check(rows.get(i).id()==id&&rows.get(i).timestamp()==id/20000,"identity/tie order at "+i);}
+    }
+    static double ms(long start) {return (System.nanoTime()-start)/1_000_000d;}
+    static void check(boolean ok,String detail) {if(!ok)throw new AssertionError(detail);}
+}
+
+
+FILE docs/reviews/c1-scale-final.log
+SYNTHETIC_ONLY dir=C:\Users\thanh\AppData\Local\Temp\itemguard-c1-8563495031681353982
+run=0 migration_ms=1424.936 progress_checks=12000 bytes_before=41435136 bytes_after=68591616
+run=0 plan=SEARCH item_history USING INDEX idx_history_identity_time (code=? AND item_uuid=?) history20_ms=[6.1008, 1.4857, 1.3353, 1.2618, 0.7287, 0.6761, 0.5065, 0.5248, 0.5077, 0.5697, 0.5131, 0.5295, 0.6464, 0.6869, 0.8576, 0.612, 0.6743, 0.6336, 0.5834, 0.5856]
+run=0 filter=Blade rows=36 ms=6.1674
+run=0 filter=not-present error=[SQLITE_INTERRUPT] Operation terminated by sqlite3_interrupt() (interrupted) ms=253.5495
+run=0 filter=RareSuffix error=[SQLITE_INTERRUPT] Operation terminated by sqlite3_interrupt() (interrupted) ms=250.6096
+run=0 mixed_30_writes_30_reads_ms=413.938
+run=0 retention_deleted=19999 ms=147.2636
+run=1 migration_ms=1398.300 progress_checks=12000 bytes_before=41435136 bytes_after=68591616
+run=1 plan=SEARCH item_history USING INDEX idx_history_identity_time (code=? AND item_uuid=?) history20_ms=[1.512, 0.4416, 0.3641, 0.3665, 0.3602, 0.3408, 0.3223, 0.3412, 0.3309, 0.3421, 0.3543, 0.3308, 0.4295, 0.4348, 0.4109, 0.4141, 0.4571, 0.5764, 0.4768, 0.3836]
+run=1 filter=Blade rows=36 ms=0.446
+run=1 filter=not-present error=[SQLITE_INTERRUPT] Operation terminated by sqlite3_interrupt() (interrupted) ms=225.8473
+run=1 filter=RareSuffix error=[SQLITE_INTERRUPT] Operation terminated by sqlite3_interrupt() (interrupted) ms=221.6846
+run=1 mixed_30_writes_30_reads_ms=515.9956
+run=1 retention_deleted=19999 ms=133.0127
+run=2 migration_ms=1508.307 progress_checks=12000 bytes_before=41435136 bytes_after=68591616
+run=2 plan=SEARCH item_history USING INDEX idx_history_identity_time (code=? AND item_uuid=?) history20_ms=[1.4137, 0.3704, 0.4667, 0.4201, 0.5654, 0.3692, 0.3601, 0.3399, 0.3333, 0.3583, 0.3405, 0.3283, 0.3253, 0.3384, 0.3302, 0.6424, 0.6455, 0.4278, 0.4126, 0.4071]
+run=2 filter=Blade rows=36 ms=0.3929
+run=2 filter=not-present error=[SQLITE_INTERRUPT] Operation terminated by sqlite3_interrupt() (interrupted) ms=226.3227
+run=2 filter=RareSuffix error=[SQLITE_INTERRUPT] Operation terminated by sqlite3_interrupt() (interrupted) ms=240.4334
+run=2 mixed_30_writes_30_reads_ms=397.841
+run=2 retention_deleted=19999 ms=133.1446
+PASS C1 JDBC migration/query/mixed workload; NOT Paper or production SLO
+
+
+BUILD EXCERPT
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.071 s -- in com.itemguard.catalog.CatalogCleanupTest
+[INFO] Tests run: 15, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.190 s -- in com.itemguard.catalog.CatalogControllerTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.416 s -- in com.itemguard.catalog.CatalogInventoryTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in com.itemguard.catalog.CatalogReadGateTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.559 s -- in com.itemguard.catalog.CatalogRepositoryTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0 s -- in com.itemguard.catalog.CatalogSessionTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.050 s -- in com.itemguard.catalog.CatalogUiLifecycleTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in com.itemguard.catalog.CatalogUiTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.itemguard.catalog.CatalogWiringTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.itemguard.CodeGenerationTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.007 s -- in com.itemguard.commands.DirectCommandPermissionContractTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.021 s -- in com.itemguard.commands.FindItemCommandParserTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.022 s -- in com.itemguard.commands.FindItemCommandTaskTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0 s -- in com.itemguard.commands.HistoryAccessPolicyTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0 s -- in com.itemguard.commands.HistoryCommandWiringContractTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in com.itemguard.commands.ItemCodeInputTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.itemguard.commands.MainCommandUxContractTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.007 s -- in com.itemguard.commands.MatDoCommandParserTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.itemguard.commands.SubcommandArgumentsTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.036 s -- in com.itemguard.config.AntiDupeSettingsTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.itemguard.config.ReloadPolicyTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.046 s -- in com.itemguard.DefaultConfigContractTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.itemguard.dupe.AntiDupeActionPolicyTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.009 s -- in com.itemguard.dupe.ContainerInventoryObservationFactoryTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.012 s -- in com.itemguard.dupe.DuplicateDetectorTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.009 s -- in com.itemguard.dupe.ObservationEpochFinalizerTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.itemguard.dupe.PlayerInventoryObservationFactoryTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.007 s -- in com.itemguard.dupe.ScanEpochGeneratorTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.012 s -- in com.itemguard.gui.FilterInputPolicyTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.itemguard.gui.GuiClickPolicyTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.itemguard.gui.GuiItemMetaSafetyWiringContractTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.007 s -- in com.itemguard.gui.GuiPageLayoutTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.itemguard.gui.GuiSessionLifecycleWiringContractTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.007 s -- in com.itemguard.gui.HistoryGuiWiringContractTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.itemguard.gui.HistoryNavigationPolicyTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.itemguard.gui.UiAsyncReadWiringContractTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in com.itemguard.gui.UiMainThreadHandoffTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.itemguard.identity.IdentityTagResolverTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in com.itemguard.identity.PickupIdentityPolicyTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.007 s -- in com.itemguard.identity.PublicItemCodeGeneratorTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.itemguard.integrations.TrackingMutationAccessPolicyTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.itemguard.integrations.WorldGuard7ApiContractTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.itemguard.integrations.WorldGuardAccessPolicyTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.459 s -- in com.itemguard.ItemDataTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.024 s -- in com.itemguard.ItemGuardLifecycleContractTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in com.itemguard.ItemHistoryTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.009 s -- in com.itemguard.listeners.ItemListenerEventContractTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in com.itemguard.listeners.PlayerLifecyclePolicyTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.055 s -- in com.itemguard.persistence.AsyncItemReadRepositoryTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in com.itemguard.persistence.DatabaseBackendPolicyTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.089 s -- in com.itemguard.persistence.ItemHistoryQueryRepositoryTest
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.150 s -- in com.itemguard.persistence.ItemSqliteRepositoryTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.255 s -- in com.itemguard.persistence.ReclaimClaimRepositoryTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.293 s -- in com.itemguard.persistence.SearchRequestRepositoryTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.itemguard.persistence.SerialDatabaseExecutorTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in com.itemguard.persistence.SqliteConnectionOwnerFailClosedWiringContractTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.415 s -- in com.itemguard.persistence.SqliteConnectionOwnerTest
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.723 s -- in com.itemguard.persistence.SqliteHistoryMigrationTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.006 s -- in com.itemguard.persistence.SqliteLifecycleFailureCrossProcessTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.313 s -- in com.itemguard.persistence.SqliteProcessLockCrossProcessTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.194 s -- in com.itemguard.persistence.SqliteSchemaManagerTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.272 s -- in com.itemguard.persistence.TagIdentityCollisionRepositoryTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.158 s -- in com.itemguard.persistence.TagPublicationRelocationRepositoryTest
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.376 s -- in com.itemguard.persistence.TagPublicationRepositoryTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in com.itemguard.PluginManifestContractTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.020 s -- in com.itemguard.reclaim.ExternalPresenceProbeFactoryTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in com.itemguard.reclaim.IdentityPresenceScannerTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.itemguard.reclaim.ReclaimCapabilityGateTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in com.itemguard.reclaim.ReclaimClaimServiceTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.009 s -- in com.itemguard.reclaim.ReclaimPreflightServiceTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.007 s -- in com.itemguard.reclaim.ReclaimPreparationServiceTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.itemguard.scan.BoundedSlotMutatorTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.itemguard.search.FindItemServiceTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.itemguard.search.SearchDurationParserTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.itemguard.snapshot.ItemSnapshotCodecTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0 s -- in com.itemguard.SqliteAvailabilityTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.itemguard.tasks.InventoryScanSchedulerTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.itemguard.tasks.InventoryScanTaskContractTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.007 s -- in com.itemguard.tasks.ObservationEpochScannerTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.010 s -- in com.itemguard.tracking.AsyncTagPublicationCoordinatorTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.itemguard.tracking.CraftOutputPolicyTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.itemguard.tracking.CraftOutputWiringContractTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.itemguard.tracking.DoubleChestPhysicalSourceWiringContractTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in com.itemguard.tracking.DoubleChestSlotPolicyTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.itemguard.tracking.EntityPublicationLifecyclePolicyTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in com.itemguard.tracking.GroundItemMergePolicyTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.itemguard.tracking.GroundItemMergeWiringContractTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.022 s -- in com.itemguard.tracking.HopperTransferPolicyTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.itemguard.tracking.HopperTransferWiringContractTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.011 s -- in com.itemguard.tracking.IdentityReadinessCoordinatorTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.itemguard.tracking.InventoryClickPhysicalSourcePolicyTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in com.itemguard.tracking.InventoryPhysicalSourcePolicyTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.itemguard.tracking.ItemIdentityEligibilityPolicyTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.itemguard.tracking.StackableIdentityWiringContractTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.itemguard.tracking.TagPhysicalSourceKeyTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.itemguard.tracking.TagPublicationCollisionRetryTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.001 s -- in com.itemguard.tracking.TagPublicationPolicyTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in com.itemguard.tracking.TagReconciliationReceiptTest
+[INFO] Tests run: 351, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS

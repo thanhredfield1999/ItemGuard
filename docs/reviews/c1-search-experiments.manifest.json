@@ -1,0 +1,20 @@
+{
+  "scope": "Experiment files only; hashes do not confer acceptance or verify old logs against current source",
+  "files": {
+    "docs/reviews/c1-filtered-trigram-final.log": "76351dcbb8d4d85b2ced13099a19653c126398102cbc3f55ebce8b87ce52de18",
+    "docs/reviews/c1-filtered-trigram.log": "7da4b9c11b6c31b4ce37f98dd1bc23aeb541f07206a0be7cbc068f14489b7974",
+    "docs/reviews/c1-trigger-fresh-connection.log": "b82e2ee433dd58adac2224fc0d307ad08f5838de4a4a170b7b4cebef858d3f50",
+    "docs/reviews/c1-trigger-probe.log": "eb35fa2e08f7fac6be63724f5d875fcd4398776475c5b89b9c5e7ef031e24f52",
+    "docs/reviews/c1-trigram-probe.log": "c20ff9d15ed00a733bcfdb75e30d76fd63387e1fdb2b4a8133d4513806dc9070",
+    "docs/reviews/c1-trigram-transactions.log": "f446bd79158110164729388162ee87fdf9c27eaa2629840f843207fa55ece8de",
+    "docs/reviews/c1-unicode-guarded.log": "78d123576fe71edae74c282b004bfa8531f489ba44a264c8aa46388eadd5b629",
+    "docs/reviews/c1-unicode-probe.log": "f53ccfd204ef33c250135fce1d1a68c5559a18c4f05224bde52ae76324538e8d",
+    "tools/catalog/CatalogC1Probe.java": "6e83a0955ccdbde400acf25c18a46991461e348de0a37c49fb5ba499985cff75",
+    "tools/catalog/CatalogFilteredProbe.java": "5feb4b4b176c2b22ee410148fa018e5f841d741f13911d609f872692fc2132ee",
+    "tools/catalog/CatalogFilteredTrigramProbe.java": "0c6b75585331367df605fa2414cf8352baa63554a5ab8cd8b955fbad68f9d1a0",
+    "tools/catalog/CatalogScaleProbe.java": "d0be763883a1364c365b7b9960e991ad44eccadf2554cc6cb505f7c236c7ec21",
+    "tools/catalog/CatalogTriggerProbe.java": "5174f606c5e8906c963fd542ebbb32e30a6864ef7bb9658fd5a82b0936c03adf",
+    "tools/catalog/CatalogTrigramProbe.java": "fbcf26b42fc043ec8704e486251574ce3108ebd71e93134184a78a5d74a10214",
+    "tools/catalog/CatalogUnicodeProbe.java": "f21c3ee5f0bdc15e2ed5a06ab20bbdce3331a00f8f0461961b286e4e170fa531"
+  }
+}

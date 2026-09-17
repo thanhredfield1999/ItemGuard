@@ -1,0 +1,33 @@
+BUILD rows=100000 table_bytes=4141056 indexed_bytes=19685376 index_ms=532.200
+QUERY repeat=0 text=Blade owner=RareOwner material= cursor=0 indexed=true rows=8 exact=true ms=43.625
+QUERY repeat=0 text=Blade owner=Nobody material= cursor=0 indexed=true rows=0 exact=true ms=29.816
+QUERY repeat=0 text=C100000 owner= material= cursor=0 indexed=true rows=1 exact=true ms=0.829
+QUERY repeat=0 text=SWORD owner=RareOwner material=diamond_sword cursor=0 indexed=true rows=6 exact=true ms=27.633
+QUERY repeat=0 text=kiếm rồng owner= material= cursor=99900 indexed=true rows=19 exact=true ms=18.365
+QUERY repeat=0 text=RareSuffix owner=RareOwner material=diamond_sword cursor=99990 indexed=true rows=1 exact=true ms=0.647
+QUERY repeat=0 text=zz owner= material= cursor=0 indexed=false rows=0 exact=true ms=18.860
+QUERY repeat=0 text=龍 owner= material= cursor=0 indexed=false rows=0 exact=true ms=18.730
+QUERY repeat=0 text=Blade owner=Lan material=diamond_sword cursor=300 indexed=true rows=37 exact=true ms=41.197
+QUERY repeat=0 text=not-present owner= material= cursor=0 indexed=true rows=0 exact=true ms=0.506
+QUERY repeat=1 text=Blade owner=RareOwner material= cursor=0 indexed=true rows=8 exact=true ms=30.477
+QUERY repeat=1 text=Blade owner=Nobody material= cursor=0 indexed=true rows=0 exact=true ms=35.256
+QUERY repeat=1 text=C100000 owner= material= cursor=0 indexed=true rows=1 exact=true ms=0.716
+QUERY repeat=1 text=SWORD owner=RareOwner material=diamond_sword cursor=0 indexed=true rows=6 exact=true ms=28.143
+QUERY repeat=1 text=kiếm rồng owner= material= cursor=99900 indexed=true rows=19 exact=true ms=20.157
+QUERY repeat=1 text=RareSuffix owner=RareOwner material=diamond_sword cursor=99990 indexed=true rows=1 exact=true ms=0.518
+QUERY repeat=1 text=zz owner= material= cursor=0 indexed=false rows=0 exact=true ms=23.873
+QUERY repeat=1 text=龍 owner= material= cursor=0 indexed=false rows=0 exact=true ms=21.311
+QUERY repeat=1 text=Blade owner=Lan material=diamond_sword cursor=300 indexed=true rows=37 exact=true ms=38.562
+QUERY repeat=1 text=not-present owner= material= cursor=0 indexed=true rows=0 exact=true ms=0.512
+QUERY repeat=2 text=Blade owner=RareOwner material= cursor=0 indexed=true rows=8 exact=true ms=32.143
+QUERY repeat=2 text=Blade owner=Nobody material= cursor=0 indexed=true rows=0 exact=true ms=33.051
+QUERY repeat=2 text=C100000 owner= material= cursor=0 indexed=true rows=1 exact=true ms=1.048
+QUERY repeat=2 text=SWORD owner=RareOwner material=diamond_sword cursor=0 indexed=true rows=6 exact=true ms=28.420
+QUERY repeat=2 text=kiếm rồng owner= material= cursor=99900 indexed=true rows=19 exact=true ms=18.168
+QUERY repeat=2 text=RareSuffix owner=RareOwner material=diamond_sword cursor=99990 indexed=true rows=1 exact=true ms=0.697
+QUERY repeat=2 text=zz owner= material= cursor=0 indexed=false rows=0 exact=true ms=21.038
+QUERY repeat=2 text=龍 owner= material= cursor=0 indexed=false rows=0 exact=true ms=19.437
+QUERY repeat=2 text=Blade owner=Lan material=diamond_sword cursor=300 indexed=true rows=37 exact=true ms=38.782
+QUERY repeat=2 text=not-present owner= material= cursor=0 indexed=true rows=0 exact=true ms=0.593
+TOTAL attempts=30 exact=30 interrupted=0
+SYNTHETIC_ONLY completed; no migration or product writer proof DB=C:\Users\thanh\AppData\Local\Temp\itemguard-filtered-trigram-6022559223084335422\probe.db

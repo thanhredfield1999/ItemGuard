@@ -84,3 +84,7 @@ __pycache__/
 
 # Local agent coordination state; .hermes/plans and lessons are kept
 .hermes/WORKING_STATE.md
+
+# Build and test transcripts that docs/ cites as its evidence are kept,
+# unlike the dev-server logs above.
+!docs/reviews/*.log

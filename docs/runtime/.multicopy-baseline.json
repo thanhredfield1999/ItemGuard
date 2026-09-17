@@ -1,0 +1,21 @@
+{
+  "candidate_sha256": "5864c2a15e9de6b3c5b16c2f7672f1a26ea504b03e02c5f4637823e2a2d74f34",
+  "deployed_before_sha256": "9f96899bcdd94f406266c96f8a2003e70958b95ac413655ab18afd45e7465c41",
+  "duplicates_detected": 0,
+  "fixture_canonical_rows": 1,
+  "fixture_snapshot_rows": 1,
+  "integrity": "ok",
+  "item_snapshots": 503,
+  "observation_rows": 0,
+  "pending_claims": 0,
+  "ports_open": {
+    "36103": false,
+    "57484": false
+  },
+  "prepared_publications": 0,
+  "probe_sha256": "66c92eeea9c7012116641be00b91f769e6374e40aeff208a8c7b371a0c3b7aba",
+  "reclaim_claims": 9,
+  "schema_version": 6,
+  "tag_publications": 342,
+  "tracked_items": 503
+}

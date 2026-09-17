@@ -1,0 +1,1 @@
+PASS synthetic insert/upsert/update/owner-only/delete/rollback/missing-UDF/reopen; NOT product migration or crash durability

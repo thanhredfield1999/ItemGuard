@@ -1,0 +1,15 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ----------------------< com.itemguard:ItemGuard >-----------------------
+[INFO] Building ItemGuard 1.0.0
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- dependency:3.7.0:build-classpath (default-cli) @ ItemGuard ---
+[INFO] Wrote classpath file 'E:\AI.WORK\ItemGuard\tools\lite-runtime\classpath.txt'.
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  3.441 s
+[INFO] Finished at: 2026-09-11T13:46:55+07:00
+[INFO] ------------------------------------------------------------------------

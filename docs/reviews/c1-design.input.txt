@@ -1,0 +1,898 @@
+Review exact supplied snapshot only. No tools/writes. Scope C1 additive index migration and failure-safe paging; NOT Paper/production/full roadmap. Report concrete correctness blockers with paths/lines and minimal fixes. Design phase may identify missing required tests. Implementation phase must distinguish code defects from unverified runtime and pre-existing unsupported capabilities. Verdict PASS_FOR_BOUNDED_IMPLEMENTATION for design or PASS_FOR_OFFLINE_CANDIDATE for implementation, else BLOCK. Vietnamese concise report.
+
+FILE docs/design/2026-09-09-catalog-c1-index-pagination.md
+# C1 — history index and failure-safe catalog paging
+
+Status: scoped implementation design; user said `làm đi` after remaining roadmap recommendation C1. Source/offline only, no deployment, Paper, existing production DB, external API or destructive action. Schema change limited to the proposed additive history index; no new tables/columns/data rewrite.
+
+## Observed root causes and contract
+
+- Schema v7 has no index for `WHERE code=? AND item_uuid=? ORDER BY timestamp DESC,id DESC LIMIT 100`. Existing synthetic JDBC probe showed a scan/sort and SQLITE_INTERRUPT. Index experiment fixed that query, not arbitrary text searches.
+- Controller mutates cursor/previous/filter before success; error screen offers reset but no retry of the failed target and can confuse cached rows with changed filters. Global read admission stays one-inflight plus 1s; do not weaken it.
+
+## Migration (v7 -> v8, older supported versions still use existing initializer)
+
+- Only add nonunique, nonpartial `idx_history_identity_time` on `item_history(code,item_uuid,timestamp DESC,id DESC)` using BINARY collation. No row rewrite, delete, dedupe, backfill, table replacement or drop of unknown indexes/tables.
+- Initialize on the existing single DB-owner thread in its manual JDBC transaction. Reject auto-commit before any DDL, validate schema metadata before mutation. Metadata id=1 must contain SQLite integer version in [1,8]; missing/corrupt/future versions fail closed. Fresh DB without plugin_stats is supported by existing behavior; this is not an all-table forensic validator.
+- Create index then inspect PRAGMA index_list/index_xinfo: exact table, columns, ordering, collations, nonunique/nonpartial. Name collision or incompatible existing definition is an error, never DROP/repair it. Repeat init must preserve the existing index and data.
+- Write version 8 only after successful index creation/validation, in same transaction as all initialization DDL. On SQLException roll back, preserve original exception with rollback failure suppressed. Close/reopen verification checks durable version/data/index outcome. Interrupted CREATE INDEX must not publish v8.
+- Bound CREATE INDEX through a temporary SQLite ProgressHandler: check every 1000 VM instructions; stop after 100000 checks or 30s elapsed. Clear in finally before rollback/other work. These are sampled CPU/elapsed limits, NOT an I/O/lock/OS/fsync deadline. Existing driver busy timeout and sidecar ownership remain unchanged.
+- Index creation consumes disk/temp space and writer time. Startup constructor still waits for DB initialization; no main-thread query or background live migration is added. A large/disk-full/locked DB can reject startup; release requires stopped-server consistent backup, free-space planning, maintenance window, controlled migration and restore rehearsal. No live enable approval from this slice.
+- Rollback to an old JAR is not automatic: v7 correctly rejects v8; use stopped backup restoration through a separately approved deployment procedure. No downgrading schema stamp over a v8 DB.
+
+## Paging behavior
+
+- Keep a committed catalog query/cursor-stack paired with the cached successful page. Build immutable proposed request state for next/previous/filter/reset; commit it only when that request succeeds under current generation/permission.
+- While loading, invalidate old actions as today. Error UI offers `Thử lại` for the exact failed target and `Về trang trước đó` to the last successful cached page (including its filters/cursor stack); first-load failure has no fake successful page. Busy/error never becomes empty results. No automatic retry or loop.
+- History errors retry the same selected identity with history permission and return to that profile; they must not switch catalog query context. Preserve existing generation, post-show and close/quit guards.
+- Chat cancel/invalid input returns to last appropriate screen without relabeling cached rows under a failed filter. Keep maximum 128 catalog pages and 100 retained history events, not snapshots/full coverage.
+
+## Verification
+
+1. Behavioral RED then GREEN: frozen v7 DDL/data fixture upgrades to exactly v8 with exact index, retained unknown data and unchanged history rows; reopen idempotence. Fault after index/before version commit rolls back on disk; conflicting index/malformed metadata/future version/autocommit reject without mutation. Existing v1/v6 tests remain.
+2. JDBC indexed query on 1M synthetic history events: exact identity and timestamp/id tie ordering; plan uses index without temp sort. Query budget unchanged; interrupted search must not poison next write/read. No existing DB path accepted by probe.
+3. Controller tests: failed next/previous/filter keeps successful state; retry identical query; double/stale clicks do not skip; permissions/close discard callbacks; history failure remains in profile context.
+4. Measure synthetic migration time, DB bytes, filtered search outcomes and mixed FIFO read/write/retention. Do not claim production SLO or that history index fixes contains-text search.
+5. Full Java21 clean test package; exact artifact/hash and independent Opus5 review; source/test evidence. Paper/client/production and remaining roadmap gates still open.
+
+
+FILE src/main/java/com/itemguard/persistence/SqliteSchemaManager.java
+package com.itemguard.persistence;
+
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+
+public final class SqliteSchemaManager {
+
+    public static final int CURRENT_SCHEMA_VERSION = 7;
+
+    public void initialize(Connection connection) throws SQLException {
+        validateExistingSchema(connection);
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS tracked_items (
+                    code VARCHAR(16) PRIMARY KEY,
+                    item_uuid VARCHAR(36) NOT NULL,
+                    owner_uuid VARCHAR(36),
+                    owner_name VARCHAR(255),
+                    material VARCHAR(64),
+                    item_name VARCHAR(255),
+                    item_lore TEXT,
+                    created_at BIGINT NOT NULL,
+                    last_seen_at BIGINT NOT NULL,
+                    last_action VARCHAR(32),
+                    detection_count INT DEFAULT 0,
+                    last_location TEXT
+                )
+                """);
+            statement.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_item_uuid_unique
+                ON tracked_items(item_uuid)
+                """);
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS item_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    code VARCHAR(16) NOT NULL,
+                    item_uuid VARCHAR(36) NOT NULL,
+                    action VARCHAR(32) NOT NULL,
+                    player_name VARCHAR(255),
+                    player_uuid VARCHAR(36),
+                    location TEXT,
+                    world VARCHAR(64),
+                    x INT,
+                    y INT,
+                    z INT,
+                    timestamp BIGINT NOT NULL,
+                    additional_data TEXT
+                )
+                """);
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS item_observations (
+                    observation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    item_uuid VARCHAR(36) NOT NULL,
+                    code VARCHAR(16) NOT NULL,
+                    scan_epoch BIGINT NOT NULL,
+                    epoch_complete INT NOT NULL DEFAULT 0,
+                    holder_type VARCHAR(32) NOT NULL,
+                    holder_id VARCHAR(255) NOT NULL,
+                    slot INT NOT NULL,
+                    observed_at BIGINT NOT NULL,
+                    UNIQUE(scan_epoch, holder_type, holder_id, slot, item_uuid)
+                )
+                """);
+            statement.execute("""
+                CREATE INDEX IF NOT EXISTS idx_observation_identity_epoch
+                ON item_observations(item_uuid, scan_epoch)
+                """);
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS duplicate_findings (
+                    finding_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    item_uuid VARCHAR(36) NOT NULL,
+                    code VARCHAR(16) NOT NULL,
+                    scan_epoch BIGINT NOT NULL,
+                    status VARCHAR(16) NOT NULL,
+                    distinct_locations INT NOT NULL,
+                    action VARCHAR(16) NOT NULL,
+                    created_at BIGINT NOT NULL,
+                    detail TEXT,
+                    FOREIGN KEY(code) REFERENCES tracked_items(code)
+                )
+                """);
+            statement.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_duplicate_finding_identity_epoch
+                ON duplicate_findings(item_uuid, scan_epoch)
+                """);
+            statement.execute("""
+                CREATE INDEX IF NOT EXISTS idx_duplicate_finding_identity_created
+                ON duplicate_findings(item_uuid, created_at)
+                """);
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS item_search_requests (
+                    code VARCHAR(16) PRIMARY KEY,
+                    mode VARCHAR(16) NOT NULL,
+                    state VARCHAR(16) NOT NULL,
+                    actor_uuid VARCHAR(36),
+                    actor_name VARCHAR(255) NOT NULL,
+                    created_at BIGINT NOT NULL,
+                    expires_at BIGINT NOT NULL,
+                    updated_at BIGINT NOT NULL
+                )
+                """);
+            statement.execute("""
+                CREATE INDEX IF NOT EXISTS idx_search_state_expiry
+                ON item_search_requests(state, expires_at)
+                """);
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS item_snapshots (
+                    code VARCHAR(16) PRIMARY KEY,
+                    snapshot_version INT NOT NULL,
+                    payload BLOB NOT NULL,
+                    sha256 BLOB NOT NULL,
+                    captured_at BIGINT NOT NULL,
+                    FOREIGN KEY(code) REFERENCES tracked_items(code)
+                )
+                """);
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS reclaim_claims (
+                    claim_id VARCHAR(36) PRIMARY KEY,
+                    idempotency_key VARCHAR(128) NOT NULL UNIQUE,
+                    player_uuid VARCHAR(36) NOT NULL,
+                    code VARCHAR(16) NOT NULL,
+                    state VARCHAR(16) NOT NULL,
+                    requested_at BIGINT NOT NULL,
+                    updated_at BIGINT NOT NULL,
+                    detail TEXT,
+                    FOREIGN KEY(code) REFERENCES tracked_items(code)
+                )
+                """);
+            statement.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_reclaim_identity_lock
+                ON reclaim_claims(player_uuid, code)
+                WHERE state IN ('PENDING', 'PREPARED', 'COMMITTED')
+                """);
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS tag_publications (
+                    publication_id VARCHAR(36) PRIMARY KEY,
+                    source_key VARCHAR(255) NOT NULL,
+                    source_digest BLOB NOT NULL,
+                    code VARCHAR(16) NOT NULL,
+                    item_uuid VARCHAR(36) NOT NULL,
+                    owner_uuid VARCHAR(36),
+                    owner_name VARCHAR(255),
+                    material VARCHAR(64),
+                    item_name VARCHAR(255),
+                    item_lore TEXT,
+                    created_item_at BIGINT NOT NULL,
+                    last_seen_at BIGINT NOT NULL,
+                    last_action VARCHAR(32),
+                    detection_count INT NOT NULL,
+                    last_location TEXT,
+                    snapshot_version INT NOT NULL,
+                    payload BLOB NOT NULL,
+                    sha256 BLOB NOT NULL,
+                    captured_at BIGINT NOT NULL,
+                    state VARCHAR(16) NOT NULL,
+                    created_at BIGINT NOT NULL,
+                    updated_at BIGINT NOT NULL,
+                    detail TEXT
+                )
+                """);
+            statement.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_tag_publication_source_lock
+                ON tag_publications(source_key)
+                WHERE state = 'PREPARED'
+                """);
+            statement.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_tag_publication_code_unique
+                ON tag_publications(code)
+                """);
+            statement.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_tag_publication_uuid_unique
+                ON tag_publications(item_uuid)
+                """);
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS plugin_stats (
+                    id INTEGER PRIMARY KEY,
+                    schema_version INT NOT NULL,
+                    duplicates_detected INT DEFAULT 0,
+                    last_updated BIGINT
+                )
+                """);
+            statement.executeUpdate("""
+                INSERT OR IGNORE INTO plugin_stats
+                (id, schema_version, duplicates_detected, last_updated)
+                VALUES (1, 7, 0, 0)
+                """);
+            statement.executeUpdate("""
+                UPDATE plugin_stats
+                SET schema_version = 7
+                WHERE id = 1 AND schema_version < 7
+                """);
+            connection.commit();
+        } catch (SQLException exception) {
+            connection.rollback();
+            throw exception;
+        }
+    }
+
+    private void validateExistingSchema(Connection connection) throws SQLException {
+        try (var metadata = connection.prepareStatement(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'plugin_stats'");
+             ResultSet table = metadata.executeQuery()) {
+            if (!table.next()) {
+                return;
+            }
+        }
+
+        try (Statement statement = connection.createStatement();
+             ResultSet result = statement.executeQuery(
+                 "SELECT schema_version FROM plugin_stats WHERE id = 1")) {
+            if (!result.next()) {
+                throw new SQLException("ItemGuard schema metadata is missing row id=1");
+            }
+            int schemaVersion = result.getInt(1);
+            if (schemaVersion > CURRENT_SCHEMA_VERSION) {
+                throw new SQLException(
+                    "Unsupported future ItemGuard schema version: " + schemaVersion
+                );
+            }
+        }
+    }
+}
+
+
+FILE src/main/java/com/itemguard/persistence/SqliteConnectionOwner.java
+package com.itemguard.persistence;
+
+import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.time.Duration;
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
+
+public final class SqliteConnectionOwner implements AutoCloseable {
+
+    private static final Duration DEFAULT_CLOSE_TIMEOUT = Duration.ofSeconds(10);
+
+    private final SerialDatabaseExecutor executor;
+    private final Consumer<Throwable> failureHandler;
+    private final SqliteProcessLock processLock;
+    private final Duration initializationCleanupTimeout;
+    private final Consumer<SqliteProcessLock> processLockReleaser;
+    private final AtomicBoolean closed = new AtomicBoolean();
+    private volatile boolean closeSucceeded;
+    private Connection connection;
+
+    public SqliteConnectionOwner(Path databasePath) {
+        this(databasePath, failure -> {});
+    }
+
+    public SqliteConnectionOwner(Path databasePath, Consumer<Throwable> failureHandler) {
+        this(
+            databasePath,
+            failureHandler,
+            DEFAULT_CLOSE_TIMEOUT,
+            () -> {},
+            SqliteProcessLock::close
+        );
+    }
+
+    SqliteConnectionOwner(
+        Path databasePath,
+        Consumer<Throwable> failureHandler,
+        Duration initializationCleanupTimeout,
+        Runnable beforeInitialization,
+        Consumer<SqliteProcessLock> processLockReleaser
+    ) {
+        Objects.requireNonNull(databasePath, "databasePath");
+        this.failureHandler = Objects.requireNonNull(failureHandler, "failureHandler");
+        this.initializationCleanupTimeout = Objects.requireNonNull(
+            initializationCleanupTimeout,
+            "initializationCleanupTimeout"
+        );
+        Objects.requireNonNull(beforeInitialization, "beforeInitialization");
+        this.processLockReleaser = Objects.requireNonNull(
+            processLockReleaser,
+            "processLockReleaser"
+        );
+        this.processLock = SqliteProcessLock.acquire(databasePath);
+        this.executor = new SerialDatabaseExecutor("ItemGuard-DB");
+
+        Future<Void> initialization = executor.submit(() -> {
+            try {
+                beforeInitialization.run();
+                connection = DriverManager.getConnection(
+                    "jdbc:sqlite:" + databasePath.toAbsolutePath()
+                );
+                try (var statement = connection.createStatement()) {
+                    statement.execute("PRAGMA foreign_keys = ON");
+                }
+                connection.setAutoCommit(false);
+                new SqliteSchemaManager().initialize(connection);
+                return null;
+            } catch (Throwable failure) {
+                if (connection != null) {
+                    try {
+                        connection.close();
+                    } catch (SQLException closeFailure) {
+                        failure.addSuppressed(closeFailure);
+                    } finally {
+                        connection = null;
+                    }
+                }
+                throw failure;
+            }
+        });
+        try {
+            awaitInitialization(initialization);
+        } catch (RuntimeException failure) {
+            if (cleanupAfterInitializationFailure(failure)) {
+                try {
+                    processLockReleaser.accept(processLock);
+                } catch (RuntimeException releaseFailure) {
+                    failure.addSuppressed(releaseFailure);
+                    processLock.retainUntilProcessExit();
+                }
+            } else {
+                processLock.retainUntilProcessExit();
+            }
+            throw failure;
+        }
+    }
+
+    public void execute(SqliteOperation<Void> operation) {
+        requireOpen();
+        executor.execute(() -> {
+            try {
+                runTransaction(operation);
+            } catch (RuntimeException failure) {
+                reportFailure(failure);
+            }
+        });
+    }
+
+    public <T> T call(SqliteOperation<T> operation) {
+        requireOpen();
+        Future<T> future = executor.submit(() -> runTransaction(operation));
+        try {
+            return future.get();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting for ItemGuard database", interrupted);
+        } catch (ExecutionException failure) {
+            throw propagate(failure.getCause());
+        }
+    }
+
+    public <T> CompletableFuture<T> callAsync(SqliteOperation<T> operation) {
+        requireOpen();
+        Objects.requireNonNull(operation, "operation");
+        CompletableFuture<T> completion = new CompletableFuture<>();
+        executor.execute(() -> {
+            try {
+                completion.complete(runTransaction(operation));
+            } catch (RuntimeException failure) {
+                reportFailure(failure);
+                completion.completeExceptionally(failure);
+            }
+        });
+        return completion;
+    }
+
+    public void flush() {
+        call(connection -> null);
+    }
+
+    public synchronized boolean close(Duration timeout) {
+        Objects.requireNonNull(timeout, "timeout");
+        if (!closed.compareAndSet(false, true)) {
+            return closeSucceeded;
+        }
+
+        long deadline = System.nanoTime() + timeout.toNanos();
+        Future<Void> closeConnection = executor.submit(() -> {
+            if (connection != null && !connection.isClosed()) {
+                connection.close();
+            }
+            return null;
+        });
+
+        try {
+            closeConnection.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            processLock.retainUntilProcessExit();
+            closeSucceeded = false;
+            return false;
+        } catch (ExecutionException | TimeoutException failure) {
+            reportFailure(failure);
+            processLock.retainUntilProcessExit();
+            closeSucceeded = false;
+            return false;
+        }
+
+        long remainingNanos = Math.max(0L, deadline - System.nanoTime());
+        if (!executor.close(Duration.ofNanos(remainingNanos))) {
+            processLock.retainUntilProcessExit();
+            closeSucceeded = false;
+            return false;
+        }
+        try {
+            processLockReleaser.accept(processLock);
+            closeSucceeded = true;
+            return true;
+        } catch (RuntimeException releaseFailure) {
+            reportFailure(releaseFailure);
+            processLock.retainUntilProcessExit();
+            closeSucceeded = false;
+            return false;
+        }
+    }
+
+    @Override
+    public void close() {
+        close(DEFAULT_CLOSE_TIMEOUT);
+    }
+
+    private <T> T runTransaction(SqliteOperation<T> operation) {
+        try {
+            T result = operation.apply(connection);
+            connection.commit();
+            return result;
+        } catch (Throwable failure) {
+            rollback(failure);
+            throw propagate(failure);
+        }
+    }
+
+    private void rollback(Throwable originalFailure) {
+        try {
+            connection.rollback();
+        } catch (SQLException rollbackFailure) {
+            originalFailure.addSuppressed(rollbackFailure);
+        }
+    }
+
+    private void requireOpen() {
+        if (closed.get()) {
+            throw new RejectedExecutionException("ItemGuard database owner is closed");
+        }
+    }
+
+    private void awaitInitialization(Future<Void> initialization) {
+        try {
+            initialization.get();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while initializing ItemGuard database", interrupted);
+        } catch (ExecutionException failure) {
+            throw propagate(failure.getCause());
+        }
+    }
+
+    private boolean cleanupAfterInitializationFailure(RuntimeException originalFailure) {
+        long deadline = System.nanoTime() + initializationCleanupTimeout.toNanos();
+        Future<Void> cleanup;
+        try {
+            cleanup = executor.submit(() -> {
+                if (connection != null) {
+                    try {
+                        connection.close();
+                    } finally {
+                        connection = null;
+                    }
+                }
+                return null;
+            });
+        } catch (RuntimeException submissionFailure) {
+            originalFailure.addSuppressed(submissionFailure);
+            return false;
+        }
+
+        boolean interrupted = Thread.interrupted();
+        boolean cleanupSucceeded = false;
+        try {
+            while (true) {
+                try {
+                    long remainingNanos = Math.max(0L, deadline - System.nanoTime());
+                    cleanup.get(remainingNanos, TimeUnit.NANOSECONDS);
+                    cleanupSucceeded = true;
+                    break;
+                } catch (InterruptedException ignored) {
+                    interrupted = true;
+                } catch (ExecutionException cleanupFailure) {
+                    originalFailure.addSuppressed(cleanupFailure.getCause());
+                    break;
+                } catch (TimeoutException timeout) {
+                    originalFailure.addSuppressed(new IllegalStateException(
+                        "Timed out cleaning up ItemGuard database initialization",
+                        timeout
+                    ));
+                    break;
+                }
+            }
+            long remainingNanos = Math.max(0L, deadline - System.nanoTime());
+            boolean terminated = executor.close(Duration.ofNanos(remainingNanos));
+            if (!terminated) {
+                originalFailure.addSuppressed(new IllegalStateException(
+                    "ItemGuard database executor did not terminate after initialization failure"
+                ));
+            }
+            return cleanupSucceeded && terminated;
+        } finally {
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    private RuntimeException propagate(Throwable failure) {
+        if (failure instanceof RuntimeException runtimeFailure) {
+            return runtimeFailure;
+        }
+        return new IllegalStateException("ItemGuard database operation failed", failure);
+    }
+
+    private void reportFailure(Throwable failure) {
+        try {
+            failureHandler.accept(failure);
+        } catch (Throwable handlerFailure) {
+            failure.addSuppressed(handlerFailure);
+        }
+    }
+
+    @FunctionalInterface
+    public interface SqliteOperation<T> {
+        T apply(Connection connection) throws Exception;
+    }
+}
+
+
+FILE src/main/java/com/itemguard/catalog/CatalogRepository.java
+package com.itemguard.catalog;
+
+import com.itemguard.persistence.SqliteConnectionOwner;
+import java.util.ArrayList;
+import java.util.concurrent.CompletableFuture;
+import org.sqlite.ProgressHandler;
+
+/** Bounded SELECT-only catalog; no world scan or item mutation. */
+public final class CatalogRepository {
+    private final SqliteConnectionOwner owner;
+    private final int progressLimit;
+    public CatalogRepository(SqliteConnectionOwner owner) { this(owner, 2000); }
+    CatalogRepository(SqliteConnectionOwner owner, int progressLimit) {
+        this.owner = java.util.Objects.requireNonNull(owner);
+        if (progressLimit < 1) throw new IllegalArgumentException("progressLimit");
+        this.progressLimit = progressLimit;
+    }
+    public CompletableFuture<java.util.List<CatalogEvent>> history(String code, String itemUuid) {
+        java.util.Objects.requireNonNull(code);
+        java.util.Objects.requireNonNull(itemUuid);
+        return bounded(connection -> {
+            var events = new ArrayList<CatalogEvent>();
+            try (var statement = connection.prepareStatement("""
+                SELECT id,action,player_name,player_uuid,location,timestamp,additional_data
+                FROM item_history WHERE code = ? AND item_uuid = ?
+                ORDER BY timestamp DESC, id DESC LIMIT 100
+                """)) {
+                statement.setString(1, code);
+                statement.setString(2, itemUuid);
+                try (var result = statement.executeQuery()) {
+                    while (result.next()) events.add(new CatalogEvent(result.getLong(1), result.getString(2),
+                        result.getString(3), result.getString(4), result.getString(5), result.getLong(6), result.getString(7)));
+                }
+            }
+            return java.util.List.copyOf(events);
+        });
+    }
+
+    public CompletableFuture<CatalogPage> find(CatalogQuery query) {
+        java.util.Objects.requireNonNull(query);
+        return bounded(connection -> {
+            var rows = new ArrayList<CatalogRow>();
+            String sql = """
+                SELECT code,item_uuid,material,item_name,owner_name,last_location,last_seen_at
+                FROM tracked_items WHERE code > ?
+                AND (? = '' OR instr(ig_catalog_fold(COALESCE(item_name,'')), ig_catalog_fold(?)) > 0
+                    OR instr(ig_catalog_fold(code),ig_catalog_fold(?)) > 0 OR instr(ig_catalog_fold(COALESCE(material,'')),ig_catalog_fold(?)) > 0)
+                AND (? = '' OR owner_name = ? COLLATE NOCASE)
+                AND %s ORDER BY code ASC LIMIT 37
+                """.formatted(query.category().predicate());
+            try (var statement = connection.prepareStatement(sql)) {
+                statement.setString(1, query.afterCode());
+                for (int i = 2; i <= 5; i++) statement.setString(i, query.text());
+                statement.setString(6, query.ownerName());
+                statement.setString(7, query.ownerName());
+                try (var result = statement.executeQuery()) {
+                    while (result.next()) rows.add(new CatalogRow(
+                        result.getString(1), result.getString(2), result.getString(3),
+                        result.getString(4), result.getString(5), result.getString(6), result.getLong(7)));
+                }
+            }
+            boolean more = rows.size() > 36;
+            if (more) rows.removeLast();
+            return new CatalogPage(rows, more);
+        });
+    }
+
+    private <T> CompletableFuture<T> bounded(SqliteConnectionOwner.SqliteOperation<T> operation) {
+        return owner.callAsync(connection -> {
+            long started = System.nanoTime();
+            org.sqlite.Function.create(connection, "ig_catalog_fold", new org.sqlite.Function() {
+                @Override protected void xFunc() throws java.sql.SQLException {
+                    String value=value_text(0);
+                    result(java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFC).toLowerCase(java.util.Locale.ROOT));
+                }
+            }, 1, org.sqlite.Function.FLAG_DETERMINISTIC);
+            ProgressHandler.setHandler(connection, 1000, new ProgressHandler() {
+                private int calls;
+                @Override protected int progress() {
+                    return ++calls >= progressLimit || System.nanoTime() - started > 250_000_000L ? 1 : 0;
+                }
+            });
+            try {
+                return operation.apply(connection);
+            } finally {
+                try { ProgressHandler.clearHandler(connection); }
+                finally { org.sqlite.Function.destroy(connection, "ig_catalog_fold", 1); }
+            }
+        });
+    }
+}
+
+
+FILE src/main/java/com/itemguard/catalog/CatalogController.java
+package com.itemguard.catalog;
+
+import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+
+/** All methods except future completion execute through the main-thread port. */
+public final class CatalogController {
+    public interface Data {
+        CompletableFuture<CatalogPage> find(CatalogQuery query);
+        CompletableFuture<List<CatalogEvent>> history(String code, String itemUuid);
+    }
+    public interface Port {
+        boolean allowed(boolean history);
+        void main(Runnable action);
+        void show(CatalogScreen screen);
+        void close();
+        void prompt(boolean owner, java.util.function.Consumer<String> completion);
+        void message(String message);
+    }
+    private final Data data;
+    private final Port port;
+    private final CatalogSession session = new CatalogSession();
+    private CatalogPage page = new CatalogPage(List.of(), false);
+    private CatalogRow selected;
+    private List<CatalogEvent> events = List.of();
+    private final Map<Integer, CatalogScreen.Icon> icons = new HashMap<>();
+    private String text = "", owner = "", cursor = "";
+    private CatalogCategory category = CatalogCategory.ALL;
+    private final java.util.ArrayList<String> previous = new java.util.ArrayList<>();
+    private int historyPage;
+    private long viewGeneration;
+
+    public CatalogController(Data data, Port port) { this.data = data; this.port = port; }
+    public void open() {
+        if (!permit(false)) return;
+        base(); icon(22, "CLOCK", "Đang tải…", List.of(), null); show("Kho tra cứu");
+        if (!session.accepts(viewGeneration) || !permit(false)) return;
+        long generation = viewGeneration;
+        try {
+            data.find(new CatalogQuery(text, owner, category, cursor)).whenComplete((result, failure) ->
+                port.main(() -> {
+                    if (!session.accepts(generation) || !permit(false)) return;
+                    if (failure != null) { error(); return; }
+                    page = result; catalog();
+                }));
+        } catch (RuntimeException failure) { error(); }
+    }
+    public void close() { session.close(); }
+
+    private boolean permit(boolean history) {
+        if (port.allowed(history)) return true;
+        close(); port.close(); return false;
+    }
+    private void base() {
+        viewGeneration = session.begin(); icons.clear();
+        icon(53, "BARRIER", "Đóng", List.of(), () -> { close(); port.close(); });
+        icon(0, "BOOK", "Chỉ dữ liệu đã ghi nhận", List.of(
+            "Chưa phải toàn bộ item trên hệ thống", "HavenBags/kho ngoài: chưa hỗ trợ", "Chỉ xem — không lấy hoặc xóa đồ"), null);
+    }
+    private void icon(int slot, String material, String title, List<String> lore, Runnable action) {
+        icons.put(slot, new CatalogScreen.Icon(material, title, lore, action));
+    }
+    private void show(String title) { show(title, false); }
+    private void show(String title, boolean historyRequired) {
+        if (!permit(historyRequired)) return;
+        long generation = viewGeneration;
+        var guarded = new HashMap<Integer, CatalogScreen.Icon>();
+        icons.forEach((slot, icon) -> guarded.put(slot, new CatalogScreen.Icon(icon.material(), icon.title(), icon.lore(),
+            icon.action() == null ? null : () -> {
+                if (session.accepts(generation) && permit(historyRequired)) icon.action().run();
+            })));
+        port.show(new CatalogScreen(title, guarded));
+    }
+    private void catalog() {
+        base();
+        filters();
+        for (int i=0; i<page.items().size(); i++) {
+            var row = page.items().get(i);
+            icon(i+9, row.material(), text(row.name()), List.of(row.code(),
+                "Người liên quan (bản ghi): " + text(row.ownerName()),
+                "Nguồn plugin: chưa xác định", "Bấm xem hồ sơ"), () -> { selected = row; profile(); });
+        }
+        if (page.items().isEmpty()) icon(22, "PAPER", "Không có bản ghi phù hợp", List.of("Không chứng minh item không tồn tại"), null);
+        if (!previous.isEmpty()) icon(48, "ARROW", "Trang trước", List.of(), () -> {
+            cursor = previous.removeLast(); open();
+        });
+        if (page.hasMore() && !page.items().isEmpty()) {
+            if (previous.size() < 127) icon(50, "ARROW", "Trang sau", List.of(), () -> {
+                previous.add(cursor); cursor = page.items().getLast().code(); open();
+            });
+            else icon(50, "BARRIER", "Đã tới giới hạn 128 trang", List.of("Thu hẹp bộ lọc để tra tiếp"), null);
+        }
+        icon(49, "PAPER", "Trang " + (previous.size()+1), List.of("Xếp theo mã; không phải snapshot DB", "Dữ liệu mới có thể cần làm mới"), null);
+        show("Kho tra cứu · " + (previous.size()+1));
+    }
+    private void filters() {
+        icon(2, "NAME_TAG", "Tìm tên / mã / material", List.of(text.isEmpty() ? "Chưa lọc" : text), () -> input(false));
+        icon(3, "PLAYER_HEAD", "Người liên quan", List.of(owner.isEmpty() ? "Chưa lọc" : owner, "Theo tên trong bản ghi, không phải custody"), () -> input(true));
+        icon(4, "HOPPER", "Loại đồ: " + categoryName(category), List.of("Suy từ material; không phải loại custom"), this::categories);
+        icon(6, "SUNFLOWER", "Làm mới từ đầu", List.of(), () -> { reset(); open(); });
+        icon(7, "MILK_BUCKET", "Xóa bộ lọc", List.of(), () -> { text=""; owner=""; category=CatalogCategory.ALL; reset(); open(); });
+    }
+    private void reset() { cursor=""; previous.clear(); }
+    private void input(boolean byOwner) {
+        long generation = session.begin();
+        port.prompt(byOwner, value -> {
+            if (!session.accepts(generation) || !permit(false)) return;
+            if (value.equalsIgnoreCase("huy") || value.equalsIgnoreCase("hủy")) { catalog(); return; }
+            String input = value.equals("*") ? "" : value;
+            try {
+                new CatalogQuery(byOwner ? text : input, byOwner ? input : owner, category, "");
+                if (byOwner) owner=input; else text=input;
+                reset(); open();
+            } catch (IllegalArgumentException invalid) {
+                port.message("Nội dung không hợp lệ: tên tối đa 16, tìm kiếm tối đa 64 ký tự."); catalog();
+            }
+        });
+    }
+    private void categories() {
+        base();
+        String[] materials={"CHEST","DIAMOND_SWORD","DIAMOND_CHESTPLATE","DIAMOND_PICKAXE","BOW","PAPER"};
+        for (var value : CatalogCategory.values()) {
+            icon(18+value.ordinal(), materials[value.ordinal()], categoryName(value), List.of("Phân loại theo material"), () -> { category=value; reset(); open(); });
+        }
+        icon(45, "ARROW", "Về kho", List.of(), this::catalog); show("Chọn loại đồ");
+    }
+    private static String categoryName(CatalogCategory value) {
+        return switch(value) { case ALL -> "Tất cả"; case SWORD -> "Kiếm"; case ARMOR -> "Giáp";
+            case TOOLS -> "Công cụ"; case RANGED -> "Tầm xa"; case OTHER -> "Khác / chưa phân loại"; };
+    }
+    private void profile() {
+        base();
+        icon(4, selected.material(), text(selected.name()), List.of(selected.code(), "UUID: " + text(selected.itemUuid()),
+            "Người liên quan (bản ghi): " + text(selected.ownerName()), "Nguồn plugin: chưa xác định"), null);
+        icon(20, "CLOCK", "Lịch sử", List.of("Tối đa 100 sự kiện còn lưu", "Không đầy đủ: giới hạn + retention"), this::loadHistory);
+        icon(22, "PLAYER_HEAD", "Qua tay ai — chưa hỗ trợ", List.of("Actor lịch sử không phải chuỗi chuyển tay"), null);
+        icon(24, "CHEST", "Nơi thấy trong bản ghi", List.of(text(selected.location()), time(selected.lastSeenAt()),
+            "Không xác minh tồn tại hiện tại", "HavenBags/kho ngoài: chưa hỗ trợ"), null);
+        icon(45, "ARROW", "Về kho", List.of(), this::catalog);
+        show("Hồ sơ · " + selected.code());
+    }
+    private void loadHistory() {
+        if (!permit(true)) return;
+        base(); icon(22, "CLOCK", "Đang tải lịch sử…", List.of(), null); show("Lịch sử");
+        if (!session.accepts(viewGeneration) || !permit(true)) return;
+        long generation = viewGeneration;
+        try {
+            data.history(selected.code(), selected.itemUuid()).whenComplete((result, failure) -> port.main(() -> {
+                if (!session.accepts(generation) || !permit(true)) return;
+                if (failure != null) { error(); return; }
+                events = List.copyOf(result); historyPage=0; history();
+            }));
+        } catch (RuntimeException failure) { error(); }
+    }
+    private void history() {
+        base();
+        int start = historyPage*36;
+        for (int i=0; i<Math.min(36, events.size()-start); i++) {
+            var event = events.get(start+i);
+            icon(i+9, "PAPER", text(event.action()), List.of(time(event.timestamp()),
+                "Người thực hiện: " + text(event.actor()), text(event.location())), () -> detail(event));
+        }
+        icon(4, "BOOK", "Lịch sử không đầy đủ", List.of("Tối đa 100 sự kiện còn lưu; retention", "Người thực hiện không đồng nghĩa người giữ"), null);
+        icon(45, "ARROW", "Về hồ sơ", List.of(), this::profile);
+        if (historyPage>0) icon(48,"ARROW","Trang trước",List.of(),()->{historyPage--;history();});
+        if (start+36<events.size()) icon(50,"ARROW","Trang sau",List.of(),()->{historyPage++;history();});
+        if (events.isEmpty()) icon(22,"PAPER","Chưa có sự kiện còn lưu",List.of("Không đồng nghĩa chưa từng xảy ra"),null);
+        show("Lịch sử · " + selected.code() + " · " + (historyPage+1), true);
+    }
+    private void detail(CatalogEvent event) {
+        base();
+        icon(22, "PAPER", text(event.action()), List.of("Sự kiện #" + event.id(), time(event.timestamp()),
+            "Người thực hiện: " + text(event.actor()), "UUID: " + text(event.actorUuid()),
+            text(event.location()), text(event.detail()), "Không phải bằng chứng chuyển quyền sở hữu"), null);
+        icon(45, "ARROW", "Về lịch sử", List.of(), this::history);
+        show("Sự kiện · " + selected.code(), true);
+    }
+    private void error() {
+        base(); icon(22, "BARRIER", "Không thể tải dữ liệu", List.of("DB đang bận, lỗi hoặc vượt giới hạn", "Đợi ít nhất 1 giây rồi thử lại", "Không coi là kết quả rỗng", "Lịch sử lớn cần tối ưu index trước khi dùng"), null);
+        if (selected != null) icon(45,"ARROW","Về hồ sơ",List.of(),this::profile);
+        filters();
+        show("ItemGuard · Lỗi truy vấn");
+    }
+    private static String text(String value) { return value == null || value.isBlank() ? "Chưa ghi nhận" : value; }
+    private static String time(long value) {
+        return value <= 0 ? "Chưa ghi thời gian" : java.time.format.DateTimeFormatter.ofPattern("dd/MM/uuuu HH:mm:ss XXX")
+            .withZone(java.time.ZoneId.systemDefault()).format(java.time.Instant.ofEpochMilli(value));
+    }
+}
+
+
+FILE src/main/java/com/itemguard/catalog/CatalogReadGate.java
+package com.itemguard.catalog;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
+import java.util.function.LongSupplier;
+
+/** Shared admission across all catalog viewers, independent of tracking writes. */
+public final class CatalogReadGate {
+    private final LongSupplier clock;
+    private boolean busy, used;
+    private long lastStart;
+    public CatalogReadGate(LongSupplier clock) { this.clock=java.util.Objects.requireNonNull(clock); }
+    public synchronized <T> CompletableFuture<T> submit(Supplier<CompletableFuture<T>> operation) {
+        long now=clock.getAsLong();
+        if (busy || (used && now-lastStart<1_000_000_000L)) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Catalog busy; try again shortly"));
+        }
+        busy=true; used=true; lastStart=now;
+        try {
+            CompletableFuture<T> result=operation.get();
+            result.whenComplete((value,failure)->release());
+            return result;
+        } catch (RuntimeException failure) {
+            busy=false; return CompletableFuture.failedFuture(failure);
+        }
+    }
+    private synchronized void release() { busy=false; }
+}

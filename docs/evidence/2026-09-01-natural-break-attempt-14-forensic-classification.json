@@ -1,0 +1,161 @@
+{
+  "attempt": "attempt-14",
+  "attemptPostState": {
+    "baselineCapturedAtEpochMs": 1788202481139,
+    "classificationExists": false,
+    "finalRuntimeSeal": {
+      "bytes": 307792002,
+      "files": 494,
+      "manifest": {
+        "bytes": 307792002,
+        "files": 494,
+        "sha256": "71ecee0786778482478efb53add9b04bfca4c0595b77498f89b7f1829d9ed674"
+      },
+      "ownerResistant": true,
+      "ownerRightsDeny": [
+        "WRITE_DAC",
+        "WRITE_OWNER"
+      ],
+      "probes": [
+        "mutable-append",
+        "directory-create",
+        "plugin-create",
+        "static-delete",
+        "mutable-regrant"
+      ],
+      "root": "E:\\AI.WORK\\evidence\\itemguard-natural-container-break-telemetry-20260829\\attempt-14\\runtime-server",
+      "sealed": true,
+      "sid": "S-1-5-21-132735648-374884464-3172982847-1001"
+    },
+    "finalRuntimeSealSha256": "dae09efeefc019ba46ad4b98176821c8721e78e1fd8aa6f2baf93dcf6e523e91",
+    "originalMatchesBaseline": true,
+    "paperPrepareLogExists": false,
+    "portsClosed": {
+      "36104": true,
+      "57485": true,
+      "57486": true
+    },
+    "probeSha256": "28bf8cd46ce56c760e3cd0618973616ed918e5c754efb99b390df9cf9520bbf7",
+    "restoreReceiptOriginalUnchanged": true,
+    "restoreReceiptRestored": false,
+    "restoreReceiptSha256": "0066f624f93cb31589007c93225ef9edb99e56368627d63dc0c90e7b18bd93e9",
+    "runtimeActivationExists": false,
+    "runtimeCandidateJarsMatchBaseline": true,
+    "runtimeDatabaseMatchesBaseline": true,
+    "runtimeVerdictExists": false,
+    "triggerReceiptExists": false
+  },
+  "bundle": {
+    "authorizedControlledNamespace": "attempt-14",
+    "currentFilesIncludingManifest": 235,
+    "currentIntegrity": "FAIL",
+    "manifestSha256": "e31004b2e430771f79d8409f13a7a953ea8dbcb1fbcbf8892c748c4590c20b37",
+    "missingManifestPayloads": 45,
+    "name": "review-bundle-attempt-34",
+    "reviewPassReceiptSha256": "78b3e98bf2a3a915c304a0dcaaf50e3ec0145c646737f77e18e79a41f1350878",
+    "reviewVerdict": "PASS_FOR_CONTROLLED_PAPER",
+    "reviewedFilesIncludingManifest": 280
+  },
+  "candidateSha256": "2e1fb7d8717a02b316bef9c017d09d67b8705c694519433276bd6e316d5adc5e",
+  "classification": "PAPER_EXECUTION_NOT_ESTABLISHED_BUNDLE_INTEGRITY_LOSS",
+  "decision": {
+    "attempt14Consumed": true,
+    "bundle34AuthorizationInvalidForFutureExecution": true,
+    "nextAction": "Require an explicit antivirus-safe successor design and a newly sealed/reviewed namespace before any further controlled Paper attempt.",
+    "rerunAttempt14": false,
+    "restoreOrWhitelistQuarantine": false
+  },
+  "evidenceLevel": "OBSERVED_BUNDLE_INTEGRITY_LOSS_WITH_INCONCLUSIVE_EXECUTION_HISTORY",
+  "executionHistory": {
+    "assumption": "runtime-activation, trigger, Paper log, runtime verdict, and classification artifacts were not removed or modified after a possible execution",
+    "conditionalPrePaperInference": "SUPPORTED_IF_RUNTIME_RECEIPTS_WERE_NOT_DELETED_OR_MODIFIED_AFTER_EXECUTION",
+    "gap": "No sealed contemporaneous execution journal proves whether Paper was transiently launched before the current post-state was observed.",
+    "paperExecution": "NOT_ESTABLISHED"
+  },
+  "nonClaims": [
+    "Quarantine metadata proves Bitdefender recorded the 45 exact paths and declared hashes; it does not by itself prove process-termination causality.",
+    "Current evidence does not establish whether Paper was transiently launched in attempt-14.",
+    "No ItemGuard product behavior is verified or issued from attempt-14.",
+    "No production deployment, restart, mutation, or verification is claimed.",
+    "This receipt does not restore, whitelist, delete, or modify Bitdefender quarantine records or the damaged bundle."
+  ],
+  "pipelineOrderingEvidence": [
+    "pipeline.py executes baseline.py before trigger.py",
+    "pipeline.py executes phase-runner.py only after trigger.py",
+    "phase-runner.py is the component that starts Paper via subprocess.Popen",
+    "baseline.py writes runtime-activation.json only after completing runtime/preflight/toolchain handoff sealing"
+  ],
+  "probeSha256": "4003bf1cc253429de27881de8c277451fa314b3fd37e13dbc45726d364730b88",
+  "productVerdict": "NOT_ISSUED",
+  "quarantineMetadata": {
+    "auditSha256": "8f59e4dd12200e1ceabf0bc7ce19d14ad8b46599335b629a4161b976ab07cf07",
+    "detections": {
+      "Atc4.Detection": 45
+    },
+    "exactPathAndDeclaredShaMatches": 45,
+    "firstMetadataMtime": "2026-09-01T02:03:54.147171+07:00",
+    "lastMetadataMtime": "2026-09-01T02:03:59.122898+07:00",
+    "missingFiles": [
+      "owner-resistant-file-only-tree-contract.py",
+      "owner-resistant-finalization-contract.py",
+      "owner-resistant-parent-lifetime-contract.py",
+      "owner-resistant-parent-process-contract.py",
+      "owner-resistant-partition-contract.py",
+      "owner-resistant-runtime-contract.py",
+      "owner-resistant-seal-contract.py",
+      "owner-rights-regrant-error-classification-contract.py",
+      "packet-telemetry-contract.py",
+      "physical-entity-location-contract.py",
+      "physical-entity-snapshot-contract.py",
+      "pipeline.py",
+      "pre-paper-owner-seal-failure-contract.py",
+      "preflight-clone-isolation-contract.py",
+      "preflight-ntfs-seal-contract.py",
+      "publication-db-verifier-contract.py",
+      "publication-jdi-monitor-contract.py",
+      "publication-jdi-verifier-contract.py",
+      "publication-nbt-verifier-contract.py",
+      "publication-observer-overflow-contract.py",
+      "publication-observer-routing-contract.py",
+      "publication-pipeline-contract.py",
+      "restore-backup-snapshot-contract.py",
+      "restore-safe-deploy-contract.py",
+      "review-gate-contract.py",
+      "review-provenance-gate-contract.py",
+      "review-provenance-snapshot-contract.py",
+      "review-receipt-snapshot-contract.py",
+      "review-tree-canonical-contract.py",
+      "runtime-final-seal-contract.py",
+      "runtime-mutable-lifecycle-contract.py",
+      "runtime-plugin-namespace-seal-contract.py",
+      "runtime-root-handoff-seal-contract.py",
+      "server-authoritative-ready-contract.py",
+      "server-branch-verifier-contract.py",
+      "server-jdi-monitor-contract.py",
+      "static-contract.py",
+      "stop-running-state-contract.py",
+      "stop-source-binding-contract.py",
+      "telemetry-contract.py",
+      "telemetry-event-spec-contract.py",
+      "telemetry-verifier-contract.py",
+      "terminal-stop-snapshot-contract.py",
+      "test-only-owner-rights-protect-directory-contract.py",
+      "test-only-owner-rights-protect-files-only-contract.py"
+    ],
+    "recordCount": 45,
+    "unexplainedMissingCount": 0
+  },
+  "releaseClaim": false,
+  "runToken": "3065abbe-92ab-437c-9323-23c8871275a9",
+  "runtimeClaim": false,
+  "schemaVersion": 1,
+  "sourceArtifacts": {
+    "auditPath": "C:\\Users\\thanh\\AppData\\Local\\Temp\\itemguard_bundle34_quarantine_audit.json",
+    "baselinePath": "E:\\AI.WORK\\evidence\\itemguard-natural-container-break-telemetry-20260829\\attempt-14\\preflight\\baseline.json",
+    "finalSealPath": "E:\\AI.WORK\\evidence\\itemguard-natural-container-break-telemetry-20260829\\attempt-14\\final-runtime-seal.json",
+    "manifestPath": "E:\\AI.WORK\\evidence\\itemguard-natural-container-break-telemetry-20260829\\review-bundle-attempt-34\\manifest.json",
+    "passReceiptPath": "E:\\AI.WORK\\evidence\\itemguard-natural-container-break-telemetry-20260829\\review-attempt-34-pass.json",
+    "postStatePath": "C:\\Users\\thanh\\AppData\\Local\\Temp\\itemguard_attempt14_post_state_probe.json",
+    "restoreReceiptPath": "E:\\AI.WORK\\evidence\\itemguard-natural-container-break-telemetry-20260829\\attempt-14\\restore-receipt.json"
+  }
+}

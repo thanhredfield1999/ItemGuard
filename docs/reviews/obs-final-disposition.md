@@ -1,0 +1,10 @@
+# C3 observation final label/test disposition — 2026-09-09
+
+Followup `obs-followup-review.json` is PASS_FOR_OFFLINE_CANDIDATE, not runtime authorization. Four LOW residuals evaluated against source:
+
+1. Same-epoch movement: CONFIRMED. `recordObservation` has per-epoch/physical-key upsert, not simultaneous snapshot. Added two header lines: `Cùng đợt vẫn có thể khác thời điểm` and `Item di chuyển có thể hiện nhiều nơi`. No inferred custody/dupe logic. `obs-same-epoch-red.log` has one behavioral assertion failure; `obs-final-label-green.log` 22 focused PASS.
+2. Long epoch: OBSERVED. InventoryScanTask uses ScanEpochGenerator(System::currentTimeMillis, persisted floor); next() is max(clock,previous+1). Therefore epoch is a monotonic grouping key, not reliable wall-clock time (rollback/future persisted floor). Raw key retained to disambiguate exact groups, while observedAt is already formatted separately. No conversion to fictional timestamp or temporary page ordinal. Compact human-friendly grouping labels remain C4 UX debt, not correctness gate. No release claim.
+3. Nullable witness: strengthened test seed from slot0 to slot7 and asserts7 after failed NULL update, so JDBC NULL→0 cannot satisfy preservation. This is added GREEN coverage, not a production regression. Reviewer's claim that swallowed failure plus nullable schema passes ignores assertThrows; still nonzero witness is strictly stronger.
+4. Hypothetical nullable legacy schema: no new migration or supported corrupt-schema claim. Current schema rejects NULL; no evidence of supported older nullable shape. Followup itself explicitly scoped this residual out. Record as future schema-validation boundary, do not invent migration.
+
+R2 gate/flow/UDF facts not supplied in first followup were reviewed in R2 and checked by parent with source hashes, real JDBC flow tests and packaging verification. Last diff is only two warning strings plus regression and test witness; no writer/query/gate/schema changes. Final small exact review pack records these files and source generator context. The whole roadmap/Paper/HavenBags/current-holder gates remain OPEN.

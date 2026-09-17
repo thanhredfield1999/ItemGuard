@@ -1,0 +1,19 @@
+{
+  "files": {
+    "docs/design/2026-09-09-catalog-c1-index-pagination.md": "e000a2861777b4c607025e017e7ebdc92996b6b7431197d4ec51470b1c87c119",
+    "src/main/java/com/itemguard/persistence/SqliteSchemaManager.java": "6e2f60fdfa3120b655de9aab3557c2b57cffa33b8f879fe23a4baa23d81b6497",
+    "src/main/java/com/itemguard/persistence/SqliteConnectionOwner.java": "7aff238c140f0860bfeda96ef7f287ac87e9104a7b98d6707f86734f894f9732",
+    "src/main/java/com/itemguard/catalog/CatalogRepository.java": "d35392dedf1786a0fa8ef15504f4e0f6ac807b02c0da5a90bb73226b7f3286e6",
+    "src/main/java/com/itemguard/catalog/CatalogController.java": "7b2bb967784a6b2352a4e909661acdcec526806ea2d85734ce0be3a670bf7bd7",
+    "src/main/java/com/itemguard/catalog/CatalogReadGate.java": "ee1bb36bcf3c674782ed0d6999768cf4508fb9136f18e997da0268b6187de86d",
+    "src/test/java/com/itemguard/persistence/SqliteHistoryMigrationTest.java": "3b38780e8731a8edcf2fa00ab78aa94b106acd6c151d62d99709401d0440eb5a",
+    "src/test/java/com/itemguard/persistence/SqliteConnectionOwnerTest.java": "665387b575d4b2b0aa7b0cf0a0fe403761751954223272ce6293078dacd2143f",
+    "src/test/java/com/itemguard/catalog/CatalogControllerTest.java": "f540ef1bd6c08efa4eeea9584889ab75acfe253dbf2a77ca62f9ad70f5ef645b",
+    "src/main/java/com/itemguard/catalog/CatalogUi.java": "608dc15ac0fd1e16266cf3ae6a838dea0ddb7476e27e5fd4816f79f8904f10d1",
+    "src/main/java/com/itemguard/catalog/CatalogSession.java": "8673a1026c2fba3b0c2057c81fbf01a7294af92419fdcbb12bdfbb29ad8844a3",
+    "src/main/java/com/itemguard/catalog/CatalogQuery.java": "5c0e74bbcc2970063924774b1357c32fd0f56675f800b14e5c3bc0bacf9846ed",
+    "tools/catalog/CatalogC1Probe.java": "71586f3c50b337ff1302cf93afc711d39b07fe79e1972a3f136cad473329f49c",
+    "docs/reviews/c1-scale-compiled.log": "ba6c8640c4e506c06f15e4c8eecd1b272e9d4994e436c53df48d60eef92b4fb1"
+  },
+  "input_sha256": "3360828066cc6d0f4a4dc5bc26bf3cae8d00fbcf12b7110619822bee66b1f36b"
+}

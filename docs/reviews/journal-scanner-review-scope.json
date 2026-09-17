@@ -1,0 +1,21 @@
+{
+  "review_input_sha256": "fd6b87c9621b0f0df43a31eb861713a786cc9adb85397c87b0cfff483ad381f1",
+  "reviewed_source_sha256": {
+    "recovery/CommonJournalScanner.cs": "d05deeeb2c84a8e20f0034f9d7a6eb74cbd16173c510ec9b422b7a69b0669cb9",
+    "recovery/CommonJournalChain.cs": "ea88b7c9f63efee96c62be8c01f15e078740eb75751966f15044c76f0461adee",
+    "recovery/CanonicalDecoder.cs": "332e012a4efff21d43a700829e04728f170cbc8212242c93c2e7dacb221c4f59",
+    "recovery/CanonicalReEncoder.cs": "baf9be3555bee65887896ad4618f43b37fd0d6eb401ee47808943a25cb5ea0ad",
+    "tests/CommonJournalScannerTests.cs": "0cc5bfa2c45e1be2b4150094f7e8da9e543b8c5497b01e6d1bbf0f27bbd4cb54",
+    "tests/JournalLineBoundaryTests.cs": "4f46fdb1e9f0bdb0c141cf1f7673d722e395fd934d2e2cd89e9fd2233fa072f7"
+  },
+  "matches_current": {
+    "recovery/CommonJournalScanner.cs": true,
+    "recovery/CommonJournalChain.cs": true,
+    "recovery/CanonicalDecoder.cs": true,
+    "recovery/CanonicalReEncoder.cs": true,
+    "tests/CommonJournalScannerTests.cs": false,
+    "tests/JournalLineBoundaryTests.cs": false
+  },
+  "production_unchanged_since_review": true,
+  "test_only_delta": "added truncation/middle-corruption and scanner/writer line-boundary coverage after review"
+}

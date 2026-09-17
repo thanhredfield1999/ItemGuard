@@ -1,0 +1,37 @@
+{
+  "capturedAt": 1787555240665,
+  "duplicatesDetected": 1,
+  "finding": {
+    "action": "NOTIFY",
+    "code": "NZ1GMT",
+    "created_at": 1787555240595,
+    "detail": "distinct_locations=2",
+    "distinct_locations": 2,
+    "item_uuid": "c9fe8bd1-a7d6-4827-b839-49d1c22425bf",
+    "scan_epoch": 1787555240591,
+    "status": "CONFIRMED"
+  },
+  "observations": [
+    {
+      "code": "NZ1GMT",
+      "epoch_complete": 1,
+      "holder_id": "71fcf6be-e1ee-3c92-9a42-893cbe44818c",
+      "holder_type": "PLAYER",
+      "item_uuid": "c9fe8bd1-a7d6-4827-b839-49d1c22425bf",
+      "observed_at": 1787555240591,
+      "scan_epoch": 1787555240591,
+      "slot": 5
+    },
+    {
+      "code": "NZ1GMT",
+      "epoch_complete": 1,
+      "holder_id": "71fcf6be-e1ee-3c92-9a42-893cbe44818c",
+      "holder_type": "PLAYER",
+      "item_uuid": "c9fe8bd1-a7d6-4827-b839-49d1c22425bf",
+      "observed_at": 1787555240591,
+      "scan_epoch": 1787555240591,
+      "slot": 8
+    }
+  ],
+  "readOnly": true
+}

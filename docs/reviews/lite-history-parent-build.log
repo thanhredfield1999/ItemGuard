@@ -1,0 +1,15 @@
+{
+  "artifact": "E:\\AI.WORK\\ItemGuard\\target\\ItemGuard-LITE-1.0.0-test.jar",
+  "sha256": "fa70222cb70ff7eaa855bf56905dc2805600f69fb008aefb2dea51d8836ebe1e",
+  "source_jar_sha256": "a72f1bf4846bfd8768dcbfcf31bdbbfca5d0917139475ae5878641ef55b4f782",
+  "tests": {
+    "tests": 411,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "paper_target": "1.21.11",
+  "java": 21,
+  "runtime_verified": false,
+  "boundary": "Same tested classes; separate LITE entrypoint/descriptor/default config. Full internal classes remain packaged but commands are not registered."
+}
