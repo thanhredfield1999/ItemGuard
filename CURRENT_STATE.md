@@ -2,6 +2,24 @@
 
 ## CURRENT — 2026-09-17 — a third review of this candidate's own code, adjudicated and answered
 
+### 2026-09-18 — the public repository now mirrors this candidate; nothing was rebuilt
+
+`main` was four commits behind reality: everything below — source, tests, gates, tooling and
+documentation — sat uncommitted in the working tree. It is published now in two commits
+(`78f833a` code + tooling + `run/` evidence, `6945f52` docs + this ledger) on
+`github.com/thanhredfield1999/ItemGuard`, a **public** repository, at Thanh's instruction. The
+reviews, the risk register and the premium design contracts go with it, open rows included.
+
+No source file was touched for this, so the candidate is still `8c0e540e…` and everything bound to
+it stays bound. Re-run in that same session, on that jar: **855/855 Java tests** (`mvnw -o test`,
+JDK 21, BUILD SUCCESS), 67/67 script tests, 107/107 tooling contracts, 0 findings from both the
+listing gate and the Vietnamese gate (source and jar), `ARTIFACT_CONSISTENT_OFFLINE_ONLY`.
+
+Not published: the jar itself, `target/`, runtime fixtures, dev-server logs, the code index —
+`.gitignore` now names them. No tag and no GitHub Release were created: the upload stays Thanh's
+own step. The seven runtime gates and the nine-version matrix were **not** re-run; their records
+are files in `run/`.
+
 ### 2026-09-17 (late) — review #3: 3 HIGH / 7 MEDIUM / 6 LOW, every verified finding fixed
 
 A third read-only adversarial review (`docs/reviews/2026-09-17-review3-candidate-and-gates.md`) covered
