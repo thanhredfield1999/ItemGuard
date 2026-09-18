@@ -22,8 +22,19 @@ Offline evidence for the current tree:
     python -m unittest discover -s scripts    70/70 tooling contracts
     mvnw.cmd -o -DskipTests package           BUILD SUCCESS
 
-Runtime evidence, six gates bound to `d17b8f81…`: the receipt names are in the `run/` directory and
-are listed here once the chain finishes. Two harness pins had to move for schema v10:
+Runtime evidence, all six gates PASS and bound to `d17b8f81…`:
+
+    run/premium-paper-mysql-20260919-032349.json        single Paper, startup + restart
+    run/premium-two-paper-mysql-20260919-032519.json    two isolated Paper servers, one MySQL schema
+    run/premium-paper-migration-20260919-033809.json    SQLite -> MySQL /ig migrate, dry-run + confirm + refusal
+    run/premium-paper-failure-20260919-032823.json      reliability: no retry, port closed, committed state preserved
+    run/premium-paper-gameplay-20260919-033036.json     real-client gameplay journey
+    run/premium-backup-restore-20260919-033527.json     dump/restore into a second schema, partial restore refused
+    run/mysql-schema-gate-20260919-034058.json          43/43 across 11 tagged classes (this tree)
+
+`run/superseded/` holds every receipt from earlier artifacts (they were moved, not deleted) so the
+current set is unambiguous; the two red schema-gate runs that found real defects stay in `run/`
+on purpose. Two harness pins had to move for schema v10:
 `paper_mysql_smoke.py` expected `plugin_stats` = 9, and `paper_migration_smoke.py` expected 9 after the
 dry-run and `9	7` after confirm; both now pin 10, with the comment recording that the last entry is
 the plugin's own schema stamp rather than migrated data.
