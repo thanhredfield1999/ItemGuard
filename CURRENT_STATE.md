@@ -1,6 +1,6 @@
 # ItemGuard — Current State
 
-## CURRENT — Branch `premium-mysql` — 2026-09-19 — Premium backup/restore verified; a partial restore now fails closed
+## CURRENT — Branch `premium-mysql` — 2026-09-19 — Premium async boundary closed; the public API marks its blocking lookups
 
 This branch keeps the Premium candidate rebuildable on top of `main` release commit `6292638`.
 The frozen LITE candidate on `main` is not rebuilt or changed by Premium work.
@@ -8,12 +8,12 @@ The frozen LITE candidate on `main` is not rebuilt or changed by Premium work.
 Artifact bound to the current Premium product source:
 
     target/ItemGuard-1.0.0-shaded.jar
-    SHA-256 884d4394304778591b3a0e7b800d225e50ff45245aae451d6e9a167732fa330e
+    SHA-256 d1aac80a4e0a33284df1b8dd5c0af6efb63f41c2196dd8a9075e3d1883e2a4b4
     Paper `1.21.11-131`, Java 21, relocated library entries, relocated SLF4J service provider
 
 Fresh evidence on the current source tree:
 
-    mvnw.cmd -o test                         891/891, 0 failures/errors/skipped
+    mvnw.cmd -o test                         894/894, 0 failures/errors/skipped
     python scripts/run_mysql_schema_gate.py  37/37 across 10 tagged classes, 0 failures/errors/skipped
     python -m unittest discover -s scripts   70/70 tooling-contract cases, OK
     mvnw.cmd -o -DskipTests package           BUILD SUCCESS
@@ -25,11 +25,23 @@ failure/recovery gate, the real-player gameplay journey, and the backup/restore 
 is 8.4.6, Paper is 1.21.11-131, runtime Java is 21; every fixture-owned process exited 0 without a
 forced stop and every fixture was stopped with its port released.
 
-Current receipts: `run/mysql-schema-gate-20260919-001131.json`,
-`run/premium-paper-mysql-20260919-001131.json`, `run/premium-two-paper-mysql-20260919-001404.json`,
-`run/premium-paper-migration-20260919-001526.json`, `run/premium-paper-failure-20260919-001529.json`,
-`run/premium-paper-gameplay-20260919-001733.json`,
-`run/premium-backup-restore-20260919-002201.json`.
+Current receipts: `run/mysql-schema-gate-20260919-013858.json`,
+`run/premium-paper-mysql-20260919-013900.json`, `run/premium-two-paper-mysql-20260919-014133.json`,
+`run/premium-paper-migration-20260919-014249.json`, `run/premium-paper-failure-20260919-014251.json`,
+`run/premium-paper-gameplay-20260919-014448.json`,
+`run/premium-backup-restore-20260919-014648.json`.
+
+IG-R022 is closed for every path this plugin owns. The audit enumerated each blocking read
+(`owner.call`) reachable from product code and classified its caller rather than its declaration:
+event listeners, commands, scheduled tasks and GUIs already route through the asynchronous paths and
+off-thread handoffs (`MatDoCommand` and the find-item service run inside `runTaskAsynchronously`;
+`getOnlineTrackedCount` never touches the database at all). The one remaining hazard was the public
+API: `ItemGuardAPI.getTrackedItem`/`getTrackedItemByUuid` were blocking-only, and the controller
+behind them had no asynchronous counterpart, so another plugin had nothing else to call from the
+server thread. Those two are now marked `@Deprecated(forRemoval = false)` with the thread rule in
+their javadoc, and `getTrackedItemAsync`/`getTrackedItemByUuidAsync` were added on top of a new
+`getItemByUuidAsync` read. `ItemGuardApiThreadContractTest` was RED (3/3) before the change and green
+after, and it fails if a future async method is implemented by waiting.
 
 Backup/restore (procedure and boundaries: `docs/design/2026-09-19-premium-backup-restore.md`): a
 `mysqldump` taken without `--databases` (that form writes `CREATE DATABASE`/`USE` for the source
@@ -37,16 +49,16 @@ schema), loaded into a second schema created with `utf8mb4_0900_bin` and granted
 reproduced every per-table row count and the recorded schema version; Paper then started on the
 restored schema and a real client read the same identity and the same history actions back.
 
-That gate found a defect, and this commit fixes it. On the previous artifact (`ed13af62…`, kept as
-`run/premium-backup-restore-20260919-000642-pre-fix.json`) a restore missing `item_history` was
-accepted: the table was re-created empty, the plugin enabled, and nothing was logged — identity
-intact, audit trail gone. `MySqlSchemaManager.validateExistingSchema` now refuses an
+That gate found a defect, and an earlier commit on this branch fixes it. On the previous artifact
+(`ed13af62…`, kept as `run/premium-backup-restore-20260919-000642-pre-fix.json`) a restore missing
+`item_history` was accepted: the table was re-created empty, the plugin enabled, and nothing was
+logged — identity intact, audit trail gone. `MySqlSchemaManager.validateExistingSchema` now refuses an
 existing-but-incomplete schema by name and creates nothing, while a database with no ItemGuard schema
 is still initialized from scratch; `MySqlPartialRestoreRefusalTest` (RED before the fix, GREEN 2/2
 after) pins both halves. The same gate now proves the refusal at runtime (phase C
 `REFUSED_FAIL_CLOSED`, table not re-created) and keeps the future-version refusal (phase D).
 
-Real-player gameplay evidence: `run/premium-paper-gameplay-20260919-001733.json`. Two real protocol
+Real-player gameplay evidence: `run/premium-paper-gameplay-20260919-014448.json`. Two real protocol
 clients (`PremiumStaff`, `PremiumMember`) ran the player journey against the same exact JAR: real
 `/give`, client-side equip, `/ig check`, `/ig info`, `/ig stats`, `/ig search`, the legacy player
 browser GUI (items → history → detail → back → exit → close), a real drop with a real walk-pickup by
@@ -76,17 +88,19 @@ Harness for that receipt: `tools/premium-runtime/paper_gameplay_smoke.py`,
 (fixture-only observer; it holds no product code).
 
 The P0 async slice covers `CheckCommand`, scheduled history cleanup, and persisted scan-epoch
-initialization; History/Search/Stats/Lite/GUI verified paths remain async. Sync public APIs remain
-compatibility surfaces and are not claimed safe for arbitrary external callers. MySQL identity-
-affecting writes use `FOR UPDATE`; SQLite keeps its serialized executor path.
+initialization; History/Search/Stats/Lite/GUI verified paths remain async. The public API's blocking
+lookups are marked and have asynchronous twins, so no path this plugin owns still waits for the
+database on the server thread. MySQL identity-affecting writes use `FOR UPDATE`; SQLite keeps its
+serialized executor path.
 
 Open evidence boundaries: no production deployment, monitoring, upgrade/rollback or restore-at-scale
 evidence; a restore that loses *rows* rather than tables cannot be detected by the plugin (row counts
-and checksums stay with the operator); IG-R022 remains partially mitigated for compatibility/external
-sync callers. The player/GUI journey above covers the command, drop, pickup, chest and GUI paths of
-this exact JAR; it does not cover every behavioural boundary the risk register still lists
-(destructive actions, external storage, scale, production topology). The Premium JAR is not uploaded,
-tagged, or released.
+and checksums stay with the operator); an external plugin that ignores the javadoc and calls the
+deprecated blocking lookups from the server thread can still stall it — the plugin marks the hazard
+and offers the asynchronous path, it cannot police another plugin's threads. The player/GUI journey
+above covers the command, drop, pickup, chest and GUI paths of this exact JAR; it does not cover every
+behavioural boundary the risk register still lists (destructive actions, external storage, scale,
+production topology). The Premium JAR is not uploaded, tagged, or released.
 
 The detailed M1–M6 narrative below is historical. The section above is the only current binding.
 

@@ -46,6 +46,7 @@ import org.bukkit.persistence.PersistentDataType;
 
 import java.security.MessageDigest;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 
 public class ItemTrackingService {
 
@@ -641,12 +642,33 @@ public class ItemTrackingService {
     }
 
 
+    /**
+     * Blocking read of a tracked item by its public code.
+     *
+     * <p>It waits for the database on the calling thread, which on MySQL means waiting for a network
+     * round trip. The server thread must use {@link #getTrackedItemAsync(String)} instead; this form
+     * exists for callers that are already off-thread (tooling, tests, another plugin's worker).
+     */
     public Optional<ItemData> getTrackedItem(String code) {
         return db.getItem(code);
     }
 
+    /**
+     * Blocking read of a tracked item by its identity UUID. The server thread must use
+     * {@link #getTrackedItemByUuidAsync(UUID)}; see {@link #getTrackedItem(String)}.
+     */
     public Optional<ItemData> getTrackedItemByUuid(UUID uuid) {
         return db.getItemByUuid(uuid);
+    }
+
+    /** The asynchronous read the server thread and the public API should use. */
+    public CompletableFuture<Optional<ItemData>> getTrackedItemAsync(String code) {
+        return db.getItemAsync(code);
+    }
+
+    /** The asynchronous read by identity UUID, forwarding the database future unchanged. */
+    public CompletableFuture<Optional<ItemData>> getTrackedItemByUuidAsync(UUID uuid) {
+        return db.getItemByUuidAsync(uuid);
     }
 
     public boolean canTrack(Player player) {

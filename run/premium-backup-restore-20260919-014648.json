@@ -1,15 +1,15 @@
 {
   "status": "PASS",
-  "fixture": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-2d1c6dea113b",
+  "fixture": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-f609cebf62aa",
   "stage": {
-    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-2d1c6dea113b",
-    "server_port": 58496,
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-f609cebf62aa",
+    "server_port": 52042,
     "server_id": "paper-premium-1",
     "mysql_host": "127.0.0.1",
     "mysql_port": 33316,
     "mysql_database": "itemguard_premium",
     "paper_sha256": "6c099540fccd27e10750d1adcb382f1552fb5aa2816aeaf2cc1efb23ddd9e3df",
-    "premium_jar_sha256": "884d4394304778591b3a0e7b800d225e50ff45245aae451d6e9a167732fa330e",
+    "premium_jar_sha256": "d1aac80a4e0a33284df1b8dd5c0af6efb63f41c2196dd8a9075e3d1883e2a4b4",
     "probe_jar_sha256": "837e540bf7e34085b7e427810e624bd3f9d17c642494e5dfb2617f8dc0c1ad7e",
     "probe_source_sha256": "ed88121f137c8b1f52001cdb1a2e232eefc3d7f21810d4fe762913a836f10bad",
     "client_script_sha256": "4ae6071be232fb48b4c166602abf73ace63c6f92129025438491ca8ae384500e",
@@ -18,14 +18,14 @@
     "runner_sha256": "f1476e3cbf56e84704de4208ba7c284e8180cedc4b0f1c984e654be77c17b06a",
     "node": "C:\\Program Files\\nodejs\\node.EXE",
     "java": "C:\\Program Files\\Java\\jdk-21\\bin\\java.exe",
-    "created_at": "2026-09-19T00:22:01+07:00"
+    "created_at": "2026-09-19T01:46:48+07:00"
   },
   "phases": {
     "A_seed": {
       "client_result": {
         "status": "PASS",
         "mode": "seed",
-        "code": "0IIUFI",
+        "code": "M0QE99",
         "actions": [
           "give",
           "equip",
@@ -43,7 +43,7 @@
         },
         {
           "player": "PremiumStaff",
-          "code": "0IIUFI",
+          "code": "M0QE99",
           "event": "identity"
         },
         {
@@ -59,7 +59,7 @@
         {
           "status": "PASS",
           "mode": "seed",
-          "code": "0IIUFI",
+          "code": "M0QE99",
           "actions": [
             "give",
             "equip",
@@ -93,9 +93,9 @@
       }
     },
     "B1_dump": {
-      "path": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-2d1c6dea113b\\dump\\itemguard_premium.sql",
-      "sha256": "f8ac68229f470fc99793ca93030861ea9f49c88c01a1108636f6713f773fdd62",
-      "bytes": 17031,
+      "path": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-f609cebf62aa\\dump\\itemguard_premium.sql",
+      "sha256": "29a62a0fe246f6205d9b1c3a9dab53c8bdca5a45f47bfd8c10755dbf4a98ef13",
+      "bytes": 17012,
       "contains_code": true
     },
     "B2_restore": {
@@ -121,7 +121,7 @@
       "config_sha256": "7f62fd4ec609e63b71339002c594a2a180d8e95a6b075a369cb75c9c05af5bd4",
       "client_result": {
         "status": "PASS",
-        "code": "0IIUFI",
+        "code": "M0QE99",
         "actions": [
           "inventory_readback",
           "check_readback",
@@ -132,7 +132,7 @@
       "client_events": [
         {
           "status": "PASS",
-          "code": "0IIUFI",
+          "code": "M0QE99",
           "actions": [
             "inventory_readback",
             "check_readback",
@@ -169,9 +169,9 @@
       "plugin_enabled": false,
       "item_history_recreated": false,
       "refusal_lines": [
-        "[00:24:10 ERROR]: Error occurred while enabling ItemGuard v1.0.0 (Is it up to date?)",
+        "[01:48:41 ERROR]: Error occurred while enabling ItemGuard v1.0.0 (Is it up to date?)",
         "Caused by: java.sql.SQLException: Refusing to start: this database carries ItemGuard's schema metadata but is missing item_history. A restore that lost tables is not repaired by re-creating them empty � that would silently drop the history those tables held. Restore the full dump again (or drop this schema to start fresh) and start ItemGuard once it is complete.",
-        "[00:24:10 INFO]: [ItemGuard] ItemGuard is disabled."
+        "[01:48:41 INFO]: [ItemGuard] ItemGuard is disabled."
       ],
       "observed_verdict": "REFUSED_FAIL_CLOSED"
     },
@@ -180,9 +180,9 @@
       "server_started": true,
       "plugin_enabled": false,
       "refusal_lines": [
-        "[00:25:20 ERROR]: Error occurred while enabling ItemGuard v1.0.0 (Is it up to date?)",
+        "[01:49:48 ERROR]: Error occurred while enabling ItemGuard v1.0.0 (Is it up to date?)",
         "Caused by: java.sql.SQLException: Unsupported future ItemGuard schema version: 99",
-        "[00:25:20 INFO]: [ItemGuard] ItemGuard is disabled."
+        "[01:49:48 INFO]: [ItemGuard] ItemGuard is disabled."
       ],
       "observed_verdict": "REFUSED_FAIL_CLOSED"
     }
@@ -191,7 +191,7 @@
   "cleanup": [
     {
       "child": "client-1",
-      "pid": 42344,
+      "pid": 40736,
       "exit": 0,
       "forced": false,
       "log_closed": true,
@@ -199,7 +199,7 @@
     },
     {
       "child": "paper-1",
-      "pid": 46640,
+      "pid": 6352,
       "exit": 0,
       "forced": false,
       "log_closed": true,
@@ -207,7 +207,7 @@
     },
     {
       "child": "client-2",
-      "pid": 10860,
+      "pid": 27940,
       "exit": 0,
       "forced": false,
       "log_closed": true,
@@ -215,7 +215,7 @@
     },
     {
       "child": "paper-2",
-      "pid": 41972,
+      "pid": 39124,
       "exit": 0,
       "forced": false,
       "log_closed": true,
@@ -223,7 +223,7 @@
     },
     {
       "child": "paper-3",
-      "pid": 35188,
+      "pid": 15056,
       "exit": 0,
       "forced": false,
       "log_closed": true,
@@ -231,16 +231,16 @@
     },
     {
       "child": "paper-4",
-      "pid": 44600,
+      "pid": 22904,
       "exit": 0,
       "forced": false,
       "log_closed": true,
       "port_released": true
     }
   ],
-  "started_at": "2026-09-19T00:22:01+07:00",
+  "started_at": "2026-09-19T01:46:48+07:00",
   "mysql_reset": "itemguard_premium recreated on 127.0.0.1:33316",
-  "identity_code": "0IIUFI",
+  "identity_code": "M0QE99",
   "mysql_cleanup": {
     "exit": 0,
     "port_closed": true,
@@ -248,5 +248,5 @@
     "stdout": "EVIDENCE port_open=False process_gone=True\nstopped\n",
     "stderr": ""
   },
-  "finished_at": "2026-09-19T00:26:18+07:00"
+  "finished_at": "2026-09-19T01:50:46+07:00"
 }

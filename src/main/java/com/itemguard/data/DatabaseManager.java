@@ -292,6 +292,14 @@ public final class DatabaseManager implements
         return repository.getItemByUuid(itemUuid);
     }
 
+    /**
+     * Asynchronous read by item UUID. The public API needs this: it exposed only the blocking form, so
+     * a plugin calling it on the server thread had nothing else to use (IG-R022).
+     */
+    public CompletableFuture<Optional<ItemData>> getItemByUuidAsync(UUID itemUuid) {
+        return repository.getItemByUuidAsync(itemUuid);
+    }
+
     public List<ItemHistory> getHistory(String code, int limit) {
         return repository.getHistory(code, limit);
     }

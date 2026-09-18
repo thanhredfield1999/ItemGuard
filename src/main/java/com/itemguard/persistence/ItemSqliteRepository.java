@@ -880,6 +880,24 @@ public final class ItemSqliteRepository implements
         });
     }
 
+    /**
+     * The asynchronous twin of {@link #getItemByUuid(UUID)}. It exists because the public API exposed
+     * only the blocking form, so a plugin calling it from the server thread had no alternative but to
+     * wait for a network database (IG-R022).
+     */
+    public CompletableFuture<Optional<ItemData>> getItemByUuidAsync(UUID itemUuid) {
+        Objects.requireNonNull(itemUuid, "itemUuid");
+        return owner.callAsync(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT * FROM tracked_items WHERE item_uuid = ? LIMIT 1")) {
+                statement.setString(1, itemUuid.toString());
+                try (ResultSet result = statement.executeQuery()) {
+                    return result.next() ? Optional.of(parseItem(result)) : Optional.empty();
+                }
+            }
+        });
+    }
+
     public List<ItemHistory> getHistory(String code, int limit) {
         int boundedLimit = Math.max(0, Math.min(limit, 1_000));
         if (boundedLimit == 0) {

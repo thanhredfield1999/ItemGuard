@@ -1,7 +1,7 @@
 # Premium: backup, restore and what the plugin refuses
 
-Status: controlled evidence on artifact `884d4394…` (Paper `1.21.11-131`, MySQL 8.4.6 fixture).
-Receipts: `run/premium-backup-restore-20260919-002201.json` (current), and
+Status: controlled evidence on artifact `d1aac80a…` (Paper `1.21.11-131`, MySQL 8.4.6 fixture).
+Receipts: `run/premium-backup-restore-20260919-014648.json` (current), and
 `run/premium-backup-restore-20260919-000642-pre-fix.json` (the same procedure on the previous
 artifact, which is where the partial-restore hole was measured).
 

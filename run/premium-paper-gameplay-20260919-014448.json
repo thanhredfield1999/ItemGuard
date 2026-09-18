@@ -1,15 +1,15 @@
 {
   "status": "PASS",
-  "fixture": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-9332d24ca62e",
+  "fixture": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-4c8036c96bb9",
   "stage": {
-    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-9332d24ca62e",
-    "server_port": 56067,
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-4c8036c96bb9",
+    "server_port": 61893,
     "server_id": "paper-premium-1",
     "mysql_host": "127.0.0.1",
     "mysql_port": 33316,
     "mysql_database": "itemguard_premium",
     "paper_sha256": "6c099540fccd27e10750d1adcb382f1552fb5aa2816aeaf2cc1efb23ddd9e3df",
-    "premium_jar_sha256": "884d4394304778591b3a0e7b800d225e50ff45245aae451d6e9a167732fa330e",
+    "premium_jar_sha256": "d1aac80a4e0a33284df1b8dd5c0af6efb63f41c2196dd8a9075e3d1883e2a4b4",
     "probe_jar_sha256": "837e540bf7e34085b7e427810e624bd3f9d17c642494e5dfb2617f8dc0c1ad7e",
     "probe_source_sha256": "ed88121f137c8b1f52001cdb1a2e232eefc3d7f21810d4fe762913a836f10bad",
     "client_script_sha256": "4ae6071be232fb48b4c166602abf73ace63c6f92129025438491ca8ae384500e",
@@ -18,7 +18,7 @@
     "runner_sha256": "f1476e3cbf56e84704de4208ba7c284e8180cedc4b0f1c984e654be77c17b06a",
     "node": "C:\\Program Files\\nodejs\\node.EXE",
     "java": "C:\\Program Files\\Java\\jdk-21\\bin\\java.exe",
-    "created_at": "2026-09-19T00:17:33+07:00"
+    "created_at": "2026-09-19T01:44:48+07:00"
   },
   "generations": [
     {
@@ -26,7 +26,7 @@
       "mode": "full",
       "client_result": {
         "status": "PASS",
-        "code": "MPMDRP",
+        "code": "7XXDHA",
         "actions": [
           "give",
           "equip",
@@ -50,7 +50,7 @@
         },
         {
           "player": "PremiumStaff",
-          "code": "MPMDRP",
+          "code": "7XXDHA",
           "event": "identity"
         },
         {
@@ -105,8 +105,8 @@
           "event": "catalog-inspected"
         },
         {
-          "profile_title": "{\"type\":\"string\",\"value\":\"Hồ sơ · MPMDRP\"}",
-          "history_title": "{\"type\":\"string\",\"value\":\"Lịch sử · MPMDRP · 1\"}",
+          "profile_title": "{\"type\":\"string\",\"value\":\"Hồ sơ · 7XXDHA\"}",
+          "history_title": "{\"type\":\"string\",\"value\":\"Lịch sử · 7XXDHA · 1\"}",
           "catalog_history_retries": 1,
           "open": true,
           "profile": true,
@@ -118,7 +118,7 @@
         },
         {
           "status": "PASS",
-          "code": "MPMDRP",
+          "code": "7XXDHA",
           "actions": [
             "give",
             "equip",
@@ -163,7 +163,7 @@
           "SPAWN"
         ]
       },
-      "client_log": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-9332d24ca62e\\client-1.log",
+      "client_log": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-4c8036c96bb9\\client-1.log",
       "catalog_history_retries": 1
     },
     {
@@ -171,7 +171,7 @@
       "mode": "restart",
       "client_result": {
         "status": "PASS",
-        "code": "MPMDRP",
+        "code": "7XXDHA",
         "actions": [
           "inventory_readback",
           "check_readback",
@@ -182,7 +182,7 @@
       "client_events": [
         {
           "status": "PASS",
-          "code": "MPMDRP",
+          "code": "7XXDHA",
           "actions": [
             "inventory_readback",
             "check_readback",
@@ -210,13 +210,13 @@
           "SPAWN"
         ]
       },
-      "client_log": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-9332d24ca62e\\client-2.log"
+      "client_log": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-4c8036c96bb9\\client-2.log"
     }
   ],
   "cleanup": [
     {
       "child": "client-1",
-      "pid": 36628,
+      "pid": 23844,
       "exit": 0,
       "forced": false,
       "log_closed": true,
@@ -224,7 +224,7 @@
     },
     {
       "child": "paper-1",
-      "pid": 41472,
+      "pid": 46576,
       "exit": 0,
       "forced": false,
       "log_closed": true,
@@ -232,7 +232,7 @@
     },
     {
       "child": "client-2",
-      "pid": 35084,
+      "pid": 47060,
       "exit": 0,
       "forced": false,
       "log_closed": true,
@@ -240,16 +240,16 @@
     },
     {
       "child": "paper-2",
-      "pid": 46476,
+      "pid": 41152,
       "exit": 0,
       "forced": false,
       "log_closed": true,
       "port_released": true
     }
   ],
-  "started_at": "2026-09-19T00:17:33+07:00",
+  "started_at": "2026-09-19T01:44:48+07:00",
   "mysql_reset": "itemguard_premium recreated on 127.0.0.1:33316",
-  "identity_code": "MPMDRP",
+  "identity_code": "7XXDHA",
   "mysql_cleanup": {
     "exit": 0,
     "port_closed": true,
@@ -257,5 +257,5 @@
     "stdout": "EVIDENCE port_open=False process_gone=True\nstopped\n",
     "stderr": ""
   },
-  "finished_at": "2026-09-19T00:19:40+07:00"
+  "finished_at": "2026-09-19T01:46:45+07:00"
 }
