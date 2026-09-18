@@ -39,7 +39,7 @@ public final class CatalogUi implements Listener {
     CatalogUi(ItemGuard plugin, Consumer<Runnable> schedule) { this(new Host() {
         public boolean enabled() { return plugin.isEnabled(); }
         public CatalogController.Data data() {
-            var repository=plugin.getDB().getCatalog();
+            CatalogRepositoryPort repository = plugin.getDB().getCatalog();
             return new CatalogController.Data() {
                 public java.util.concurrent.CompletableFuture<CatalogPage> find(CatalogQuery query) { return repository.find(query); }
                 public java.util.concurrent.CompletableFuture<List<CatalogEvent>> history(String code,String uuid) { return repository.history(code,uuid); }

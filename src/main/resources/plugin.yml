@@ -10,7 +10,7 @@ softdepend: [WorldGuard]
 commands:
   itemguard:
     description: ItemGuard main command
-    usage: /<command> <check|history|search|stats|browser|reload>
+    usage: /<command> <check|history|search|stats|browser|reload|migrate>
     aliases: [ig]
   ig:
     description: ItemGuard alias command
@@ -49,6 +49,7 @@ permissions:
       itemguard.restore: true
       itemguard.teleport: true
       itemguard.reload: true
+      itemguard.migrate: true
       itemguard.gui: true
       itemguard.bypass: true
       itemguard.finditem.admin: true
@@ -77,6 +78,9 @@ permissions:
     default: op
   itemguard.reload:
     description: Reload plugin configuration
+    default: op
+  itemguard.migrate:
+    description: Dry-run or execute the SQLite to MySQL migration
     default: op
   itemguard.gui:
     description: Open history GUI

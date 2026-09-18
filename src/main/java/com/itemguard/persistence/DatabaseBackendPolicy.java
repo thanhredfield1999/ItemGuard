@@ -39,11 +39,7 @@ public final class DatabaseBackendPolicy {
      */
     public DatabaseBackend requireImplemented(DatabaseBackend backend) {
         return switch (backend) {
-            case SQLITE -> DatabaseBackend.SQLITE;
-            case MYSQL -> throw new UnsupportedOperationException(
-                "MySQL support is not implemented in this build of ItemGuard; "
-                    + "set database.type to SQLITE (MySQL is planned for the Premium release)"
-            );
+            case SQLITE, MYSQL -> backend;
         };
     }
 }

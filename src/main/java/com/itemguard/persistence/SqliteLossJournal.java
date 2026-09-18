@@ -83,23 +83,30 @@ public final class SqliteLossJournal implements LossJournal {
     /** The actor written for a removal no player performed, as the synchronous loss path names it. */
     private static final String SERVER_ACTOR = "server";
 
-    private final SqliteConnectionOwner owner;
+    private final JdbcConnectionOwner owner;
     private final LongSupplier clock;
+    private final String serverId;
     private final UnexplainedRemovalPolicy removalPolicy = new UnexplainedRemovalPolicy();
 
-    public SqliteLossJournal(SqliteConnectionOwner owner) {
-        this(owner, System::currentTimeMillis);
+    public SqliteLossJournal(JdbcConnectionOwner owner) {
+        this(owner, System::currentTimeMillis, null);
     }
 
-    public SqliteLossJournal(SqliteConnectionOwner owner, LongSupplier clock) {
+    public SqliteLossJournal(JdbcConnectionOwner owner, LongSupplier clock) {
+        this(owner, clock, null);
+    }
+
+    /** Shared journal implementation; Premium supplies the mandatory MySQL server identity. */
+    public SqliteLossJournal(JdbcConnectionOwner owner, LongSupplier clock, String serverId) {
         this.owner = Objects.requireNonNull(owner, "owner");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.serverId = serverId == null || serverId.isBlank() ? null : serverId;
     }
 
     @Override
     public CompletableFuture<String> lastRecordedAction(String code) {
         Objects.requireNonNull(code, "code");
-        return owner.callAsync(connection -> newestAction(connection, code));
+        return owner.callIdentityLockedAsync(code, connection -> newestAction(connection, code));
     }
 
     @Override
@@ -112,7 +119,7 @@ public final class SqliteLossJournal implements LossJournal {
         // Everything below runs on the database worker, inside one transaction. Nothing about the
         // record is screened here: a record that cannot be written must fail where the write happens,
         // so the half-applied state it leaves behind is undone by the same rollback.
-        return owner.callAsync(connection -> {
+        return owner.callIdentityLockedAsync(code, connection -> {
             if (alreadyRecorded(connection, code, departureKey)) {
                 return Boolean.TRUE;
             }
@@ -236,12 +243,18 @@ public final class SqliteLossJournal implements LossJournal {
         long recordedAt,
         String departureKey
     ) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("""
+        String sql = serverId == null ? """
             INSERT INTO item_history
             (code, item_uuid, action, player_name, player_uuid, location,
              world, x, y, z, timestamp, additional_data)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """)) {
+            """ : """
+            INSERT INTO item_history
+            (code, item_uuid, action, player_name, player_uuid, location,
+             world, x, y, z, timestamp, additional_data, server_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """;
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, record.code());
             setUuid(statement, 2, record.itemUuid());
             statement.setString(3, action);
@@ -257,6 +270,9 @@ public final class SqliteLossJournal implements LossJournal {
             statement.setNull(10, Types.INTEGER);
             statement.setLong(11, recordedAt);
             statement.setString(12, departureKey);
+            if (serverId != null) {
+                statement.setString(13, serverId);
+            }
             statement.executeUpdate();
         }
     }

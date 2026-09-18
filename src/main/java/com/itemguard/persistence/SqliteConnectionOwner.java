@@ -15,7 +15,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
-public final class SqliteConnectionOwner implements AutoCloseable {
+public final class SqliteConnectionOwner implements JdbcConnectionOwner {
 
     private static final Duration DEFAULT_CLOSE_TIMEOUT = Duration.ofSeconds(10);
 
@@ -103,7 +103,7 @@ public final class SqliteConnectionOwner implements AutoCloseable {
         }
     }
 
-    public void execute(SqliteOperation<Void> operation) {
+    public void execute(JdbcOperation<Void> operation) {
         synchronized (admissionLock) {
             requireOpen();
             executor.execute(() -> {
@@ -116,7 +116,7 @@ public final class SqliteConnectionOwner implements AutoCloseable {
         }
     }
 
-    public <T> T call(SqliteOperation<T> operation) {
+    public <T> T call(JdbcOperation<T> operation) {
         Future<T> future;
         synchronized (admissionLock) {
             requireOpen();
@@ -132,7 +132,7 @@ public final class SqliteConnectionOwner implements AutoCloseable {
         }
     }
 
-    public <T> CompletableFuture<T> callAsync(SqliteOperation<T> operation) {
+    public <T> CompletableFuture<T> callAsync(JdbcOperation<T> operation) {
         synchronized (admissionLock) {
             requireOpen();
             Objects.requireNonNull(operation, "operation");
@@ -208,7 +208,7 @@ public final class SqliteConnectionOwner implements AutoCloseable {
         close(DEFAULT_CLOSE_TIMEOUT);
     }
 
-    private <T> T runTransaction(SqliteOperation<T> operation) {
+    private <T> T runTransaction(JdbcOperation<T> operation) {
         requireHealthyConnection();
         try {
             T result = operation.apply(connection);
@@ -356,7 +356,6 @@ public final class SqliteConnectionOwner implements AutoCloseable {
     }
 
     @FunctionalInterface
-    public interface SqliteOperation<T> {
-        T apply(Connection connection) throws Exception;
+    public interface SqliteOperation<T> extends JdbcOperation<T> {
     }
 }

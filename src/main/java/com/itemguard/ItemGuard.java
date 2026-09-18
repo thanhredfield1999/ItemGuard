@@ -219,7 +219,11 @@ public class ItemGuard extends JavaPlugin {
         // database's own executor instead. The dispatcher is the way back: a scheduler that refuses
         // once the plugin is disabled, which the coordinator reads as "this entry is over".
         lossListener.useOffload(new com.itemguard.listeners.ItemLossScanOffloadCoordinator(
-            new com.itemguard.persistence.SqliteLossJournal(databaseManager.getConnectionOwner()),
+            new com.itemguard.persistence.SqliteLossJournal(
+                databaseManager.getConnectionOwner(),
+                System::currentTimeMillis,
+                databaseManager.getServerId()
+            ),
             task -> getServer().getScheduler().runTask(this, task),
             this::isEnabled,
             new com.itemguard.dupe.ScanEpochGenerator()

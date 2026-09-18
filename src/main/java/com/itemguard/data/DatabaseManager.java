@@ -1,10 +1,15 @@
 package com.itemguard.data;
 
 import com.itemguard.ItemGuard;
+import com.itemguard.catalog.CatalogRepositoryPort;
 import com.itemguard.catalog.CatalogRepository;
+import com.itemguard.catalog.MySqlCatalogRepository;
 import com.itemguard.persistence.DatabaseBackend;
 import com.itemguard.persistence.DatabaseBackendPolicy;
 import com.itemguard.persistence.ItemSqliteRepository;
+import com.itemguard.persistence.JdbcConnectionOwner;
+import com.itemguard.persistence.MySqlConnectionOwner;
+import com.itemguard.multiserver.ServerIdentity;
 import com.itemguard.persistence.SqliteConnectionOwner;
 import com.itemguard.dupe.ItemObservation;
 import com.itemguard.dupe.DuplicateAction;
@@ -42,36 +47,66 @@ public final class DatabaseManager implements
     private static final Duration CLOSE_TIMEOUT = Duration.ofSeconds(10);
 
     private final ItemGuard plugin;
-    private final SqliteConnectionOwner connectionOwner;
+    private final JdbcConnectionOwner connectionOwner;
     private final ItemSqliteRepository repository;
-    private final CatalogRepository catalog;
+    private final CatalogRepositoryPort catalog;
+    private final String serverId;
 
     public DatabaseManager(ItemGuard plugin) {
         this.plugin = plugin;
         DatabaseBackendPolicy backendPolicy = new DatabaseBackendPolicy();
         DatabaseBackend backend = backendPolicy.requireSupported(plugin.getConfigs().getDatabaseType());
-        backendPolicy.requireImplemented(backend);
-
         plugin.getDataFolder().mkdirs();
-        File databaseFile = new File(
-            plugin.getDataFolder(),
-            plugin.getConfigs().getSqliteFileName()
-        );
-        this.connectionOwner = new SqliteConnectionOwner(
-            databaseFile.toPath(),
-            failure -> plugin.getLogger().log(
-                Level.SEVERE,
-                "ItemGuard database operation failed",
-                failure
-            )
-        );
-        this.repository = new ItemSqliteRepository(connectionOwner);
-        this.catalog = new CatalogRepository(connectionOwner);
+        if (backend == DatabaseBackend.SQLITE) {
+            this.serverId = null;
+            File databaseFile = new File(
+                plugin.getDataFolder(),
+                plugin.getConfigs().getSqliteFileName()
+            );
+            SqliteConnectionOwner sqlite = new SqliteConnectionOwner(
+                databaseFile.toPath(),
+                failure -> plugin.getLogger().log(
+                    Level.SEVERE,
+                    "ItemGuard database operation failed",
+                    failure
+                )
+            );
+            this.connectionOwner = sqlite;
+            this.repository = new ItemSqliteRepository(sqlite);
+            this.catalog = new CatalogRepository(sqlite);
+            plugin.getLogger().info("SQLite database initialized: " + databaseFile.getName());
+        } else {
+            String serverId = plugin.getConfigs().getServerId();
+            if (serverId == null || serverId.isBlank()) {
+                throw new IllegalArgumentException(
+                    "multi-server.server-id must be configured before enabling MySQL");
+            }
+            serverId = ServerIdentity.configured(serverId).name();
+            this.serverId = serverId;
+            MySqlConnectionOwner mysql = new MySqlConnectionOwner(
+                MySqlConnectionOwner.hikariDataSource(
+                    plugin.getConfigs().getMySqlUrl(),
+                    plugin.getConfigs().getMySqlUser(),
+                    plugin.getConfigs().getMySqlPassword(),
+                    plugin.getConfigs().getPoolMaxSize(),
+                    plugin.getConfigs().getPoolMinIdle(),
+                    plugin.getConfigs().getPoolConnectionTimeout()),
+                plugin.getConfigs().getPoolMaxSize(),
+                failure -> plugin.getLogger().log(
+                    Level.SEVERE,
+                    "ItemGuard MySQL operation failed",
+                    failure
+                )
+            );
+            this.connectionOwner = mysql;
+            this.repository = new ItemSqliteRepository(mysql, serverId);
+            this.catalog = new MySqlCatalogRepository(mysql);
+            plugin.getLogger().info("MySQL database initialized for server-id " + serverId);
+        }
         int recoveredClaims = repository.recoverPendingReclaimClaims(
             System.currentTimeMillis(),
             "STARTUP_RECOVERY"
         );
-        plugin.getLogger().info("SQLite database initialized: " + databaseFile.getName());
         if (recoveredClaims > 0) {
             plugin.getLogger().warning(
                 "Denied " + recoveredClaims
@@ -80,7 +115,9 @@ public final class DatabaseManager implements
         }
     }
 
-    public CatalogRepository getCatalog() { return catalog; }
+    public CatalogRepositoryPort getCatalog() { return catalog; }
+
+    public String getServerId() { return serverId; }
 
     /**
      * The connection and the thread that owns it.
@@ -88,7 +125,7 @@ public final class DatabaseManager implements
      * <p>Exposed so a collaborator can run its own statements on the executor this manager already
      * owns, rather than opening a second connection to a file SQLite locks per process.
      */
-    public SqliteConnectionOwner getConnectionOwner() { return connectionOwner; }
+    public JdbcConnectionOwner getConnectionOwner() { return connectionOwner; }
 
     public void saveItem(ItemData item) {
         repository.saveItem(item);

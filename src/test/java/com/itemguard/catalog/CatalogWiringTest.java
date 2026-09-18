@@ -13,7 +13,9 @@ class CatalogWiringTest {
         String plugin=read("ItemGuard.java");
         assertTrue(plugin.contains("registerEvents(catalogUi, this)"));
         assertTrue(plugin.contains("catalogUi.clear()"));
-        assertTrue(read("data/DatabaseManager.java").contains("new CatalogRepository(connectionOwner)"));
+        String database = read("data/DatabaseManager.java");
+        assertTrue(database.contains("new CatalogRepository(sqlite)"));
+        assertTrue(database.contains("new MySqlCatalogRepository(mysql)"));
     }
     private String read(String file) throws Exception { return Files.readString(Path.of("src/main/java/com/itemguard/"+file)); }
 }

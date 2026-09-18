@@ -171,12 +171,18 @@ anti-dupe:
 
 # ---------- DATABASE ----------
 database:
-  # This release supports SQLite only. Other values fail startup.
+  # Premium accepts MYSQL only after the complete Premium runtime gate is shipped.
   type: SQLITE
 
   # SQLite database file name
   sqlite:
     file-name: itemguard.db
+
+  # Premium migration target. Keep credentials local; never commit this file with a password.
+  mysql:
+    url: ""
+    user: ""
+    password: ""
 
   # Connection pool settings
   pool:

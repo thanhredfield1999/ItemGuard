@@ -50,15 +50,26 @@ public final class ItemSqliteRepository implements
 
     private static final int MAX_DUPLICATE_REPORTS_PER_EPOCH = 64;
 
-    private final SqliteConnectionOwner owner;
+    private final JdbcConnectionOwner owner;
+    private final String serverId;
     private final DuplicateDetector duplicateDetector = new DuplicateDetector();
 
-    public ItemSqliteRepository(SqliteConnectionOwner owner) {
-        this.owner = owner;
+    public ItemSqliteRepository(JdbcConnectionOwner owner) {
+        this(owner, null);
+    }
+
+    /** Premium constructor; a non-null server id enables the MySQL-only columns and SQL dialect. */
+    public ItemSqliteRepository(JdbcConnectionOwner owner, String serverId) {
+        this.owner = Objects.requireNonNull(owner, "owner");
+        this.serverId = serverId;
+    }
+
+    private boolean mysql() {
+        return serverId != null;
     }
 
     public void saveItem(ItemData item) {
-        owner.execute(connection -> {
+        owner.callIdentityLockedOrCreateAsync(item.getCode(), connection -> {
             upsertItem(connection, item);
             return null;
         });
@@ -69,7 +80,7 @@ public final class ItemSqliteRepository implements
         ItemSnapshot snapshot,
         long capturedAt
     ) {
-        owner.call(connection -> {
+        owner.callIdentityLockedOrCreate(item.getCode(), connection -> {
             upsertItem(connection, item);
             upsertSnapshot(connection, item.getCode(), snapshot, capturedAt);
             return null;
@@ -159,7 +170,7 @@ public final class ItemSqliteRepository implements
         UUID ownerUuid,
         long observedAt
     ) {
-        owner.execute(connection -> {
+        owner.executeIdentityLocked(code, connection -> {
             try (PreparedStatement statement = connection.prepareStatement("""
                 UPDATE tracked_items
                 SET last_seen_at = ?, last_action = ?, last_location = ?,
@@ -185,7 +196,7 @@ public final class ItemSqliteRepository implements
         UUID ownerUuid,
         long observedAt
     ) {
-        owner.execute(connection -> {
+        owner.executeIdentityLocked(code, connection -> {
             try (PreparedStatement statement = connection.prepareStatement("""
                 UPDATE tracked_items
                 SET last_seen_at = ?, last_location = ?, owner_name = ?, owner_uuid = ?
@@ -203,13 +214,19 @@ public final class ItemSqliteRepository implements
     }
 
     public void logHistory(ItemHistory history) {
-        owner.execute(connection -> {
-            try (PreparedStatement statement = connection.prepareStatement("""
+        owner.executeIdentityLocked(history.getCode(), connection -> {
+            String sql = mysql() ? """
+                INSERT INTO item_history
+                (code, item_uuid, action, player_name, player_uuid, location,
+                 world, x, y, z, timestamp, additional_data, server_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """ : """
                 INSERT INTO item_history
                 (code, item_uuid, action, player_name, player_uuid, location,
                  world, x, y, z, timestamp, additional_data)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """)) {
+                """;
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
                 statement.setString(1, history.getCode());
                 statement.setString(2, history.getItemUuid().toString());
                 statement.setString(3, history.getAction());
@@ -223,6 +240,9 @@ public final class ItemSqliteRepository implements
                 statement.setInt(10, history.getZ());
                 statement.setLong(11, history.getTimestamp());
                 statement.setString(12, history.getAdditionalData());
+                if (mysql()) {
+                    statement.setString(13, serverId);
+                }
                 statement.executeUpdate();
             }
             return null;
@@ -246,14 +266,22 @@ public final class ItemSqliteRepository implements
         owner.execute(connection -> {
             long id = -1L;
             int repeats = 1;
-            try (PreparedStatement select = connection.prepareStatement("""
+            String selectSql = mysql() ? """
+                SELECT id, additional_data FROM item_history
+                WHERE item_uuid = ? AND player_uuid = ? AND action = ? AND server_id = ?
+                ORDER BY timestamp DESC, id DESC LIMIT 1
+                """ : """
                 SELECT id, additional_data FROM item_history
                 WHERE item_uuid = ? AND player_uuid = ? AND action = ?
                 ORDER BY timestamp DESC, id DESC LIMIT 1
-                """)) {
+                """;
+            try (PreparedStatement select = connection.prepareStatement(selectSql)) {
                 select.setString(1, history.getItemUuid().toString());
                 select.setString(2, history.getPlayerUuid().toString());
                 select.setString(3, history.getAction());
+                if (mysql()) {
+                    select.setString(4, serverId);
+                }
                 try (var rows = select.executeQuery()) {
                     if (rows.next()) {
                         id = rows.getLong(1);
@@ -314,14 +342,22 @@ public final class ItemSqliteRepository implements
 
     public void recordObservation(ItemObservation observation) {
         owner.execute(connection -> {
-            try (PreparedStatement statement = connection.prepareStatement("""
+            String sql = mysql() ? """
+                INSERT INTO item_observations
+                (item_uuid, code, scan_epoch, epoch_complete, holder_type,
+                 holder_id, slot, observed_at, server_id)
+                VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    code = VALUES(code), observed_at = VALUES(observed_at)
+                """ : """
                 INSERT INTO item_observations
                 (item_uuid, code, scan_epoch, epoch_complete, holder_type,
                  holder_id, slot, observed_at)
                 VALUES (?, ?, ?, 0, ?, ?, ?, ?)
                 ON CONFLICT(scan_epoch, holder_type, holder_id, slot, item_uuid)
                 DO UPDATE SET code = excluded.code, observed_at = excluded.observed_at
-                """)) {
+                """;
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
                 statement.setString(1, observation.itemUuid().toString());
                 statement.setString(2, observation.code());
                 statement.setLong(3, observation.scanEpoch());
@@ -329,6 +365,9 @@ public final class ItemSqliteRepository implements
                 statement.setString(5, observation.key().holderId());
                 statement.setInt(6, observation.key().slot());
                 statement.setLong(7, observation.observedAt());
+                if (mysql()) {
+                    statement.setString(8, serverId);
+                }
                 statement.executeUpdate();
             }
             markSearchRequestFound(
@@ -419,7 +458,7 @@ public final class ItemSqliteRepository implements
                          SELECT scan_epoch FROM item_observations
                          UNION ALL
                          SELECT scan_epoch FROM duplicate_findings
-                     )
+                     ) AS persisted_epochs
                      """)) {
                 if (!result.next()) {
                     return Long.MIN_VALUE;
@@ -511,7 +550,20 @@ public final class ItemSqliteRepository implements
                 }
             }
 
-            try (PreparedStatement statement = connection.prepareStatement("""
+            String sql = mysql() ? """
+                INSERT INTO item_search_requests
+                (code, mode, state, actor_uuid, actor_name,
+                 created_at, expires_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    mode = VALUES(mode),
+                    state = VALUES(state),
+                    actor_uuid = VALUES(actor_uuid),
+                    actor_name = VALUES(actor_name),
+                    created_at = VALUES(created_at),
+                    expires_at = VALUES(expires_at),
+                    updated_at = VALUES(updated_at)
+                """ : """
                 INSERT INTO item_search_requests
                 (code, mode, state, actor_uuid, actor_name,
                  created_at, expires_at, updated_at)
@@ -524,7 +576,8 @@ public final class ItemSqliteRepository implements
                     created_at = excluded.created_at,
                     expires_at = excluded.expires_at,
                     updated_at = excluded.updated_at
-                """)) {
+                """;
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
                 bindSearchRequest(statement, request);
                 return statement.executeUpdate() == 1;
             }
@@ -681,12 +734,18 @@ public final class ItemSqliteRepository implements
                 }
             }
 
-            try (PreparedStatement statement = connection.prepareStatement("""
+            String sql = mysql() ? """
+                INSERT IGNORE INTO reclaim_claims
+                (claim_id, idempotency_key, player_uuid, code, state,
+                 requested_at, updated_at, detail)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """ : """
                 INSERT OR IGNORE INTO reclaim_claims
                 (claim_id, idempotency_key, player_uuid, code, state,
                  requested_at, updated_at, detail)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """)) {
+                """;
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
                 bindReclaimClaim(statement, claim);
                 return statement.executeUpdate() == 1;
             }
@@ -913,7 +972,10 @@ public final class ItemSqliteRepository implements
                 FROM page
                 INNER JOIN item_history history
                     ON history.code = page.code AND history.item_uuid = page.item_uuid
-                GROUP BY page.code, page.item_uuid, history.action
+                GROUP BY page.code, page.item_uuid, page.owner_uuid, page.owner_name,
+                         page.material, page.item_name, page.item_lore, page.created_at,
+                         page.last_seen_at, page.last_action, page.detection_count,
+                         page.last_location, history.action
                 ORDER BY page.last_seen_at DESC, page.code ASC, history.action ASC
                 """)) {
                 statement.setString(1, playerUuid.toString());
@@ -1045,7 +1107,7 @@ public final class ItemSqliteRepository implements
                 }
             }
             stats.setDistinctDuplicateItems(countDistinctDuplicateItems(connection));
-            stats.setDatabaseType("SQLITE");
+            stats.setDatabaseType(mysql() ? "MYSQL" : "SQLITE");
             stats.setDatabaseStatus("OK");
             return stats;
         });
@@ -1064,7 +1126,7 @@ public final class ItemSqliteRepository implements
                 }
             }
             stats.setDistinctDuplicateItems(countDistinctDuplicateItems(connection));
-            stats.setDatabaseType("SQLITE");
+            stats.setDatabaseType(mysql() ? "MYSQL" : "SQLITE");
             stats.setDatabaseStatus("OK");
             return stats;
         });
@@ -1085,8 +1147,10 @@ public final class ItemSqliteRepository implements
     }
 
     private void validateCanonicalIdentity(Connection connection, ItemData item) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(
-            "SELECT item_uuid FROM tracked_items WHERE code = ?")) {
+        String sql = mysql()
+            ? "SELECT item_uuid FROM tracked_items WHERE code = ? FOR UPDATE"
+            : "SELECT item_uuid FROM tracked_items WHERE code = ?";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, item.getCode());
             try (ResultSet result = statement.executeQuery()) {
                 if (result.next() && !item.getItemUuid().toString().equals(result.getString(1))) {
@@ -1105,14 +1169,22 @@ public final class ItemSqliteRepository implements
         rejectTagIdentityCollision(connection, publication);
         ItemData item = publication.item();
         ItemSnapshot snapshot = publication.snapshot();
-        try (PreparedStatement statement = connection.prepareStatement("""
+        String sql = mysql() ? """
+            INSERT INTO tag_publications
+            (publication_id, source_key, source_digest, code, item_uuid, owner_uuid, owner_name,
+             material, item_name, item_lore, created_item_at, last_seen_at,
+             last_action, detection_count, last_location, snapshot_version,
+             payload, sha256, captured_at, state, created_at, updated_at, detail, server_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """ : """
             INSERT INTO tag_publications
             (publication_id, source_key, source_digest, code, item_uuid, owner_uuid, owner_name,
              material, item_name, item_lore, created_item_at, last_seen_at,
              last_action, detection_count, last_location, snapshot_version,
              payload, sha256, captured_at, state, created_at, updated_at, detail)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """)) {
+            """;
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, publication.publicationId().toString());
             statement.setString(2, publication.sourceKey());
             statement.setBytes(3, publication.sourceDigest());
@@ -1136,6 +1208,9 @@ public final class ItemSqliteRepository implements
             statement.setLong(21, publication.createdAt());
             statement.setLong(22, publication.updatedAt());
             statement.setString(23, publication.detail());
+            if (mysql()) {
+                statement.setString(24, serverId);
+            }
             statement.executeUpdate();
         }
     }
@@ -1186,6 +1261,15 @@ public final class ItemSqliteRepository implements
         long detectionCooldownMillis,
         long createdAt
     ) throws SQLException {
+        if (mysql()) {
+            return insertConfirmedDuplicateFindingsMySql(
+                connection,
+                scanEpoch,
+                action,
+                detectionCooldownMillis,
+                createdAt
+            );
+        }
         int inserted = 0;
         List<DuplicateFinding> reports = new ArrayList<>(MAX_DUPLICATE_REPORTS_PER_EPOCH);
         long cooldownCutoff = detectionCooldownMillis > createdAt
@@ -1276,6 +1360,99 @@ public final class ItemSqliteRepository implements
                             DuplicateAction.valueOf(result.getString("action")),
                             result.getLong("created_at"),
                             result.getString("detail")
+                        ));
+                    }
+                }
+            }
+        }
+        return new DuplicateInsertResult(inserted, List.copyOf(reports));
+    }
+
+    private DuplicateInsertResult insertConfirmedDuplicateFindingsMySql(
+        Connection connection,
+        long scanEpoch,
+        DuplicateAction action,
+        long detectionCooldownMillis,
+        long createdAt
+    ) throws SQLException {
+        long cooldownCutoff = detectionCooldownMillis > createdAt
+            ? Long.MIN_VALUE
+            : createdAt - detectionCooldownMillis;
+        int inserted = 0;
+        List<DuplicateFinding> reports = new ArrayList<>(MAX_DUPLICATE_REPORTS_PER_EPOCH);
+
+        try (PreparedStatement candidates = connection.prepareStatement("""
+            SELECT observations.item_uuid, observations.code, COUNT(*) AS distinct_locations
+            FROM item_observations observations
+            INNER JOIN tracked_items tracked
+                ON tracked.item_uuid = observations.item_uuid
+                AND tracked.code = observations.code
+            WHERE observations.scan_epoch = ?
+                AND observations.epoch_complete = 1
+                AND EXISTS (
+                    SELECT 1
+                    FROM item_observations prior
+                    WHERE prior.item_uuid = observations.item_uuid
+                        AND prior.code = observations.code
+                        AND prior.scan_epoch < observations.scan_epoch
+                        AND prior.epoch_complete = 1
+                    GROUP BY prior.item_uuid, prior.code
+                    HAVING COUNT(*) >= 2
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM duplicate_findings previous
+                    WHERE previous.item_uuid = observations.item_uuid
+                        AND (
+                            previous.created_at > ?
+                            OR (
+                                ? > 0
+                                AND previous.scan_epoch = (
+                                    SELECT MAX(prior_epoch.scan_epoch)
+                                    FROM item_observations prior_epoch
+                                    WHERE prior_epoch.scan_epoch < observations.scan_epoch
+                                        AND prior_epoch.epoch_complete = 1
+                                )
+                            )
+                        )
+                )
+            GROUP BY observations.item_uuid, observations.code
+            HAVING COUNT(*) >= 2
+            """)) {
+            candidates.setLong(1, scanEpoch);
+            candidates.setLong(2, cooldownCutoff);
+            candidates.setLong(3, detectionCooldownMillis);
+            try (ResultSet result = candidates.executeQuery();
+                 PreparedStatement insert = connection.prepareStatement("""
+                     INSERT IGNORE INTO duplicate_findings
+                     (item_uuid, code, scan_epoch, status, distinct_locations,
+                      action, created_at, detail)
+                     VALUES (?, ?, ?, 'CONFIRMED', ?, ?, ?, ?)
+                     """)) {
+                while (result.next()) {
+                    String itemUuid = result.getString("item_uuid");
+                    String code = result.getString("code");
+                    int distinctLocations = result.getInt("distinct_locations");
+                    insert.setString(1, itemUuid);
+                    insert.setString(2, code);
+                    insert.setLong(3, scanEpoch);
+                    insert.setInt(4, distinctLocations);
+                    insert.setString(5, action.name());
+                    insert.setLong(6, createdAt);
+                    insert.setString(7, "distinct_locations=" + distinctLocations);
+                    if (insert.executeUpdate() != 1) {
+                        continue;
+                    }
+                    inserted++;
+                    if (reports.size() < MAX_DUPLICATE_REPORTS_PER_EPOCH) {
+                        reports.add(new DuplicateFinding(
+                            UUID.fromString(itemUuid),
+                            code,
+                            scanEpoch,
+                            DuplicateStatus.CONFIRMED,
+                            distinctLocations,
+                            action,
+                            createdAt,
+                            "distinct_locations=" + distinctLocations
                         ));
                     }
                 }
@@ -1580,14 +1757,22 @@ public final class ItemSqliteRepository implements
             insert.setLong(3, updatedAt);
             insert.executeUpdate();
         }
-        try (PreparedStatement history = connection.prepareStatement("""
+        String historySql = mysql() ? """
+            INSERT INTO item_history
+            (code, item_uuid, action, timestamp, additional_data, server_id)
+            VALUES (?, ?, 'ADOPTED', ?, ?, ?)
+            """ : """
             INSERT INTO item_history (code, item_uuid, action, timestamp, additional_data)
             VALUES (?, ?, 'ADOPTED', ?, ?)
-            """)) {
+            """;
+        try (PreparedStatement history = connection.prepareStatement(historySql)) {
             history.setString(1, code);
             history.setString(2, itemUuid.toString());
             history.setLong(3, updatedAt);
             history.setString(4, "identity carried by the item but never issued by this database");
+            if (mysql()) {
+                history.setString(5, serverId);
+            }
             history.executeUpdate();
         }
         return true;
@@ -1645,7 +1830,22 @@ public final class ItemSqliteRepository implements
 
     private void upsertItem(Connection connection, ItemData item) throws SQLException {
         validateCanonicalIdentity(connection, item);
-        try (PreparedStatement statement = connection.prepareStatement("""
+        String sql = mysql() ? """
+            INSERT INTO tracked_items
+            (code, item_uuid, owner_uuid, owner_name, material, item_name, item_lore,
+             created_at, last_seen_at, last_action, detection_count, last_location)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+                owner_uuid = VALUES(owner_uuid),
+                owner_name = VALUES(owner_name),
+                material = VALUES(material),
+                item_name = VALUES(item_name),
+                item_lore = VALUES(item_lore),
+                last_seen_at = VALUES(last_seen_at),
+                last_action = VALUES(last_action),
+                detection_count = VALUES(detection_count),
+                last_location = VALUES(last_location)
+            """ : """
             INSERT INTO tracked_items
             (code, item_uuid, owner_uuid, owner_name, material, item_name, item_lore,
              created_at, last_seen_at, last_action, detection_count, last_location)
@@ -1661,7 +1861,8 @@ public final class ItemSqliteRepository implements
                 detection_count = excluded.detection_count,
                 last_location = excluded.last_location
             WHERE tracked_items.item_uuid = excluded.item_uuid
-            """)) {
+            """;
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
             bindItem(statement, item);
             statement.executeUpdate();
         }
@@ -1673,7 +1874,16 @@ public final class ItemSqliteRepository implements
         ItemSnapshot snapshot,
         long capturedAt
     ) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("""
+        String sql = mysql() ? """
+            INSERT INTO item_snapshots
+            (code, snapshot_version, payload, sha256, captured_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+                snapshot_version = VALUES(snapshot_version),
+                payload = VALUES(payload),
+                sha256 = VALUES(sha256),
+                captured_at = VALUES(captured_at)
+            """ : """
             INSERT INTO item_snapshots
             (code, snapshot_version, payload, sha256, captured_at)
             VALUES (?, ?, ?, ?, ?)
@@ -1682,7 +1892,8 @@ public final class ItemSqliteRepository implements
                 payload = excluded.payload,
                 sha256 = excluded.sha256,
                 captured_at = excluded.captured_at
-            """)) {
+            """;
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, normalizeCode(code));
             statement.setInt(2, snapshot.version());
             statement.setBytes(3, snapshot.payload());

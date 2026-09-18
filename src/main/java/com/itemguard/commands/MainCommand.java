@@ -109,10 +109,22 @@ public class MainCommand implements CommandExecutor, TabCompleter {
                     plugin.getLogger().severe("Reload failed: " + e.getMessage());
                 }
             }
+            case "migrate" -> {
+                if (!sender.hasPermission("itemguard.migrate")) {
+                    plugin.getMessages().send(sender, "no-permission");
+                    return true;
+                }
+                if (args.length > 2 || (args.length == 2 && !args[1].equalsIgnoreCase("confirm"))) {
+                    plugin.getMessages().sendRaw(sender, "invalid-args",
+                        Map.of("usage", "/itemguard migrate [confirm]"));
+                    return true;
+                }
+                new MigrateCommand(plugin).execute(sender, args.length == 2);
+            }
             case "info" -> sendInfo(sender);
             case "help" -> sendHelp(sender);
             default -> {
-                plugin.getMessages().sendRaw(sender, "invalid-args", Map.of("usage", "/itemguard <check|history|search|stats|browser|reload|info>"));
+                plugin.getMessages().sendRaw(sender, "invalid-args", Map.of("usage", "/itemguard <check|history|search|stats|browser|reload|migrate|info>"));
             }
         }
         return true;
@@ -138,6 +150,9 @@ public class MainCommand implements CommandExecutor, TabCompleter {
         }
         if (sender.hasPermission("itemguard.reload")) {
             sender.sendMessage("§e/itemguard reload §7- Tải lại cấu hình an toàn");
+        }
+        if (sender.hasPermission("itemguard.migrate")) {
+            sender.sendMessage("§e/itemguard migrate [confirm] §7- Dry-run hoặc chuyển SQLite sang MySQL");
         }
         sender.sendMessage("§e/itemguard info §7- Thông tin plugin");
     }
@@ -195,6 +210,10 @@ public class MainCommand implements CommandExecutor, TabCompleter {
         if (args.length == 2 && args[0].equalsIgnoreCase("search")) {
             return filter(plugin.getServer().getOnlinePlayers().stream()
                 .map(Player::getName).collect(Collectors.toList()), args[1]);
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("migrate")
+            && sender.hasPermission("itemguard.migrate")) {
+            return filter(List.of("confirm"), args[1]);
         }
         return new ArrayList<>();
     }

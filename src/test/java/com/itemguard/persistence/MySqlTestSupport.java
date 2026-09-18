@@ -49,6 +49,15 @@ public final class MySqlTestSupport {
         return connection;
     }
 
+    public static void dropTargetTablesForMigration() {
+        try (Connection connection = connect()) {
+            connection.setAutoCommit(false);
+            dropAllTables(connection);
+        } catch (SQLException failure) {
+            throw new IllegalStateException("Could not reset MySQL migration target", failure);
+        }
+    }
+
     static void dropAllTables(Connection connection) throws SQLException {
         List<String> tables = new ArrayList<>();
         try (Statement statement = connection.createStatement()) {

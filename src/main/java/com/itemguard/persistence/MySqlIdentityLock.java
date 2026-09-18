@@ -116,6 +116,41 @@ public final class MySqlIdentityLock {
         }
     }
 
+    /** Same transaction shape, but allows the mint path to insert a previously absent identity. */
+    public <T> T withLockedIdentityOrCreate(
+        Connection connection,
+        String code,
+        LockedIdentityWork<T> work
+    ) throws SQLException {
+        Objects.requireNonNull(connection, "connection");
+        Objects.requireNonNull(code, "code");
+        Objects.requireNonNull(work, "work");
+        if (connection.getAutoCommit()) {
+            throw new SQLException("The identity lock requires autoCommit=false");
+        }
+        int previousWait = currentLockWait(connection);
+        setLockWait(connection, lockWaitSeconds);
+        try {
+            lockIdentity(connection, code);
+            try {
+                T result = work.apply(connection);
+                connection.commit();
+                return result;
+            } catch (SQLException failure) {
+                rollback(connection, failure);
+                throw failure;
+            } catch (RuntimeException failure) {
+                rollback(connection, failure);
+                throw failure;
+            } catch (Error failure) {
+                rollback(connection, failure);
+                throw failure;
+            }
+        } finally {
+            restoreLockWait(connection, previousWait);
+        }
+    }
+
     private boolean lockIdentity(Connection connection, String code) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
             "SELECT code FROM tracked_items WHERE code = ? FOR UPDATE")) {

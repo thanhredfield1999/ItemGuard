@@ -18,7 +18,7 @@ class MainCommandUxContractTest {
         String manifest = Files.readString(Path.of("src/main/resources/plugin.yml"));
 
         assertTrue(main.contains("/itemguard browser [player]"));
-        assertTrue(main.contains("check|history|search|stats|browser|reload|info"));
+        assertTrue(main.contains("check|history|search|stats|browser|reload|migrate|info"));
         assertTrue(manifest.contains("check|history|search|stats|browser|reload"));
     }
 

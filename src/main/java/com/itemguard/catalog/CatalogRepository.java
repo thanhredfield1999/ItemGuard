@@ -6,7 +6,7 @@ import java.util.concurrent.CompletableFuture;
 import org.sqlite.ProgressHandler;
 
 /** Bounded SELECT-only catalog; no world scan or item mutation. */
-public final class CatalogRepository {
+public final class CatalogRepository implements CatalogRepositoryPort {
     private final SqliteConnectionOwner owner;
     private final int progressLimit;
     public CatalogRepository(SqliteConnectionOwner owner) { this(owner, 2000); }

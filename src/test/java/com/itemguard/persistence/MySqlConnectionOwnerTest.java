@@ -37,8 +37,9 @@ class MySqlConnectionOwnerTest {
 
     /**
      * The constructor opens one connection to verify the session and install the schema, and closes
-     * it before the pool exists. Every count below is therefore "one for validation, then the pool"
-     * and the assertions say so rather than hoping.
+     * it before operations begin. The raw factory used by these seam tests is deliberately not a
+     * pool: the shipping factory delegates pooling to HikariCP, so these counts prove that the
+     * owner closes each borrowed JDBC handle instead of secretly keeping a second pool.
      */
     private static final int CONSTRUCTION_CONNECTION = 1;
 
@@ -107,21 +108,21 @@ class MySqlConnectionOwnerTest {
     }
 
     @Test
-    @DisplayName("a pooled connection is reused rather than opened per call")
-    void connectionsAreReused() throws Exception {
+    @DisplayName("the owner borrows and closes raw factory connections per call")
+    void rawFactoryConnectionsAreClosedPerCall() throws Exception {
         MySqlTestSupport.freshSchema().close();
         CountingFactory factory = new CountingFactory();
         try (MySqlConnectionOwner owner = ownerOn(factory)) {
             for (int index = 0; index < 5; index++) {
                 owner.call(connection -> null);
             }
-            assertEquals(CONSTRUCTION_CONNECTION + 1, factory.opened.get(),
-                "five sequential calls must reuse one pooled connection");
+            assertEquals(CONSTRUCTION_CONNECTION + 5, factory.opened.get(),
+                "the owner must not create a second pool around the injected factory");
             for (int index = 0; index < 10; index++) {
                 owner.callAsync(connection -> null).get(20, TimeUnit.SECONDS);
             }
-            assertEquals(CONSTRUCTION_CONNECTION + 1, factory.opened.get(),
-                "and fifteen must not open fifteen: the count must not track the number of calls");
+            assertEquals(CONSTRUCTION_CONNECTION + 15, factory.opened.get(),
+                "raw factory counts must reflect borrows; Hikari owns pooling in production");
         }
     }
 
@@ -217,8 +218,8 @@ class MySqlConnectionOwnerTest {
             assertTrue(failure.getCause() instanceof NoSuchIdentityException,
                 "the refusal must stay identifiable: " + failure.getCause());
             owner.call(connection -> null);
-            assertEquals(CONSTRUCTION_CONNECTION + 1, factory.opened.get(),
-                "the refusal must not have discarded the connection");
+            assertEquals(CONSTRUCTION_CONNECTION + 2, factory.opened.get(),
+                "the refusal must close its raw handle; the next call gets a fresh one");
         }
     }
 }

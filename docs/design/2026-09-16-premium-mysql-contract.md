@@ -1,8 +1,6 @@
 # ItemGuard Premium — MySQL and cross-server identity: design contract
 
-**Status:** design for approval. No code has been written against this document. Nothing here
-is evidence of behaviour. Every code claim below was read from the current source tree and is
-cited by `file:line`.
+**Status:** implemented on branch `premium-mysql`; this document records the contract and historical design decisions. Current evidence is in `CURRENT_STATE.md` and the dated gate receipts. It is not Paper-runtime or production evidence.
 
 **Why this document exists.** `docs/release/TEST_PLAN_AND_PREMIUM.md` calls MySQL "the right
 first feature" because a per-server SQLite file makes ItemGuard unusable for any network
@@ -423,8 +421,35 @@ server: the cross-server rule fires on two servers where the epoch rule provably
 the epoch rule still confirms a same-epoch same-server pair while the cross-server rule says
 `NONE`; and an observation row without a server name is refused by the schema.
 
-**Still open:** M4 (catalog search), M5 (`/ig migrate`), M6 (the two-server fixture), and the
+**Still open:** M4 (catalog search), M5 (`/ig migrate`), M6 (the two-server runtime fixture), and the
 storage decision above. `requireImplemented(MYSQL)` still refuses the backend.
+
+---
+
+## 12. M5/M2c — migration command and pooled Premium connection path — 2026-09-18
+
+`MySqlMigrationService` now implements the D3 one-way migration contract. It opens the source
+SQLite file read-only, requires SQLite schema version 8, performs a dry-run first, refuses a target
+with any data rows, copies all eight data tables, stamps `server_id` on history/observations/
+publications, updates MySQL metadata to version 9, and verifies per-table row counts. The source
+file is not deleted or written. `/ig migrate` is admin-only, asynchronous, and dry-run by default;
+`/ig migrate confirm` is the explicit copy operation.
+
+The Premium path follows Spigot's current database guidance: Connector/J's `MysqlDataSource` is
+owned by HikariCP rather than using the server's global JDBC registry or a driver-owned unbounded
+pool. `MySqlConnectionOwner.hikariDataSource(...)` closes the Hikari pool after in-flight work
+drains. Maven shades and relocates Connector/J, HikariCP and SLF4J. The injectable factory remains
+for deterministic unit/fixture tests; it is not the runtime wiring path.
+
+Fresh evidence after this change:
+
+    `mvnw.cmd -o -DskipTests compile test-compile`             BUILD SUCCESS
+    Hikari + migrate command contract tests                   2/2 PASS
+    MySQL migration fixture tests                             2/2 PASS
+    MySQL fixture                                             stopped, port closed, process gone
+
+M5 is source/service/command verified. It is not yet Paper runtime verified, and `MYSQL` remains
+refused by `requireImplemented` until M6 and the full runtime wiring gate are complete.
 
 ---
 
@@ -472,11 +497,10 @@ that refusal with the JDBC cause preserved.
 
     mvnw.cmd -o test    -> 884/884, 0 failures/errors/skipped   (mysql tag excluded)
 
-**Nothing wires it yet.** `requireImplemented(MYSQL)` still refuses the backend, so no admin can
-reach any of this; that flips only when the whole feature is verified, per §5. D5 (the sidecar lock
-being SQLite-only) remains satisfied by construction, because MySQL does not reuse
-`SqliteConnectionOwner` and now has an owner of its own. `M4` and `M5` both need this class, which
-is why it came before them.
+**Historical M2b note.** At the time this section was written, `requireImplemented(MYSQL)` still
+refused the backend. The current branch now wires `DatabaseManager` to the MySQL owner and repository;
+current evidence is recorded in `CURRENT_STATE.md` and the dated MySQL gate receipt. D5 remains
+satisfied because MySQL does not reuse `SqliteConnectionOwner`.
 
 ### Prerequisite found while building M2b: IG-R026 applies to MySQL too
 

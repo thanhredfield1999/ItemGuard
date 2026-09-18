@@ -154,6 +154,19 @@ public class ConfigManager {
         return config.getString("database.sqlite.file-name", "itemguard.db");
     }
 
+    /** Premium migration target; credentials are never logged by ItemGuard. */
+    public String getMySqlUrl() {
+        return config.getString("database.mysql.url", "");
+    }
+
+    public String getMySqlUser() {
+        return config.getString("database.mysql.user", "");
+    }
+
+    public String getMySqlPassword() {
+        return config.getString("database.mysql.password", "");
+    }
+
     /**
      * Size at which to warn that the database is growing, in bytes; 0 disables the warning.
      *

@@ -1,14 +1,41 @@
 # ItemGuard — Current State
 
-## CURRENT — Branch `premium-mysql` — 2026-09-18 — M4 catalog search landed
+## CURRENT — Branch `premium-mysql` — 2026-09-18 — Premium runtime wiring verified offline/fixture
 
 This branch exists so that the release candidate keeps a tree it can be rebuilt from: `main` is
 the release commit `6292638`, and this branch holds the Premium work on top of it.
 
-**The release binding below is unchanged, and nothing here is reachable by a server.**
-`requireImplemented(DatabaseBackend.MYSQL)` still refuses MySQL by name, so no admin can select
-the new backend yet; the three copies of the candidate jar still hash `8c0e540e…` after every
-build and test run in this session (checked, not assumed).
+**The LITE release boundary remains unchanged.** `main` and the frozen LITE candidate are not
+rebuilt or changed by Premium work. On `premium-mysql`, `DatabaseManager` now selects SQLite or
+MySQL explicitly; MySQL fails closed during construction if configuration, durability, strictness,
+schema, or server identity is unacceptable. This is Premium runtime-wired at source level, but
+not Paper-runtime or production verified.
+
+Fresh evidence bound to the current working tree:
+
+    mvnw.cmd -o test                                      886/886, 0 failures/errors/skipped
+    python scripts/run_mysql_schema_gate.py               35/35, 0 failures/errors/skipped
+                                                            MySQL 8.4.6; all expected tagged
+                                                            classes present; fixture stopped,
+                                                            port closed, process gone
+    mvnw.cmd -o -DskipTests package                       BUILD SUCCESS
+    target/ItemGuard-1.0.0-shaded.jar                     SHA-256 4f569b4353dff25f2296c6095475946418356bdc0031ee0df4b9c0e34b1dfd4d
+                                                            Connector/J/Hikari/SLF4J relocated
+
+MySQL gate evidence: `run/mysql-schema-gate-20260918-155405.json`.
+
+Runtime-wiring coverage includes canonical item and snapshot upsert, history with `server_id`,
+observation upsert, epoch audit, search request, reclaim idempotency, tag publication, loss journal
+atomic write, and server identity on a real fixture. MySQL identity-affecting writes now use
+`FOR UPDATE`; SQLite keeps its serialized executor path.
+
+Open evidence boundaries: no controlled Paper startup with `database.type: MYSQL`; no two Paper
+servers; no production deployment. Cross-server proof remains the database-level two-owner fixture.
+The Premium jar is not uploaded, tagged, or released.
+
+The detailed M1–M6 narrative below is historical. The section above is the only current binding.
+
+## HISTORY — Premium implementation narrative
 
 M1 is the portable schema: `MySqlSchemaManager` creates the same nine tables at the same schema
 version, with SQLite's two partial unique indexes re-expressed as `STORED` generated columns
@@ -61,24 +88,27 @@ Fresh M4 evidence: `mvnw.cmd -o -Pmysql -Dtest=MySqlCatalogRepositoryTest test` 
 then `mvnw.cmd -o test` = 884/884 PASS, and `scripts/run_mysql_schema_gate.py` = 30/30,
 `PASS_MYSQL_SCHEMA_INVARIANTS`; fixture stopped, port closed, process gone.
 
-Not done, explicitly: M5 (`/ig migrate`), M6 (two-server runtime fixture).
-M2's and M3's evidence is one server with several connections. The D4 shape (fail closed, no
-buffer) is implemented but D4 itself is still formally "proposed" in the contract until Thanh
-confirms it. **Open decision for Thanh**: where a generated/remembered `server-id` is stored —
-D1 says "no servers table", so a metadata row, a value written back into config.yml, or a small
-file in the plugin folder; nothing is implemented and no call site exists yet.
+M5 is implemented: `MySqlMigrationService` opens SQLite read-only, requires source schema 8,
+does dry-run first, refuses non-empty MySQL targets, copies all eight data tables, stamps
+`server_id`, updates target metadata to MySQL schema 9, and verifies per-table counts. `/ig migrate`
+is admin-only and dry-run by default; `/ig migrate confirm` is the explicit copy operation.
+The runtime path now uses Connector/J `MysqlDataSource` behind HikariCP, with Maven relocation for
+Connector/J, HikariCP and SLF4J; global `DriverManager` is not the shipping migration path.
 
-M2b is `MySqlConnectionOwner`: the bounded pool, the session guard and schema install at
-construction, `call`/`callAsync` (owner commits or rolls back) and `callLocked`/`callLockedAsync`
-(the identity lock owns the transaction), and a close that drains and closes every connection it
-opened. This is where D4 is a behaviour rather than a promise — no retry, no replay, no buffer;
-a dead pooled connection is discarded rather than reused. Seven tests measure it (15 calls reuse
-one connection; a failed write leaves the row and opens none; two writers through the owner still
-serialise; an unreachable host is refused with the JDBC cause). Detail: §11. Nothing wires it yet:
-`requireImplemented(MYSQL)` still refuses the backend, and M4/M5 both need this class, which is why
-it came first.
+Fresh M5 evidence: Hikari + migrate command contracts `2/2 PASS`; real MySQL migration fixture
+`2/2 PASS`; compile/test-compile `BUILD SUCCESS`; fixture stopped, port closed, process gone.
 
-## CURRENT — 2026-09-17 — a third review of this candidate's own code, adjudicated and answered
+Historical at the time of this entry: M6 and Paper runtime wiring were still open.
+The current section above supersedes this entry. Database-level M6 evidence is now present; the
+remaining boundary is controlled Paper startup with MySQL, a two-Paper-server fixture, and
+production evidence. The D4 shape (fail closed, no buffer) is implemented.
+
+Historical M2b entry: `MySqlConnectionOwner` supplied the bounded pool, session guard, schema install,
+transaction ownership and fail-closed behavior. At that time the runtime wiring was not yet present;
+the current section above supersedes that statement. The current branch wires the owner through
+`DatabaseManager` and adds repository identity locking. Detail: §11.
+
+## HISTORY — 2026-09-17 — a third review of this candidate's own code, adjudicated and answered
 
 ### 2026-09-18 — the public repository now mirrors this candidate; nothing was rebuilt
 

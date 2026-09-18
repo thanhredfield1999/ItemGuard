@@ -1,77 +1,59 @@
 package com.itemguard.persistence;
 
+import com.mysql.cj.jdbc.MysqlDataSource;
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
 import java.util.Properties;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 /**
- * Owns every MySQL connection ItemGuard opens, and is the place D4 actually happens.
+ * Owns Premium MySQL work and the DataSource/pool behind it.
  *
- * <p>The SQLite counterpart ({@link SqliteConnectionOwner}) can promise a great deal because there
- * is exactly one connection and exactly one writer, enforced by an OS sidecar lock. Neither is
- * true here: several servers are meant to share this database, and a connection can die in the
- * middle of a write. So this class is written around what it will <em>not</em> do:
+ * <p>The production factory is Connector/J's {@code MysqlDataSource} behind HikariCP. The owner
+ * borrows one connection for one transaction and closes it; Hikari, not this class, owns pooling.
+ * The injectable factory remains for deterministic tests and for the controlled fixture.
  *
- * <ul>
- *   <li><b>No retry, no replay, no local buffer.</b> A failed write is a failed operation. Buffer
- *       ing writes to local disk for later replay would create a second, uncontrolled source of
- *       identities — the exact thing this plugin exists to prevent — and a retry cannot tell a
- *       rollback from a commit whose acknowledgement was lost.</li>
- *   <li><b>No silent degradation.</b> If the session cannot be shown to be durable and strict
- *       ({@link MySqlSchemaManager#requireDurableSession}), the owner refuses to construct rather
- *       than serving reads and writes on a server whose guarantees are unknown.</li>
- *   <li><b>No connection left behind.</b> {@link #close()} stops admitting work, waits for what is
- *       in flight, and closes every connection it opened — the workspace rule about owning cleanup
- *       applies to database handles as much as to servers.</li>
- * </ul>
- *
- * <p>Transactions are explicit at the call site, and there are two shapes on purpose:
- * {@link #call(MySqlOperation)} runs the work in a transaction the owner commits or rolls back,
- * while {@link #callLocked(String, MySqlIdentityLock.LockedIdentityWork)} hands the connection to
- * {@link MySqlIdentityLock}, which owns the transaction because the row lock has to be held for
- * exactly its duration. Wrapping the second shape in the first would produce a lock taken inside a
- * transaction the caller does not control.
+ * <p>D4 is deliberate: no retry, replay or local write buffer. A failed write is denied, and a
+ * connection that cannot be closed or used is not silently reused.
  */
-public final class MySqlConnectionOwner implements AutoCloseable {
-
+public final class MySqlConnectionOwner implements JdbcConnectionOwner {
     private static final int DEFAULT_CLOSE_TIMEOUT_SECONDS = 10;
-    private static final long BORROW_TIMEOUT_MILLIS = 5_000;
 
-    /** Opens a raw connection. A factory rather than a URL keeps this class testable and keeps the
-     *  JDBC specifics in one place. */
     @FunctionalInterface
     public interface ConnectionFactory {
         Connection open() throws SQLException;
     }
 
-    /** Work that runs on a borrowed connection. */
+    /** A factory that owns a pool or data source which must close with this owner. */
+    public interface OwnedConnectionFactory extends ConnectionFactory, AutoCloseable {
+        @Override
+        default void close() throws SQLException {
+        }
+    }
+
     @FunctionalInterface
-    public interface MySqlOperation<T> {
-        T apply(Connection connection) throws SQLException;
+    public interface MySqlOperation<T> extends JdbcOperation<T> {
+        @Override
+        T apply(Connection connection) throws Exception;
     }
 
     private final ConnectionFactory factory;
     private final Consumer<Throwable> failureHandler;
     private final MySqlIdentityLock identityLock;
-    private final Semaphore permits;
-    private final BlockingQueue<Connection> idle;
     private final ExecutorService executor;
     private final AtomicBoolean closed = new AtomicBoolean();
+    private final Object submissionMonitor = new Object();
+    private int pendingSubmissions;
     private final int closeTimeoutSeconds;
 
     public MySqlConnectionOwner(ConnectionFactory factory, int maximumPoolSize,
@@ -89,69 +71,152 @@ public final class MySqlConnectionOwner implements AutoCloseable {
         if (maximumPoolSize < 1) {
             throw new IllegalArgumentException("maximumPoolSize must be at least 1");
         }
-        this.permits = new Semaphore(maximumPoolSize);
-        this.idle = new ArrayBlockingQueue<>(maximumPoolSize);
+        if (closeTimeoutSeconds < 1) {
+            throw new IllegalArgumentException("closeTimeoutSeconds must be positive");
+        }
         this.executor = Executors.newFixedThreadPool(Math.min(maximumPoolSize, 4), runnable -> {
             Thread thread = new Thread(runnable, "ItemGuard-MySQL");
             thread.setDaemon(true);
             return thread;
         });
         this.closeTimeoutSeconds = closeTimeoutSeconds;
-        // Fail closed at construction: the first connection is used to verify the session's
-        // durability and strictness and to install the schema. An owner that cannot do that has
-        // nothing to offer, and saying so here is cheaper than failing on a player's inventory
-        // event later.
+
+        // Fail closed at construction: verify the server and install/validate the schema before
+        // admitting any operation. A failed construction also closes an owned Hikari pool.
         try (Connection connection = factory.open()) {
             connection.setAutoCommit(false);
-            new MySqlSchemaManager().requireDurableSession(connection);
-            new MySqlSchemaManager().initialize(connection);
+            MySqlSchemaManager schema = new MySqlSchemaManager();
+            schema.requireDurableSession(connection);
+            schema.initialize(connection);
         } catch (SQLException failure) {
+            closeFactory(failure);
+            executor.shutdownNow();
             throw new IllegalStateException(
                 "ItemGuard could not open a usable MySQL session; refusing to start", failure);
         }
     }
 
-    public <T> T call(MySqlOperation<T> work) {
-        Connection connection = borrow();
-        boolean broken = false;
-        try {
-            return runTransaction(connection, work);
-        } catch (SQLException failure) {
-            broken = true;
-            report(failure);
-            throw new IllegalStateException("ItemGuard database operation failed", failure);
-        } finally {
-            release(connection, broken);
+    public void execute(JdbcOperation<Void> operation) {
+        Objects.requireNonNull(operation, "operation");
+        submit(() -> { call(operation); return null; });
+    }
+
+    public void flush() {
+        synchronized (submissionMonitor) {
+            while (pendingSubmissions > 0) {
+                try {
+                    submissionMonitor.wait();
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(
+                        "Interrupted while waiting for ItemGuard MySQL work", interrupted);
+                }
+            }
         }
     }
 
-    public <T> CompletableFuture<T> callAsync(MySqlOperation<T> work) {
+    public <T> T call(JdbcOperation<T> work) {
+        Objects.requireNonNull(work, "work");
+        Connection connection = borrow();
+        try {
+            return runTransaction(connection, work);
+        } catch (Exception failure) {
+            report(failure);
+            throw new IllegalStateException("ItemGuard database operation failed", failure);
+        } finally {
+            closeQuietly(connection);
+        }
+    }
+
+    public <T> CompletableFuture<T> callAsync(JdbcOperation<T> work) {
+        Objects.requireNonNull(work, "work");
         return submit(() -> call(work));
     }
 
-    /**
-     * Runs {@code work} as the only writer of {@code code}: the identity row is locked for the
-     * duration of the transaction, and the lock and the transaction are the same window.
-     */
+    /** Runs work while holding the database row lock for the same transaction. */
     public <T> T callLocked(String code, MySqlIdentityLock.LockedIdentityWork<T> work) {
+        Objects.requireNonNull(code, "code");
+        Objects.requireNonNull(work, "work");
         Connection connection = borrow();
-        boolean broken = false;
         try {
             return identityLock.withLockedIdentity(connection, code, work);
         } catch (NoSuchIdentityException absent) {
             throw new IllegalStateException(absent.getMessage(), absent);
         } catch (SQLException failure) {
-            broken = !isUsable(connection);
             report(failure);
             throw new IllegalStateException("ItemGuard database operation failed", failure);
         } finally {
-            release(connection, broken);
+            closeQuietly(connection);
         }
     }
 
-    public <T> CompletableFuture<T> callLockedAsync(String code,
-                                                    MySqlIdentityLock.LockedIdentityWork<T> work) {
+    public <T> CompletableFuture<T> callLockedAsync(
+        String code,
+        MySqlIdentityLock.LockedIdentityWork<T> work
+    ) {
         return submit(() -> callLocked(code, work));
+    }
+
+    @Override
+    public void executeIdentityLocked(String code, JdbcOperation<Void> operation) {
+        callIdentityLockedAsync(code, operation);
+    }
+
+    @Override
+    public <T> T callIdentityLocked(String code, JdbcOperation<T> operation) {
+        Objects.requireNonNull(code, "code");
+        Objects.requireNonNull(operation, "operation");
+        return callLocked(code, connection -> applyLocked(operation, connection));
+    }
+
+    @Override
+    public <T> CompletableFuture<T> callIdentityLockedAsync(
+        String code,
+        JdbcOperation<T> operation
+    ) {
+        Objects.requireNonNull(code, "code");
+        Objects.requireNonNull(operation, "operation");
+        return callLockedAsync(code, connection -> applyLocked(operation, connection));
+    }
+
+    @Override
+    public <T> T callIdentityLockedOrCreate(String code, JdbcOperation<T> operation) {
+        Objects.requireNonNull(code, "code");
+        Objects.requireNonNull(operation, "operation");
+        Connection connection = borrow();
+        try {
+            return identityLock.withLockedIdentityOrCreate(
+                connection,
+                code,
+                locked -> applyLocked(operation, locked)
+            );
+        } catch (SQLException failure) {
+            report(failure);
+            throw new IllegalStateException("ItemGuard database operation failed", failure);
+        } finally {
+            closeQuietly(connection);
+        }
+    }
+
+    @Override
+    public <T> CompletableFuture<T> callIdentityLockedOrCreateAsync(
+        String code,
+        JdbcOperation<T> operation
+    ) {
+        Objects.requireNonNull(code, "code");
+        Objects.requireNonNull(operation, "operation");
+        return submit(() -> callIdentityLockedOrCreate(code, operation));
+    }
+
+    private static <T> T applyLocked(JdbcOperation<T> operation, Connection connection)
+        throws SQLException {
+        try {
+            return operation.apply(connection);
+        } catch (SQLException failure) {
+            throw failure;
+        } catch (Exception failure) {
+            throw new SQLException("ItemGuard identity-locked operation failed", failure);
+        }
     }
 
     @Override
@@ -168,50 +233,54 @@ public final class MySqlConnectionOwner implements AutoCloseable {
             Thread.currentThread().interrupt();
             executor.shutdownNow();
         }
-        List<Connection> open = new ArrayList<>();
-        idle.drainTo(open);
-        for (Connection connection : open) {
-            closeQuietly(connection);
+        try {
+            if (factory instanceof AutoCloseable owned) {
+                owned.close();
+            }
+        } catch (Exception failure) {
+            report(failure);
         }
     }
 
-    private <T> T runTransaction(Connection connection, MySqlOperation<T> work) throws SQLException {
+    private <T> T runTransaction(Connection connection, JdbcOperation<T> work)
+        throws Exception {
         try {
             T result = work.apply(connection);
             connection.commit();
             return result;
-        } catch (SQLException failure) {
-            rollback(connection, failure);
-            throw failure;
-        } catch (RuntimeException failure) {
+        } catch (Exception failure) {
             rollback(connection, failure);
             throw failure;
         }
     }
 
-    /**
-     * Async work is refused through the returned future rather than by throwing: a caller that is
-     * chaining futures would otherwise have to guard every call site, and the failure would arrive
-     * in a place where the plugin cannot report it. {@link #call} is the synchronous shape and
-     * throws there instead, because its caller is already in a position to handle it.
-     */
     private <T> CompletableFuture<T> submit(java.util.concurrent.Callable<T> work) {
-        if (closed.get()) {
-            return CompletableFuture.failedFuture(
-                new RejectedExecutionException("ItemGuard MySQL owner is closed"));
-        }
         CompletableFuture<T> completion = new CompletableFuture<>();
-        try {
-            executor.execute(() -> {
-                try {
-                    completion.complete(work.call());
-                } catch (Throwable failure) {
-                    report(failure);
-                    completion.completeExceptionally(failure);
-                }
-            });
-        } catch (RejectedExecutionException rejected) {
-            completion.completeExceptionally(rejected);
+        synchronized (submissionMonitor) {
+            if (closed.get()) {
+                return CompletableFuture.failedFuture(
+                    new RejectedExecutionException("ItemGuard MySQL owner is closed"));
+            }
+            pendingSubmissions++;
+            try {
+                executor.execute(() -> {
+                    try {
+                        completion.complete(work.call());
+                    } catch (Throwable failure) {
+                        report(failure);
+                        completion.completeExceptionally(failure);
+                    } finally {
+                        synchronized (submissionMonitor) {
+                            pendingSubmissions--;
+                            submissionMonitor.notifyAll();
+                        }
+                    }
+                });
+            } catch (RejectedExecutionException rejected) {
+                pendingSubmissions--;
+                submissionMonitor.notifyAll();
+                completion.completeExceptionally(rejected);
+            }
         }
         return completion;
     }
@@ -220,73 +289,20 @@ public final class MySqlConnectionOwner implements AutoCloseable {
         if (closed.get()) {
             throw new RejectedExecutionException("ItemGuard MySQL owner is closed");
         }
-        boolean permitted;
         try {
-            permitted = permits.tryAcquire(BORROW_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("Interrupted while waiting for an ItemGuard connection",
-                interrupted);
-        }
-        if (!permitted) {
-            throw new IllegalStateException(
-                "No ItemGuard MySQL connection became available within " + BORROW_TIMEOUT_MILLIS
-                    + " ms; the operation is denied rather than queued");
-        }
-        boolean handedOver = false;
-        try {
-            Connection pooled = idle.poll();
-            if (pooled != null && isUsable(pooled)) {
-                handedOver = true;
-                return pooled;
-            }
-            if (pooled != null) {
-                // A pooled connection that no longer answers is discarded, not reused with a
-                // warning: half-dead connections are how "it worked yesterday" reports start.
-                closeQuietly(pooled);
-            }
-            Connection fresh = factory.open();
+            Connection connection = factory.open();
             try {
-                fresh.setAutoCommit(false);
+                connection.setAutoCommit(false);
+                return connection;
             } catch (SQLException configurationFailure) {
-                closeQuietly(fresh);
+                closeQuietly(connection);
                 throw configurationFailure;
             }
-            handedOver = true;
-            return fresh;
         } catch (SQLException failure) {
             report(failure);
             throw new IllegalStateException(
                 "ItemGuard could not obtain a MySQL connection; the operation is denied and "
                     + "nothing was queued for later", failure);
-        } finally {
-            if (!handedOver) {
-                permits.release();
-            }
-        }
-    }
-
-    private void release(Connection connection, boolean broken) {
-        if (broken || closed.get() || !isUsable(connection)) {
-            closeQuietly(connection);
-        } else {
-            try {
-                connection.setAutoCommit(false);
-            } catch (SQLException reset) {
-                closeQuietly(connection);
-            }
-            if (!idle.offer(connection)) {
-                closeQuietly(connection);
-            }
-        }
-        permits.release();
-    }
-
-    private boolean isUsable(Connection connection) {
-        try {
-            return !connection.isClosed() && connection.isValid(2);
-        } catch (SQLException unusable) {
-            return false;
         }
     }
 
@@ -302,7 +318,7 @@ public final class MySqlConnectionOwner implements AutoCloseable {
         try {
             connection.close();
         } catch (SQLException ignored) {
-            // Closing is best effort; the connection is being abandoned either way.
+            // Best effort; the pool or connection is being abandoned either way.
         }
     }
 
@@ -315,25 +331,77 @@ public final class MySqlConnectionOwner implements AutoCloseable {
     }
 
     /**
-     * The development and test factory: DriverManager with the settings a shared database needs.
-     *
-     * <p><strong>Not the shipping path yet.</strong> It goes through the global
-     * {@code DriverManager}, which is exactly the hazard `IG-R026` records for SQLite — another
-     * plugin's driver can win the lookup, and the durability the plugin believes it has is then
-     * not the durability it gets. The MySQL equivalent has the same shape, and `IG-R026` is
-     * already declared a prerequisite before the MySQL backend is enabled. Before that happens
-     * this factory must become a non-global one (instantiate the driver directly, relocated
-     * during shading) and the relocation has to survive the LITE packaging gate.
+     * Development/test factory only. The shipping path must use {@link #hikariDataSource} so the
+     * driver is explicit and relocated rather than resolved through the global DriverManager.
      */
     public static ConnectionFactory driverManager(String url, String user, String password) {
         return () -> {
             Properties properties = new Properties();
             properties.setProperty("user", user);
             properties.setProperty("password", password);
-            // Fail fast rather than hang a server thread on an unreachable host.
             properties.setProperty("connectTimeout", "5000");
             properties.setProperty("socketTimeout", "30000");
             return DriverManager.getConnection(url, properties);
         };
+    }
+
+    /** The shipping Premium path: Connector/J DataSource behind HikariCP. */
+    public static OwnedConnectionFactory hikariDataSource(
+        String url,
+        String user,
+        String password,
+        int maximumPoolSize,
+        int minimumIdle,
+        long connectionTimeoutMillis
+    ) {
+        Objects.requireNonNull(url, "url");
+        Objects.requireNonNull(user, "user");
+        Objects.requireNonNull(password, "password");
+        if (maximumPoolSize < 1) {
+            throw new IllegalArgumentException("maximumPoolSize must be at least 1");
+        }
+        if (minimumIdle < 0 || minimumIdle > maximumPoolSize) {
+            throw new IllegalArgumentException("minimumIdle must be between 0 and maximumPoolSize");
+        }
+        if (connectionTimeoutMillis < 250) {
+            throw new IllegalArgumentException("connectionTimeoutMillis must be at least 250 ms");
+        }
+
+        MysqlDataSource mysql = new MysqlDataSource();
+        mysql.setUrl(url);
+        mysql.setUser(user);
+        mysql.setPassword(password);
+
+        HikariConfig config = new HikariConfig();
+        config.setDataSource(mysql);
+        config.setPoolName("ItemGuard-MySQL");
+        config.setMaximumPoolSize(maximumPoolSize);
+        config.setMinimumIdle(minimumIdle);
+        config.setConnectionTimeout(connectionTimeoutMillis);
+        config.setValidationTimeout(Math.min(connectionTimeoutMillis, 5_000L));
+        config.setInitializationFailTimeout(connectionTimeoutMillis);
+        config.setAutoCommit(false);
+        HikariDataSource pool = new HikariDataSource(config);
+        return new OwnedConnectionFactory() {
+            @Override
+            public Connection open() throws SQLException {
+                return pool.getConnection();
+            }
+
+            @Override
+            public void close() {
+                pool.close();
+            }
+        };
+    }
+
+    private void closeFactory(Throwable originalFailure) {
+        try {
+            if (factory instanceof AutoCloseable owned) {
+                owned.close();
+            }
+        } catch (Exception closeFailure) {
+            originalFailure.addSuppressed(closeFailure);
+        }
     }
 }
