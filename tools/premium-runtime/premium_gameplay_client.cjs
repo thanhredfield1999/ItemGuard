@@ -235,6 +235,67 @@ async function commandCheck(staff) {
   return code;
 }
 
+async function handOverToMember(staff, member) {
+  const staffOrigin = position(staff);
+  await teleport(staff, 'PremiumMember', { x: staffOrigin.x, y: staffOrigin.y, z: staffOrigin.z + 8 });
+  let droppedEntity = null;
+  const onStaffEntity = (entity) => {
+    if (!droppedEntity && (entity.name === 'item' || entity.objectType === 'Item')) {
+      droppedEntity = entity;
+    }
+  };
+  staff.on('entitySpawn', onStaffEntity);
+  try {
+    await staff.tossStack(staff.heldItem || sword(staff));
+    await waitUntil(() => droppedEntity, 6000, 'real client toss did not spawn an item entity');
+  } finally {
+    staff.removeListener('entitySpawn', onStaffEntity);
+  }
+  emit('real-drop', { player: staff.username, entity: droppedEntity.id });
+  await teleport(staff, 'PremiumStaff', { x: staffOrigin.x, y: staffOrigin.y, z: staffOrigin.z + 20 });
+  await teleport(staff, 'PremiumMember', { x: staffOrigin.x, y: staffOrigin.y, z: staffOrigin.z + 4 });
+  const pickupDeadline = Date.now() + 15000;
+  while (Date.now() < pickupDeadline && !sword(member)) {
+    const drop = member.nearestEntity((entity) =>
+      (entity.name === 'item' || entity.objectType === 'Item')
+        && entity.position.distanceTo(member.entity.position) < 12
+    );
+    if (drop) {
+      await member.lookAt(drop.position.offset(0, 0.25, 0), true);
+      member.setControlState('forward', true);
+    } else {
+      member.setControlState('forward', false);
+    }
+    await sleep(200);
+  }
+  member.setControlState('forward', false);
+  if (!sword(member)) throw new Error('member never picked the dropped item up by walking to it');
+  emit('real-pickup', { player: member.username, name: sword(member).name });
+}
+
+// Short mode used by the backup/restore gate: create one real tracked identity through the same
+// player path, hand it to the second player so both owner and custody rows exist, and stop there.
+async function runSeed() {
+  const staff = makeBot('PremiumStaff');
+  const member = makeBot('PremiumMember');
+  await waitUntil(() => [...bots.values()].every((bot) => Boolean(bot.entity)), 60000,
+    'seed clients did not spawn');
+  await sleep(1200);
+  await chat(staff, '/clear PremiumStaff');
+  await chat(staff, '/give PremiumStaff minecraft:diamond_sword 1');
+  const issued = await ensureSwordInHand(staff);
+  emit('item-equipped', { player: staff.username, name: issued.name });
+  const code = await commandCheck(staff);
+  await handOverToMember(staff, member);
+  emit('CLIENT_RESULT', {
+    status: 'PASS',
+    mode: 'seed',
+    code,
+    actions: ['give', 'equip', 'check', 'drop', 'walk_pickup']
+  });
+  return code;
+}
+
 async function runFull() {
   const staff = makeBot('PremiumStaff');
   const member = makeBot('PremiumMember');
@@ -300,41 +361,7 @@ async function runFull() {
   });
 
   // -- real drop by staff, real walk-pickup by member (custody changes here) ---------------------
-  const staffOrigin = position(staff);
-  await teleport(staff, 'PremiumMember', { x: staffOrigin.x, y: staffOrigin.y, z: staffOrigin.z + 8 });
-  let droppedEntity = null;
-  const onStaffEntity = (entity) => {
-    if (!droppedEntity && (entity.name === 'item' || entity.objectType === 'Item')) {
-      droppedEntity = entity;
-    }
-  };
-  staff.on('entitySpawn', onStaffEntity);
-  try {
-    await staff.tossStack(staff.heldItem || sword(staff));
-    await waitUntil(() => droppedEntity, 6000, 'real client toss did not spawn an item entity');
-  } finally {
-    staff.removeListener('entitySpawn', onStaffEntity);
-  }
-  emit('real-drop', { player: staff.username, entity: droppedEntity.id });
-  await teleport(staff, 'PremiumStaff', { x: staffOrigin.x, y: staffOrigin.y, z: staffOrigin.z + 20 });
-  await teleport(staff, 'PremiumMember', { x: staffOrigin.x, y: staffOrigin.y, z: staffOrigin.z + 4 });
-  const pickupDeadline = Date.now() + 15000;
-  while (Date.now() < pickupDeadline && !sword(member)) {
-    const drop = member.nearestEntity((entity) =>
-      (entity.name === 'item' || entity.objectType === 'Item')
-        && entity.position.distanceTo(member.entity.position) < 12
-    );
-    if (drop) {
-      await member.lookAt(drop.position.offset(0, 0.25, 0), true);
-      member.setControlState('forward', true);
-    } else {
-      member.setControlState('forward', false);
-    }
-    await sleep(200);
-  }
-  member.setControlState('forward', false);
-  if (!sword(member)) throw new Error('member never picked the dropped item up by walking to it');
-  emit('real-pickup', { player: member.username, name: sword(member).name });
+  await handOverToMember(staff, member);
 
   // -- real chest put/take through window clicks -------------------------------------------------
   const memberPos = position(member);
@@ -506,6 +533,7 @@ async function stopBots() {
 (async () => {
   try {
     if (mode === 'restart') await runRestart();
+    else if (mode === 'seed') await runSeed();
     else await runFull();
     await stopBots();
     process.exit(0);

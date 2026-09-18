@@ -1,6 +1,6 @@
 # ItemGuard — Current State
 
-## CURRENT — Branch `premium-mysql` — 2026-09-18 — Premium reliability gates verified
+## CURRENT — Branch `premium-mysql` — 2026-09-19 — Premium backup/restore verified; a partial restore now fails closed
 
 This branch keeps the Premium candidate rebuildable on top of `main` release commit `6292638`.
 The frozen LITE candidate on `main` is not rebuilt or changed by Premium work.
@@ -8,35 +8,45 @@ The frozen LITE candidate on `main` is not rebuilt or changed by Premium work.
 Artifact bound to the current Premium product source:
 
     target/ItemGuard-1.0.0-shaded.jar
-    SHA-256 ed13af62069dfb78a626c104c032d52fe95eb12204212f87bbcc7ac735d0989b
-    Paper `1.21.11-131`, Java 21, 1,287 relocated library entries, relocated SLF4J service provider
+    SHA-256 884d4394304778591b3a0e7b800d225e50ff45245aae451d6e9a167732fa330e
+    Paper `1.21.11-131`, Java 21, relocated library entries, relocated SLF4J service provider
 
 Fresh evidence on the current source tree:
 
     mvnw.cmd -o test                         891/891, 0 failures/errors/skipped
-    python scripts/run_mysql_schema_gate.py  35/35, 0 failures/errors/skipped
+    python scripts/run_mysql_schema_gate.py  37/37 across 10 tagged classes, 0 failures/errors/skipped
+    python -m unittest discover -s scripts   70/70 tooling-contract cases, OK
     mvnw.cmd -o -DskipTests package           BUILD SUCCESS
     MySQL fixture                             stopped, port closed, process gone
 
-All current Premium Paper evidence is bound to the exact JAR hash above: single-Paper startup/restart,
-two isolated Paper servers sharing MySQL, SQLite-to-MySQL `/ig migrate` dry-run/confirm/refusal/
-restart, and the reliability receipt below. MySQL fixture version is 8.4.6; Paper is 1.21.11-131;
-runtime Java is 21. All fixture-owned processes and ports were closed without forced kill.
+All six current Premium Paper receipts are bound to that exact hash: single-Paper startup/restart,
+two isolated Paper servers sharing one MySQL schema, SQLite→MySQL `/ig migrate`, the reliability
+failure/recovery gate, the real-player gameplay journey, and the backup/restore gate. MySQL fixture
+is 8.4.6, Paper is 1.21.11-131, runtime Java is 21; every fixture-owned process exited 0 without a
+forced stop and every fixture was stopped with its port released.
 
-Reliability evidence: `run/premium-paper-failure-20260918-211756.json`.
-It proves unreachable-MySQL startup failed closed with no enabled/initialized marker. The fixture then
-committed a baseline `duplicates_detected=7` through the real `DatabaseManager`; during a real
-in-flight write, the runner waited for `OUTAGE_WRITE_STARTED`, stopped MySQL, observed exactly one
-failed operation and zero unexpected-success markers, restarted MySQL, and observed immediate and
-delayed recovery reads preserving the committed value `7`. Paper and MySQL cleanup were independently
-verified (`exit=0`, no forced stop, log closed, port released, process gone).
+Current receipts: `run/mysql-schema-gate-20260919-001131.json`,
+`run/premium-paper-mysql-20260919-001131.json`, `run/premium-two-paper-mysql-20260919-001404.json`,
+`run/premium-paper-migration-20260919-001526.json`, `run/premium-paper-failure-20260919-001529.json`,
+`run/premium-paper-gameplay-20260919-001733.json`,
+`run/premium-backup-restore-20260919-002201.json`.
 
-Other current bound receipts: `run/mysql-schema-gate-20260918-235129.json` (35/35, nine tagged classes,
-fixture stopped with the port closed), `run/premium-paper-mysql-20260918-210311.json`,
-`run/premium-two-paper-mysql-20260918-210735.json`, and
-`run/premium-paper-migration-20260918-211038.json`.
+Backup/restore (procedure and boundaries: `docs/design/2026-09-19-premium-backup-restore.md`): a
+`mysqldump` taken without `--databases` (that form writes `CREATE DATABASE`/`USE` for the source
+schema), loaded into a second schema created with `utf8mb4_0900_bin` and granted to the plugin's user,
+reproduced every per-table row count and the recorded schema version; Paper then started on the
+restored schema and a real client read the same identity and the same history actions back.
 
-Real-player gameplay evidence: `run/premium-paper-gameplay-20260918-234747.json`. Two real protocol
+That gate found a defect, and this commit fixes it. On the previous artifact (`ed13af62…`, kept as
+`run/premium-backup-restore-20260919-000642-pre-fix.json`) a restore missing `item_history` was
+accepted: the table was re-created empty, the plugin enabled, and nothing was logged — identity
+intact, audit trail gone. `MySqlSchemaManager.validateExistingSchema` now refuses an
+existing-but-incomplete schema by name and creates nothing, while a database with no ItemGuard schema
+is still initialized from scratch; `MySqlPartialRestoreRefusalTest` (RED before the fix, GREEN 2/2
+after) pins both halves. The same gate now proves the refusal at runtime (phase C
+`REFUSED_FAIL_CLOSED`, table not re-created) and keeps the future-version refusal (phase D).
+
+Real-player gameplay evidence: `run/premium-paper-gameplay-20260919-001733.json`. Two real protocol
 clients (`PremiumStaff`, `PremiumMember`) ran the player journey against the same exact JAR: real
 `/give`, client-side equip, `/ig check`, `/ig info`, `/ig stats`, `/ig search`, the legacy player
 browser GUI (items → history → detail → back → exit → close), a real drop with a real walk-pickup by
@@ -47,6 +57,14 @@ stamped `paper-premium-1`, member actions including `PICKUP` and staff actions i
 `SPAWN`/`DROP`. Generation 2 (clean stop, restart) restored the item into the member's inventory and
 `/ig check` read the same identity back. All four owned processes exited 0 without a forced stop, and
 the MySQL fixture was stopped with its port closed.
+
+Two offline gates needed work before they could run on this artifact. `scripts/check_no_hardcoded_vietnamese.py`
+now declares what its artifact pass actually adjudicates: the product namespace `com/itemguard/`, minus the
+relocated libraries, with everything else counted as vendored third-party bytecode (measured on the
+Premium jar: 241 ItemGuard entries scanned, 0 carrying Vietnamese to a player, against 1,224 relocated
+and 869 vendored entries). Three source files the exempt-directory rule had left undeclared
+(`CatalogRepositoryPort`, `MySqlCatalogRepository`, `MigrateCommand`) are now declared with the reason
+each cannot reach a LITE player. Both changes are pinned by that gate's own suite (25 cases).
 
 Recorded rather than smoothed over: the catalog admits one read per second across all viewers, so the
 second read of the journey was refused and the UI rendered its own retry screen. The client's retry
@@ -62,11 +80,13 @@ initialization; History/Search/Stats/Lite/GUI verified paths remain async. Sync 
 compatibility surfaces and are not claimed safe for arbitrary external callers. MySQL identity-
 affecting writes use `FOR UPDATE`; SQLite keeps its serialized executor path.
 
-Open evidence boundaries: no backup/restore or production deployment evidence; IG-R022 remains
-partially mitigated for compatibility/external sync callers. The player/GUI journey above covers the
-command, drop, pickup, chest and GUI paths of this exact JAR; it does not cover every behavioural
-boundary the risk register still lists (destructive actions, external storage, scale, production
-topology). The Premium JAR is not uploaded, tagged, or released.
+Open evidence boundaries: no production deployment, monitoring, upgrade/rollback or restore-at-scale
+evidence; a restore that loses *rows* rather than tables cannot be detected by the plugin (row counts
+and checksums stay with the operator); IG-R022 remains partially mitigated for compatibility/external
+sync callers. The player/GUI journey above covers the command, drop, pickup, chest and GUI paths of
+this exact JAR; it does not cover every behavioural boundary the risk register still lists
+(destructive actions, external storage, scale, production topology). The Premium JAR is not uploaded,
+tagged, or released.
 
 The detailed M1–M6 narrative below is historical. The section above is the only current binding.
 

@@ -1,19 +1,19 @@
 {
   "status": "PASS",
-  "fixture": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-paper-88b7cad93fea",
+  "fixture": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-paper-ff10b223903f",
   "stage": {
-    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-paper-88b7cad93fea",
-    "server_port": 61069,
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-paper-ff10b223903f",
+    "server_port": 50332,
     "mysql_host": "127.0.0.1",
     "mysql_port": 33316,
     "mysql_database": "itemguard_premium",
     "paper_sha256": "6c099540fccd27e10750d1adcb382f1552fb5aa2816aeaf2cc1efb23ddd9e3df",
-    "premium_jar_sha256": "ed13af62069dfb78a626c104c032d52fe95eb12204212f87bbcc7ac735d0989b",
-    "premium_source_sha256": "ed13af62069dfb78a626c104c032d52fe95eb12204212f87bbcc7ac735d0989b",
+    "premium_jar_sha256": "884d4394304778591b3a0e7b800d225e50ff45245aae451d6e9a167732fa330e",
+    "premium_source_sha256": "884d4394304778591b3a0e7b800d225e50ff45245aae451d6e9a167732fa330e",
     "config_sha256": "3d1c69e8eb4adb5f7ffd29beaa3b467ff45cf954c159a7fc1a1299b168e461fc",
     "runner_sha256": "14ff7da311de6d5a9ef001b414ba1a9e121d9083c2daa4c74491bd10d8256fa5",
     "java": "C:\\Program Files\\Java\\jdk-21\\bin\\java.exe",
-    "created_at": "2026-09-18T21:01:44+07:00"
+    "created_at": "2026-09-19T00:11:31+07:00"
   },
   "generations": [
     {
@@ -27,7 +27,7 @@
         "info_marker": "Cơ sở dữ liệu: MYSQL",
         "stats_marker": "Database: MYSQL",
         "slf4j_provider_errors": [],
-        "paper_log": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-paper-88b7cad93fea\\paper-1.log"
+        "paper_log": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-paper-ff10b223903f\\paper-1.log"
       }
     },
     {
@@ -41,14 +41,14 @@
         "info_marker": "Cơ sở dữ liệu: MYSQL",
         "stats_marker": "Database: MYSQL",
         "slf4j_provider_errors": [],
-        "paper_log": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-paper-88b7cad93fea\\paper-2.log"
+        "paper_log": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-paper-ff10b223903f\\paper-2.log"
       }
     }
   ],
   "cleanup": [
     {
       "generation": 1,
-      "pid": 37084,
+      "pid": 31072,
       "exit": 0,
       "forced": false,
       "log_closed": true,
@@ -56,14 +56,14 @@
     },
     {
       "generation": 2,
-      "pid": 36020,
+      "pid": 38148,
       "exit": 0,
       "forced": false,
       "log_closed": true,
       "port_released": true
     }
   ],
-  "started_at": "2026-09-18T21:01:44+07:00",
+  "started_at": "2026-09-19T00:11:31+07:00",
   "mysql_reset": "itemguard_premium recreated on 127.0.0.1:33316",
   "mysql_cleanup": {
     "exit": 0,
@@ -72,5 +72,5 @@
     "stdout": "EVIDENCE port_open=False process_gone=True\nstopped\n",
     "stderr": ""
   },
-  "finished_at": "2026-09-18T21:03:11+07:00"
+  "finished_at": "2026-09-19T00:12:40+07:00"
 }

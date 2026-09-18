@@ -1,24 +1,24 @@
 {
   "status": "PASS",
   "manifest": {
-    "fixture": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-migration-068deae7485c",
-    "paper_port": 63866,
+    "fixture": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-migration-3b59243e75bf",
+    "paper_port": 59108,
     "server_id": "paper-migrate-1",
     "mysql_host": "127.0.0.1",
     "mysql_port": 33316,
     "mysql_database": "itemguard_premium",
     "paper_sha256": "6c099540fccd27e10750d1adcb382f1552fb5aa2816aeaf2cc1efb23ddd9e3df",
-    "premium_jar_sha256": "ed13af62069dfb78a626c104c032d52fe95eb12204212f87bbcc7ac735d0989b",
-    "premium_source_sha256": "ed13af62069dfb78a626c104c032d52fe95eb12204212f87bbcc7ac735d0989b",
+    "premium_jar_sha256": "884d4394304778591b3a0e7b800d225e50ff45245aae451d6e9a167732fa330e",
+    "premium_source_sha256": "884d4394304778591b3a0e7b800d225e50ff45245aae451d6e9a167732fa330e",
     "source_sha256_before": "ba9d3051d80a4286011dd1dce44bb3175ddbe1da066d312e7c72789b005ee2bd",
     "source_bytes_before": 122880,
     "config_sha256": "39f97ceb58b3e85654b76b725e409837e23bd3e91b26266e5b6e65210f4fa2ef",
     "runner_sha256": "c9a9fb779138a96d584e91d6c7cf8f56edd083ec5a5c6f7d8cf54f851e806ba1",
     "seeder_sha256": "149175b4256ba28d51965aca3eb35c04e5400966459ffde80a24a6a490a113ae",
-    "created_at": "2026-09-18T21:09:13+07:00"
+    "created_at": "2026-09-19T00:14:09+07:00"
   },
   "source": {
-    "path": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-migration-068deae7485c\\plugins\\ItemGuard\\itemguard.db",
+    "path": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-migration-3b59243e75bf\\plugins\\ItemGuard\\itemguard.db",
     "sha256_after": "ba9d3051d80a4286011dd1dce44bb3175ddbe1da066d312e7c72789b005ee2bd",
     "bytes_after": 122880
   },
@@ -110,7 +110,7 @@
   "cleanup": [
     {
       "generation": 1,
-      "pid": 29408,
+      "pid": 21228,
       "exit": 0,
       "forced": false,
       "log_closed": true,
@@ -118,7 +118,7 @@
     },
     {
       "generation": 2,
-      "pid": 15564,
+      "pid": 29912,
       "exit": 0,
       "forced": false,
       "log_closed": true,
@@ -133,5 +133,5 @@
     "stdout": "EVIDENCE port_open=False process_gone=True\nstopped\n",
     "stderr": ""
   },
-  "finished_at": "2026-09-18T21:10:38+07:00"
+  "finished_at": "2026-09-19T00:15:26+07:00"
 }

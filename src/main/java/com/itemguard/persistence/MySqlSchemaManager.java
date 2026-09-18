@@ -4,7 +4,11 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * The MySQL 8 schema for the Premium backend, and the portability rules that make it one.
@@ -74,6 +78,26 @@ public final class MySqlSchemaManager {
     public static final int MINIMUM_SERVER_MAJOR_VERSION = 8;
 
     static final String COLLATION = "utf8mb4_0900_bin";
+
+    /**
+     * Every table this schema owns, in one place: {@link #validateExistingSchema(Connection)} uses
+     * the list to tell a partial restore from a fresh install.
+     *
+     * <p>If a later migration adds a table, its table set is this list plus what it adds, and this
+     * check has to be extended for that version — not weakened to make a half-restored database
+     * pass again.
+     */
+    static final List<String> OWNED_TABLES = List.of(
+        "tracked_items",
+        "item_history",
+        "item_observations",
+        "duplicate_findings",
+        "item_search_requests",
+        "item_snapshots",
+        "reclaim_claims",
+        "tag_publications",
+        "plugin_stats"
+    );
 
     /**
      * The strictness this schema requires. Non-strict mode silently truncates an oversized value
@@ -446,6 +470,49 @@ public final class MySqlSchemaManager {
                     "Unsupported future ItemGuard schema version: " + schemaVersion
                 );
             }
+        }
+        /*
+         * An existing schema must be complete.
+         *
+         * Measured before this check existed (2026-09-18, phase C of the controlled backup/restore
+         * gate): a dump restored without item_history was accepted, the table was re-created empty
+         * by the DDL below, the plugin enabled and logged nothing. The item identity survived and
+         * its entire audit trail was gone, so the plugin reported a healthy database whose history
+         * had been half-restored — the one state an operator cannot see from the plugin's output.
+         *
+         * Refusing is the only honest option: re-creating an empty table replaces missing audit
+         * rows with nothing, and the plugin exists to keep that evidence. A database with no
+         * ItemGuard schema at all is still a first install and is created from scratch.
+         */
+        Set<String> present = new HashSet<>();
+        String placeholders = String.join(",", java.util.Collections.nCopies(OWNED_TABLES.size(), "?"));
+        try (var statement = connection.prepareStatement(
+            "SELECT TABLE_NAME FROM information_schema.TABLES "
+                + "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (" + placeholders + ")")) {
+            int index = 1;
+            for (String table : OWNED_TABLES) {
+                statement.setString(index++, table);
+            }
+            try (ResultSet rows = statement.executeQuery()) {
+                while (rows.next()) {
+                    present.add(rows.getString(1));
+                }
+            }
+        }
+        List<String> missing = new ArrayList<>();
+        for (String table : OWNED_TABLES) {
+            if (!present.contains(table)) {
+                missing.add(table);
+            }
+        }
+        if (!missing.isEmpty()) {
+            throw new SQLException(
+                "Refusing to start: this database carries ItemGuard's schema metadata but is "
+                    + "missing " + String.join(", ", missing) + ". A restore that lost tables is not "
+                    + "repaired by re-creating them empty — that would silently drop the history "
+                    + "those tables held. Restore the full dump again (or drop this schema to start "
+                    + "fresh) and start ItemGuard once it is complete."
+            );
         }
     }
 

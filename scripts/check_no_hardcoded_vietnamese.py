@@ -33,6 +33,25 @@ EXEMPT_DIRS = (
     "com/itemguard/gui",
 )
 
+# Shaded third-party libraries are relocated under this prefix by the Maven shade configuration in
+# `pom.xml` (`<shadedPattern>com.itemguard.libs.*`). Their bytecode is not ItemGuard text: run against
+# the Premium shaded jar, this gate flagged Connector/J's protobuf descriptors, whose proto strings
+# carry high bytes that read as diacritics, and "move the string behind the language flag" cannot
+# apply to a vendored class. The prefix is asserted against `pom.xml` by
+# `test_check_no_hardcoded_vietnamese.py`, so a new or wider relocation cannot enlarge this skip
+# without saying so.
+RELOCATED_LIBRARY_PREFIXES = (
+    "com/itemguard/libs/",
+)
+
+# The namespace this gate adjudicates in the artifact. Everything else in the jar is vendored
+# third-party bytecode from the shaded dependency set — Connector/J, HikariCP, SLF4J, bStats, and what
+# those bundle or leave unrelocated (`org/sqlite/**`, `com/google/protobuf/**`) — which no language
+# flag can reach and whose constant pools are not ItemGuard text. The namespace is pinned to the
+# source tree by a self-test, so a product class outside it would fail the suite rather than be
+# silently classified as vendored.
+PRODUCT_NAMESPACE = "com/itemguard/"
+
 # A directory is not proof of unreachability, and this list is the correction. LITE imports
 # `commands/ItemCodeInput` directly (`LiteCommand.normalize`), so a Vietnamese string added there
 # would have been exempted by the directory rule and shipped. Anything inside an exempt directory that
@@ -63,12 +82,23 @@ SKIPPED_INSIDE_EXEMPT = {
     "com/itemguard/catalog/CatalogRepository.java":
         "constructed by DatabaseManager for both editions, but getCatalog() has exactly one caller, "
         "CatalogUi, which is built only when !isLiteEdition; its query text cannot reach LITE",
+    "com/itemguard/catalog/CatalogRepositoryPort.java":
+        "read contract only: DatabaseManager's field type and the interface CatalogRepository and "
+        "MySqlCatalogRepository implement. It carries no literal at all, and its single consumer "
+        "(CatalogUi) is built only when !isLiteEdition",
+    "com/itemguard/catalog/MySqlCatalogRepository.java":
+        "constructed by DatabaseManager only on the MYSQL branch, and every value it returns is "
+        "consumed by CatalogUi/CatalogController, which are Premium-only surfaces; its truncated-"
+        "value marker is player-visible only inside those screens",
     "com/itemguard/catalog/CatalogUi.java":
         "constructed only when !isLiteEdition (ItemGuard.registerListeners)",
     "com/itemguard/gui/FilterChatListener.java":
         "registered only when !isLiteEdition",
     "com/itemguard/gui/GUIListener.java":
         "registered only when !isLiteEdition",
+    "com/itemguard/commands/MigrateCommand.java":
+        "instantiated only inside MainCommand's migrate branch; MainCommand itself is registered "
+        "only by ItemGuard.registerCommands(), which ItemGuardLite overrides",
     "com/itemguard/commands/CheckCommand.java": _SKIPPED_COMMANDS,
     "com/itemguard/commands/HistoryCommand.java": _SKIPPED_COMMANDS,
     "com/itemguard/commands/MainCommand.java": _SKIPPED_COMMANDS,
@@ -398,11 +428,17 @@ def scan_jar(jar: Path) -> tuple[list[tuple[str, str]], int, dict[str, int]]:
     """
     findings = []
     checked = 0
-    skipped = {"exempt": 0, "bilingual": 0}
+    skipped = {"exempt": 0, "bilingual": 0, "relocated": 0, "thirdparty": 0}
     with zipfile.ZipFile(jar) as archive:
         names = set(archive.namelist())
         for name in sorted(names):
             if not name.endswith(".class"):
+                continue
+            if not name.startswith(PRODUCT_NAMESPACE):
+                skipped["thirdparty"] += 1
+                continue
+            if any(name.startswith(prefix) for prefix in RELOCATED_LIBRARY_PREFIXES):
+                skipped["relocated"] += 1
                 continue
             if name in BILINGUAL_CLASSES:
                 skipped["bilingual"] += 1
@@ -454,8 +490,10 @@ def main() -> int:
             print(f"no jar to scan: {jar}", file=sys.stderr)
             return 2
         findings, checked, skipped = scan_jar(jar)
-        print(f"jar {jar.name}: scanned {checked} class entries; skipped {skipped['exempt']} in "
-              f"FULL-only directories, {skipped['bilingual']} known-bilingual classes")
+        print(f"jar {jar.name}: scanned {checked} ItemGuard class entries; skipped {skipped['exempt']} "
+              f"in FULL-only directories, {skipped['bilingual']} known-bilingual classes, "
+              f"{skipped['relocated']} relocated library classes, {skipped['thirdparty']} vendored "
+              f"third-party classes")
         print(f"class files carrying Vietnamese to a player: {len(findings)}")
         for name, why in findings:
             print(f"  {name}  [{why}]")

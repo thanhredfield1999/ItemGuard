@@ -153,6 +153,61 @@ class VietnameseLiteralGateTest(unittest.TestCase):
                          [f[0] for f in findings if "absent from the jar" not in f[1]],
                          "a sixth bilingual class must be declared on purpose, not slip in")
 
+    def test_relocated_library_classes_are_skipped_and_itemguard_classes_are_not(self):
+        """The Premium shaded jar carries Connector/J's protobuf descriptors under the relocation
+        prefix; their proto byte strings read as diacritics, and no vendored class can be moved behind
+        the language flag. The skip is a declared prefix with its own bucket, not a directory guess."""
+        import zipfile
+
+        jar = self.root / "relocated.jar"
+        with zipfile.ZipFile(jar, "w") as archive:
+            archive.writestr(
+                "com/itemguard/libs/mysql/cj/x/protobuf/MysqlxSession.class",
+                api_class([("proto bytes", "Ljava/lang/String;")]))
+            archive.writestr("com/itemguard/Thing.class",
+                             api_class([("Nhặt lên", "Ljava/lang/String;")]))
+        findings, checked, skipped = scan_jar(jar)
+        self.assertEqual(1, skipped["relocated"], "the vendored class must land in the named bucket")
+        self.assertEqual(1, checked, "only the vendored class may be skipped")
+        self.assertEqual(["com/itemguard/Thing.class"],
+                         [f[0] for f in findings if "absent from the jar" not in f[1]])
+
+    def test_the_relocated_prefix_matches_the_shade_configuration(self):
+        """A new or wider relocation must not silently enlarge the skip: every `<shadedPattern>` in
+        pom.xml has to fall under a declared prefix, and no prefix may sit outside the namespace."""
+        import xml.etree.ElementTree as ET
+
+        root = ET.parse(REPO / "pom.xml").getroot()
+        # The POM is namespaced, so the tags come back as `{http://maven.apache.org/POM/4.0.0}...`.
+        targets = [element.text.strip() for element in root.iter()
+                   if element.tag.endswith("shadedPattern")
+                   and element.text and element.text.strip()]
+        self.assertGreater(len(targets), 0, "pom.xml has no relocation to check against")
+        for target in targets:
+            with self.subTest(target=target):
+                normalized = target.replace(".", "/") + "/"
+                self.assertTrue(
+                    any(normalized.startswith(prefix) for prefix in api.RELOCATED_LIBRARY_PREFIXES),
+                    f"{target} is not covered by a declared relocated-library prefix")
+        for prefix in api.RELOCATED_LIBRARY_PREFIXES:
+            with self.subTest(prefix=prefix):
+                self.assertTrue(prefix.startswith("com/itemguard/libs/"),
+                                "the skip may not be widened outside the relocation namespace")
+
+    def test_the_artifact_scan_namespace_covers_every_product_source_file(self):
+        """The jar pass adjudicates `com/itemguard/**` (minus relocated libraries). Every file that
+        ships has to live there, or a new package would be treated as vendored without anyone
+        deciding that it is."""
+        source = REPO / "src" / "main" / "java"
+        strays = sorted(
+            path.relative_to(source).as_posix()
+            for path in source.rglob("*.java")
+            if not path.relative_to(source).as_posix().startswith("com/itemguard/")
+        )
+        self.assertEqual(
+            [], strays,
+            "product code outside com/itemguard/ would be skipped by the artifact scan")
+
     def test_the_shipping_jar_carries_no_undeclared_vietnamese_string(self):
         """The real artifact, not the tree: this is the check that would have caught C2."""
         findings, checked, skipped = scan_jar(
@@ -165,7 +220,8 @@ class VietnameseLiteralGateTest(unittest.TestCase):
         with zipfile.ZipFile(jar) as archive:
             entries = [n for n in archive.namelist() if n.endswith(".class")]
         self.assertEqual(len(entries),
-                         checked + skipped["exempt"] + skipped["bilingual"],
+                         checked + skipped["exempt"] + skipped["bilingual"]
+                         + skipped["relocated"] + skipped["thirdparty"],
                          "a class entry that is neither scanned nor accounted for")
 
     def test_the_jar_scan_reads_a_declared_file_inside_an_exempt_directory(self):
