@@ -18,12 +18,21 @@ public final class ExternalPresenceProbeFactory {
     }
 
     public ItemPresenceProbe playerVaultsProbe() {
+        return playerVaultsProbe(ExternalAbsenceMode.STRICT);
+    }
+
+    /**
+     * @param mode how to treat a plugin that is not installed; an installed plugin that cannot be read
+     *             within a hard bound is {@code UNAVAILABLE} (denying) in both modes
+     */
+    public ItemPresenceProbe playerVaultsProbe(ExternalAbsenceMode mode) {
         Optional<DetectedPlugin> detected = detect("PlayerVaultsX")
             .or(() -> detect("PlayerVaults"));
         if (detected.isEmpty()) {
-            return unavailable(
+            return absent(
+                mode,
                 "PLAYER_VAULTS",
-                "PlayerVaultsX/PlayerVaults is not enabled; absence cannot be proven"
+                "PlayerVaultsX/PlayerVaults is not installed, so it holds nothing to search"
             );
         }
         DetectedPlugin plugin = detected.orElseThrow();
@@ -45,11 +54,17 @@ public final class ExternalPresenceProbeFactory {
     }
 
     public ItemPresenceProbe zAuctionHouseProbe() {
+        return zAuctionHouseProbe(ExternalAbsenceMode.STRICT);
+    }
+
+    /** @see #playerVaultsProbe(ExternalAbsenceMode) */
+    public ItemPresenceProbe zAuctionHouseProbe(ExternalAbsenceMode mode) {
         Optional<DetectedPlugin> detected = detect("zAuctionHouse");
         if (detected.isEmpty()) {
-            return unavailable(
+            return absent(
+                mode,
                 "ZAUCTIONHOUSE",
-                "zAuctionHouse is not enabled; absence cannot be proven"
+                "zAuctionHouse is not installed, so it holds nothing to search"
             );
         }
         DetectedPlugin plugin = detected.orElseThrow();
@@ -92,6 +107,18 @@ public final class ExternalPresenceProbeFactory {
 
     private ItemPresenceProbe unavailable(String source, String reason) {
         return new UnavailableExternalPresenceProbe(source, reason);
+    }
+
+    /**
+     * A plugin that is not installed: refused in STRICT mode, recorded as not-applicable in
+     * INSTALLED_ONLY mode. Both paths produce evidence, so the claim detail always says which
+     * sources were skipped.
+     */
+    private ItemPresenceProbe absent(ExternalAbsenceMode mode, String source, String reason) {
+        if (mode == ExternalAbsenceMode.INSTALLED_ONLY) {
+            return new SkippedExternalProbe(source, reason + " (INSTALLED_ONLY)");
+        }
+        return new UnavailableExternalPresenceProbe(source, reason + "; absence cannot be proven");
     }
 
     private record DetectedPlugin(String name, String version) {

@@ -33,6 +33,7 @@ adds writes: shared MySQL, the reclaim hand-over, the admin reports, scan metric
 | `anti-dupe.enabled` | `false` | Whether confirming duplicates runs at all. Detection is unit/MySQL tested; the end-to-end path has not been run on a controlled fixture yet, so it ships off. |
 | `reclaim.issuance-enabled` | `false` | Whether `/matdo sos` and `/finditem giveoldid` may hand an item back. With it off, both refuse and record `ISSUANCE_DISABLED`. |
 | `anti-dupe.action` | `NOTIFY` | Only `NOTIFY` can take effect: a destructive choice is downgraded and, since 2026-09-19, announced in the log at startup instead of being ignored silently. |
+| `reclaim.external-absence-mode` | `STRICT` | How storage plugins that are **not installed** are treated when proving absence (§5). `STRICT` refuses every reclaim on a server that does not run PlayerVaults/zAuctionHouse; `INSTALLED_ONLY` skips a plugin that is not there, records the skip in the claim's evidence, and still refuses when an installed one cannot be read. |
 
 ## 4. MySQL (network / shared database)
 
@@ -72,7 +73,11 @@ content — so take the dump from a quiesced database.
 
 Player path: `/matdo check` lists eligible items; `/matdo sos <id>` proves absence (own inventory,
 ender chest, PlayerVaults, zAuctionHouse — an adapter that is unavailable **denies**, it does not count
-as absent) and then issues. Admin path: `/finditem giveoldid <id>` does the same for the recorded
+as absent) and then issues. Read §3 on `reclaim.external-absence-mode` before enabling issuance: with
+the shipped `STRICT` value a server that does not run those two plugins will refuse every reclaim,
+because the plugin cannot prove those storages empty — the honest reading of "refuse when absence is
+not proven", but it means the switch alone is not enough on a normal server. `INSTALLED_ONLY` is the
+setting for a server that keeps no items there, and every skipped source is named in the claim. Admin path: `/finditem giveoldid <id>` does the same for the recorded
 owner, under its own permission, and proves absence before reserving anything.
 
 The one outcome that needs a human: the item was delivered but the commit write failed. The player is

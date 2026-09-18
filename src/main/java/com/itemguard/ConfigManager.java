@@ -322,6 +322,14 @@ public class ConfigManager {
         return config.getInt("performance.max-track-per-player", 500);
     }
 
+    /**
+     * The raw {@code reclaim.external-absence-mode} value; callers parse it with
+     * {@code ExternalAbsenceMode.parse}, which refuses to guess and falls back to STRICT.
+     */
+    public String getExternalAbsenceMode() {
+        return config.getString("reclaim.external-absence-mode", "STRICT");
+    }
+
     public boolean isReclaimIssuanceEnabled() {
         // The gate gates *issuing*, and LITE has no reclaim command at all, so it can never be on
         // there regardless of what a copied config says.

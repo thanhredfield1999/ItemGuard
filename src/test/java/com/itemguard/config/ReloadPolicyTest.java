@@ -23,6 +23,7 @@ class ReloadPolicyTest {
         "ItemGuard Alerts",
         "",
         20,
+        "STRICT",
         false
     );
 
@@ -49,6 +50,7 @@ class ReloadPolicyTest {
             "Alerts",
             "avatar",
             30,
+            "INSTALLED_ONLY",
             true
         );
 
@@ -68,6 +70,7 @@ class ReloadPolicyTest {
             "discord.username",
             "discord.avatar-url",
             "reclaim.history-days",
+            "reclaim.external-absence-mode",
             "reclaim.issuance-enabled"
         ), decision.changedRestartKeys());
     }

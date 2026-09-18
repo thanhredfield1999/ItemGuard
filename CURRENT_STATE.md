@@ -1,6 +1,6 @@
 # ItemGuard — Current State
 
-## CURRENT — Branch `premium-mysql` — 2026-09-19 — issuance exists, Discord wired, dead permissions deleted; runtime re-verification in progress
+## CURRENT — Branch `premium-mysql` — 2026-09-19 — issuance reachable, Discord wired, dead promises deleted; six gates re-run on the final artifact
 
 This branch keeps the Premium candidate rebuildable on top of `main` release commit `6292638`.
 The frozen LITE candidate on `main` is not rebuilt or changed by Premium work.
@@ -8,69 +8,64 @@ The frozen LITE candidate on `main` is not rebuilt or changed by Premium work.
 Artifact for this tree:
 
     target/ItemGuard-1.0.0-shaded.jar
-    SHA-256 d17b8f81e7dccc02f035ab00255381a3de9770d7fe0c943ee5f82b0ec2432f0a   (9,910,588 bytes)
+    SHA-256 6baac6ec7d391cf922490f533158b0cb6caa8cf51a272a9ee6a21e92c5d37469   (9,913,449 bytes)
     Paper 1.21.11-131, Java 21, relocated libraries and relocated SLF4J service provider
 
-Hash lineage this round: `d1aac80a…` (previous session) -> `d513a3cc…` (intermediate, void: the
-permission and anti-dupe-notice changes came after it) -> `d17b8f81…` (current).
+Hash lineage this round: `d1aac80a…` (previous session) -> `d513a3cc…` (void: permission and
+anti-dupe-notice changes came after it) -> `d17b8f81…` (void: the absence-mode fix came after it) ->
+`6baac6ec…` (current). Every change voided the earlier artifact's runtime evidence, and every gate was
+re-run for the survivor.
 
 Offline evidence for the current tree:
 
-    mvnw.cmd -o test                          952/952, 0 failures/errors/skipped
+    mvnw.cmd -o test                          959/959, 0 failures/errors/skipped
     python scripts/check_no_hardcoded_vietnamese.py
                                               0 violations (201 files), self-test 25/25
     python -m unittest discover -s scripts    70/70 tooling contracts
     mvnw.cmd -o -DskipTests package           BUILD SUCCESS
 
-Runtime evidence, all six gates PASS and bound to `d17b8f81…`:
+Runtime evidence, all six gates PASS and bound to `6baac6ec…`:
 
-    run/premium-paper-mysql-20260919-032349.json        single Paper, startup + restart
-    run/premium-two-paper-mysql-20260919-032519.json    two isolated Paper servers, one MySQL schema
-    run/premium-paper-migration-20260919-033809.json    SQLite -> MySQL /ig migrate, dry-run + confirm + refusal
-    run/premium-paper-failure-20260919-032823.json      reliability: no retry, port closed, committed state preserved
-    run/premium-paper-gameplay-20260919-033036.json     real-client gameplay journey
-    run/premium-backup-restore-20260919-033527.json     dump/restore into a second schema, partial restore refused
-    run/mysql-schema-gate-20260919-034058.json          43/43 across 11 tagged classes (this tree)
+    run/premium-paper-mysql-20260919-034937.json        single Paper, startup + restart
+    run/premium-two-paper-mysql-20260919-035111.json    two isolated Paper servers, one MySQL schema
+    run/premium-paper-migration-20260919-035300.json    SQLite -> MySQL /ig migrate: dry-run, confirm, non-empty refusal, persistence
+    run/premium-paper-failure-20260919-035519.json      reliability: fail-closed, no retry, port closed, committed state preserved
+    run/premium-paper-gameplay-20260919-035804.json     real-client gameplay journey (two protocol clients)
+    run/premium-backup-restore-20260919-040323.json     dump/restore into a second schema; partial and future-version restores refused
+    run/mysql-schema-gate-20260919-040850.json          43/43 across 11 tagged classes on this tree
 
-`run/superseded/` holds every receipt from earlier artifacts (they were moved, not deleted) so the
-current set is unambiguous; the two red schema-gate runs that found real defects stay in `run/`
-on purpose. Two harness pins had to move for schema v10:
-`paper_mysql_smoke.py` expected `plugin_stats` = 9, and `paper_migration_smoke.py` expected 9 after the
-dry-run and `9	7` after confirm; both now pin 10, with the comment recording that the last entry is
-the plugin's own schema stamp rather than migrated data.
+`run/superseded/` holds every receipt from earlier artifacts (moved, not deleted). The two red
+schema-gate receipts (`-024126`, `-024353`) stay in `run/` on purpose: they are the runs that found a
+real defect.
 
 What this round changed, in the order it matters:
 
-1. **Reclaim issuance.** An eligible reclaim used to end in `DENIED`/`ISSUANCE_GATE_CLOSED`. Now:
-   arm (PENDING -> PREPARED, off-thread, locking the identity through the claim table's unique index) ->
-   deliver (one snapshot stack, server thread, empty slot checked immediately before the write) ->
-   settle (delivered -> COMMITTED permanently; not delivered -> DENIED, retryable). One protocol, two
-   entry points: `/matdo sos` and `/finditem giveoldid` (own permission `itemguard.giveoldid`; absence
-   proven before anything is reserved). `reclaim.issuance-enabled` gates it, ships `false`, LITE off
-   regardless. Detail plus the not-implemented list:
-   `docs/design/2026-09-19-premium-reclaim-issuance.md`.
-2. **Discord is wired.** `DiscordWebhook` was constructed, exposed and never called. A confirmed
-   finding now sends it, on `discord.enabled` independently of `anti-dupe.notify-staff`; the unused
-   `sendDuplicateAlert(itemName, code, holderName, location)` was replaced by
-   `sendDuplicateFinding(code, itemUuid, distinctLocations, scanEpoch)` because detection cannot fill
-   in a holder or a location — that is the question the alert is asking.
-3. **Dead promises removed, and a test so they cannot come back.** `itemguard.restore` and
+1. **The reclaim hand-over exists** (arm -> deliver -> settle; one protocol shared by `/matdo sos` and
+   `/finditem giveoldid`; `reclaim.issuance-enabled` ships `false`).
+2. **The gate that made it unreachable is fixed, and this is the round's real finding.** Every external
+   presence probe returned `UNAVAILABLE` whether or not the plugin was installed, so the capability
+   gate denied every reclaim: correct code that could never fire. `reclaim.external-absence-mode` now
+   separates "not installed" (skipped in `INSTALLED_ONLY`, recorded in the claim evidence as
+   `NOT_APPLICABLE`) from "installed and unreadable" (still denies in both modes). `STRICT` remains the
+   shipped default, unrecognised values resolve to it, and the old two-argument probe methods keep the
+   refusing behaviour.
+3. **Discord is wired** to confirmed findings on its own switch, with an accurate payload instead of
+   the never-called `sendDuplicateAlert(itemName, code, holderName, location)`.
+4. **Dead promises deleted, with a test so they cannot return**: `itemguard.restore` and
    `itemguard.teleport` are gone from `plugin.yml`; `PermissionDeclarationContractTest` fails if any
-   declared node has no Java literal behind it (three-entry reasoned allow-list). Running it is what
-   turned up `itemguard.bypass` as a third case: with the alert gate corrected, nothing read it.
-4. **`anti-dupe.action` stops being silent.** A destructive choice is still downgraded to NOTIFY, but
-   it now logs one warning naming the effective action and how to silence it
-   (`DestructiveAntiDupeNotice`).
-5. **The earlier traps stay fixed**: duplicate alerts use `itemguard.notify` on both editions, and
-   `performance.auto-cleanup.enabled` is the switch it claims to be.
-6. **Owner-facing documentation**: `docs/release/PREMIUM_HANDOFF.md` (install, MySQL, migration,
-   backup/restore and rollback, permissions, secrets, evidence map) and a rewritten
-   `docs/release/LITE_VS_FULL.md` truth table, which also carries the list that still blocks a paid
-   listing.
+   declared node has no Java literal behind it. That test is what found `itemguard.bypass` as a third
+   dead node.
+5. **`anti-dupe.action` announces its downgrade** instead of silently ignoring a destructive choice.
+6. **Earlier traps stay fixed**: alerts use `itemguard.notify` on both editions; the
+   `performance.auto-cleanup.enabled` switch is the switch.
+7. **Owner-facing docs**: `docs/release/PREMIUM_HANDOFF.md` (install, MySQL, migration, backup/rollback,
+   permissions, secrets, evidence map), a rewritten `docs/release/LITE_VS_FULL.md` truth table, and
+   `docs/design/2026-09-19-premium-reclaim-issuance.md` — which also spells out the runtime gate
+   issuance still owes (held-item refusal, issuance after `/clear`, permanent lock, restart, the
+   full-inventory retry).
 
-Known flake, recorded because it cost a red run: `SqliteProcessLockCrossProcessTest` (the case that
-spawns a child JVM and waits for its `READY` line) failed once under load with an empty line and a
-still-locked temp database, then passed 3/3 in isolation and in the next full-suite run.
+Known flake, recorded because it cost a red run: `SqliteProcessLockCrossProcessTest` (child JVM + `READY`
+line) failed once under load, then passed in isolation and on the next full run.
 
 ## PREVIOUS — Branch `premium-mysql` — 2026-09-19 — config and permission traps closed; the admin info/ack surface and scan metrics land with schema v10
 

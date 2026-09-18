@@ -30,6 +30,7 @@ unimplemented. Those are listed at the bottom, in the owner's language.
 | That downgrade, when chosen | n/a | **now announced at startup** | `DestructiveAntiDupeNotice`, called from `ItemGuard.warnAboutIgnoredAntiDupeAction` |
 | Restore / reclaim | absent | **implemented behind a gate** — arm → deliver → settle, `COMMITTED` forever | `ReclaimIssuanceService`, `ReclaimIssuanceFlow`, `MatDoCommand.runIssuancePhase`, `FindItemCommand.giveOldId` |
 | Issuance switch | n/a | `reclaim.issuance-enabled`, ships `false`, LITE off regardless | `ConfigManager.isReclaimIssuanceEnabled`, `config.yml` |
+| Proving absence outside the player | n/a | `reclaim.external-absence-mode`: `STRICT` (ships) refuses when a storage plugin is not installed; `INSTALLED_ONLY` skips absent plugins and records the skip, still refusing for installed-but-unreadable ones | `ExternalAbsenceMode`, `ExternalPresenceProbeFactory`, `ExternalAbsenceModeTest` |
 | Teleport to a container | absent | **absent, and the permission is deleted** | no `itemguard.teleport` in `plugin.yml`; `PermissionDeclarationContractTest` |
 | `itemguard.restore` | absent | **deleted** — the reclaim path uses `itemguard.matdo` and `itemguard.giveoldid` | same test |
 | `itemguard.bypass` | absent | **deleted** — its only reader was the duplicate-alert gate, which was the bug | `InventoryScanTask.reportFindings`, same test |
@@ -75,7 +76,10 @@ unimplemented. Those are listed at the bottom, in the owner's language.
    headline features are proven only offline.
 2. **Decide the release shape with the owner**: whether `reclaim.issuance-enabled` ships `false` with
    the listing saying "enable after you have read the runbook" (current state), or the gate's runtime
-   evidence lands first and it ships `true`.
+   evidence lands first and it ships `true`. The second decision that travels with it is
+   `reclaim.external-absence-mode`: on a server without PlayerVaults/zAuctionHouse, `STRICT` (the
+   shipped value) means no reclaim can ever be issued, so a listing that advertises "get your item
+   back" has to say which setting it assumes.
 3. **Decide `anti-dupe.action`**: keep the downgrade and the new warning, or design the audited
    destructive path (audit record with actor/reason/evidence/result per `PRODUCT_REQUIREMENTS.md:25`).
 4. **Requirements still unimplemented**: per-player reclaim cooldown/quota,

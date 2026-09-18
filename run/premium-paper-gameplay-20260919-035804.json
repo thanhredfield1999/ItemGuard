@@ -1,0 +1,261 @@
+{
+  "status": "PASS",
+  "fixture": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-24c5a294964c",
+  "stage": {
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-24c5a294964c",
+    "server_port": 49650,
+    "server_id": "paper-premium-1",
+    "mysql_host": "127.0.0.1",
+    "mysql_port": 33316,
+    "mysql_database": "itemguard_premium",
+    "paper_sha256": "6c099540fccd27e10750d1adcb382f1552fb5aa2816aeaf2cc1efb23ddd9e3df",
+    "premium_jar_sha256": "6baac6ec7d391cf922490f533158b0cb6caa8cf51a272a9ee6a21e92c5d37469",
+    "probe_jar_sha256": "837e540bf7e34085b7e427810e624bd3f9d17c642494e5dfb2617f8dc0c1ad7e",
+    "probe_source_sha256": "ed88121f137c8b1f52001cdb1a2e232eefc3d7f21810d4fe762913a836f10bad",
+    "client_script_sha256": "4ae6071be232fb48b4c166602abf73ace63c6f92129025438491ca8ae384500e",
+    "config_sha256": "efd60b8794546c7ca436fcc6959de90483d9f911951462f55adeaf19295e4808",
+    "ops_sha256": "b9ee53277facc0f3b8beffa44e6c49c87aa4600b38c425153b932fb8e2fa8070",
+    "runner_sha256": "f1476e3cbf56e84704de4208ba7c284e8180cedc4b0f1c984e654be77c17b06a",
+    "node": "C:\\Program Files\\nodejs\\node.EXE",
+    "java": "C:\\Program Files\\Java\\jdk-21\\bin\\java.exe",
+    "created_at": "2026-09-19T03:55:25+07:00"
+  },
+  "generations": [
+    {
+      "generation": 1,
+      "mode": "full",
+      "client_result": {
+        "status": "PASS",
+        "code": "170Y8L",
+        "actions": [
+          "give",
+          "equip",
+          "check",
+          "commands",
+          "legacy_gui",
+          "drop",
+          "walk_pickup",
+          "chest_put",
+          "chest_take",
+          "member_history_gui",
+          "catalog_gui"
+        ],
+        "event": "CLIENT_RESULT"
+      },
+      "client_events": [
+        {
+          "player": "PremiumStaff",
+          "name": "diamond_sword",
+          "event": "item-equipped"
+        },
+        {
+          "player": "PremiumStaff",
+          "code": "170Y8L",
+          "event": "identity"
+        },
+        {
+          "info": true,
+          "stats": true,
+          "search": true,
+          "search_line": "=== Search: PremiumStaff ===",
+          "event": "commands"
+        },
+        {
+          "browser_title": "{\"type\":\"compound\",\"value\":{\"extra\":{\"type\":\"list\",\"value\":{\"type\":\"compound\",\"value\":[{\"bold\":{\"type\":\"byte\",\"value\":1},\"color\":{\"type\":\"string\",\"value\":\"dark_gray\"},\"text\":{\"type\":\"string\",\"value\":\"ItemGuard \"}},{\"color\":{\"type\":\"string\",\"value\":\"gray\"},\"text\":{\"type\":\"string\",\"value\":\"- Do Cua PremiumStaff \"}},{\"color\":{\"type\":\"string\",\"value\":\"gray\"},\"text\":{\"type\":\"string\",\"value\":\"(Trang 1/1)\"}}]}},\"text\":{\"type\":\"string\",\"value\":\"\"}}}",
+          "browser": true,
+          "history": true,
+          "detail": true,
+          "back": true,
+          "exit_to_browser": true,
+          "close": true,
+          "event": "legacy-gui"
+        },
+        {
+          "player": "PremiumStaff",
+          "entity": 4,
+          "event": "real-drop"
+        },
+        {
+          "player": "PremiumMember",
+          "name": "diamond_sword",
+          "event": "real-pickup"
+        },
+        {
+          "player": "PremiumMember",
+          "slot": 54,
+          "event": "real-chest-put"
+        },
+        {
+          "player": "PremiumMember",
+          "slot": 0,
+          "event": "real-chest-take"
+        },
+        {
+          "player": "PremiumMember",
+          "title": "{\"type\":\"compound\",\"value\":{\"extra\":{\"type\":\"list\",\"value\":{\"type\":\"compound\",\"value\":[{\"color\":{\"type\":\"string\",\"value\":\"gray\"},\"text\":{\"type\":\"string\",\"value\":\"(Trang 1/1)\"}}]}},\"text\":{\"type\":\"string\",\"value\":\"ItemGuard - Lich Su Item \"}}}",
+          "detail": true,
+          "back": true,
+          "exit_outcome": "browser",
+          "event": "member-history-gui"
+        },
+        {
+          "title": "{\"type\":\"string\",\"value\":\"Kho tra cứu · 1\"}",
+          "slot": 9,
+          "item": "diamond_sword",
+          "event": "catalog-inspected"
+        },
+        {
+          "profile_title": "{\"type\":\"string\",\"value\":\"Hồ sơ · 170Y8L\"}",
+          "history_title": "{\"type\":\"string\",\"value\":\"Lịch sử · 170Y8L · 1\"}",
+          "catalog_history_retries": 1,
+          "open": true,
+          "profile": true,
+          "history": true,
+          "event_screen": true,
+          "back_chain": true,
+          "close": true,
+          "event": "catalog-gui"
+        },
+        {
+          "status": "PASS",
+          "code": "170Y8L",
+          "actions": [
+            "give",
+            "equip",
+            "check",
+            "commands",
+            "legacy_gui",
+            "drop",
+            "walk_pickup",
+            "chest_put",
+            "chest_take",
+            "member_history_gui",
+            "catalog_gui"
+          ],
+          "event": "CLIENT_RESULT"
+        }
+      ],
+      "server_history_actions": [
+        "CONTAINER_TAKE",
+        "CONTAINER_PUT",
+        "USE",
+        "PICKUP",
+        "DROP",
+        "INVENTORY_MOVE",
+        "SPAWN"
+      ],
+      "mysql": {
+        "tracked_items": 1,
+        "item_history": 7,
+        "item_snapshots": 1,
+        "servers": [
+          "paper-premium-1"
+        ],
+        "member_actions": [
+          "CONTAINER_PUT",
+          "CONTAINER_TAKE",
+          "PICKUP",
+          "USE"
+        ],
+        "staff_actions": [
+          "DROP",
+          "INVENTORY_MOVE",
+          "SPAWN"
+        ]
+      },
+      "client_log": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-24c5a294964c\\client-1.log",
+      "catalog_history_retries": 1
+    },
+    {
+      "generation": 2,
+      "mode": "restart",
+      "client_result": {
+        "status": "PASS",
+        "code": "170Y8L",
+        "actions": [
+          "inventory_readback",
+          "check_readback",
+          "stats_readback"
+        ],
+        "event": "RESTART_RESULT"
+      },
+      "client_events": [
+        {
+          "status": "PASS",
+          "code": "170Y8L",
+          "actions": [
+            "inventory_readback",
+            "check_readback",
+            "stats_readback"
+          ],
+          "event": "RESTART_RESULT"
+        }
+      ],
+      "mysql": {
+        "tracked_items": 1,
+        "item_history": 7,
+        "item_snapshots": 1,
+        "servers": [
+          "paper-premium-1"
+        ],
+        "member_actions": [
+          "CONTAINER_PUT",
+          "CONTAINER_TAKE",
+          "PICKUP",
+          "USE"
+        ],
+        "staff_actions": [
+          "DROP",
+          "INVENTORY_MOVE",
+          "SPAWN"
+        ]
+      },
+      "client_log": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-24c5a294964c\\client-2.log"
+    }
+  ],
+  "cleanup": [
+    {
+      "child": "client-1",
+      "pid": 45884,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "mode": "full"
+    },
+    {
+      "child": "paper-1",
+      "pid": 13216,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "port_released": true
+    },
+    {
+      "child": "client-2",
+      "pid": 40904,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "mode": "restart"
+    },
+    {
+      "child": "paper-2",
+      "pid": 43132,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "port_released": true
+    }
+  ],
+  "started_at": "2026-09-19T03:55:25+07:00",
+  "mysql_reset": "itemguard_premium recreated on 127.0.0.1:33316",
+  "identity_code": "170Y8L",
+  "mysql_cleanup": {
+    "exit": 0,
+    "port_closed": true,
+    "process_gone": true,
+    "stdout": "EVIDENCE port_open=False process_gone=True\nstopped\n",
+    "stderr": ""
+  },
+  "finished_at": "2026-09-19T03:58:04+07:00"
+}

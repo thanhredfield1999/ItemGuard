@@ -39,6 +39,69 @@ The order is the guarantee, and each choice answers a specific failure:
 - With the gate off, both paths end in `DENIED` with `ISSUANCE_DISABLED` and say which key it is —
   nothing is issued, and the refusal names the reason.
 
+## The gate that made all of this unreachable, and what was done about it
+
+Found by reading the probes after the hand-over was written, not by running it: **every external
+probe returned `UNAVAILABLE`, always** — `PlayerVaultsX`/`PlayerVaults` and `zAuctionHouse` alike,
+installed or not, with the reasoning written out in `ExternalPresenceProbeFactory`. The capability
+gate denies on `UNAVAILABLE`, so on any server — including a fixture with none of those plugins
+installed — `/matdo sos` could only ever end in `DENIED_UNAVAILABLE`. The feature was correct and
+unreachable.
+
+That was a deliberate fail-closed choice (`ExternalPresenceProbeFactoryTest` pinned it), and the
+requirement behind it is real: *"Adapter unavailable/timeout phải deny, không coi là absent."* The
+distinction it was missing is between a plugin that **is not there** and a plugin that **is there and
+cannot be read**:
+
+- **Not installed** — it holds no items, and there is nothing to prove. Under the old behaviour it
+  still blocked every reclaim.
+- **Installed but unreadable** within a hard bound (every audited API here) — the identity might be
+  inside, so it denies. Unchanged in both modes.
+
+`reclaim.external-absence-mode` now chooses how the first case is treated:
+
+| Mode | Not installed | Installed but unreadable |
+|---|---|---|
+| `STRICT` (default, shipped) | `UNAVAILABLE` → deny | `UNAVAILABLE` → deny |
+| `INSTALLED_ONLY` | `NOT_APPLICABLE` → skipped, recorded in the evidence | `UNAVAILABLE` → deny |
+
+`NOT_APPLICABLE` is a new `PresenceStatus` that the gate never treats as blocking, and it is written
+into the claim detail for every skipped source, so "we checked two of four sources and skipped these
+two, because they are not installed" is visible to whoever judges the claim. An unrecognised or blank
+setting resolves to `STRICT` (`ExternalAbsenceMode.parse`), and the three-argument probe methods still
+default to `STRICT`, so no existing caller silently became permitted to issue.
+
+## The runtime gate that is still owed, spelled out
+
+Issuance has unit, contract and schema coverage and the six gates for the current artifact all pass —
+but none of them *issues* anything. The gate below is what turns "implemented" into "watched working",
+and it is the acceptance criterion named in `docs/release/LITE_VS_FULL.md`:
+
+Fixture config: `reclaim.issuance-enabled: true`, `reclaim.external-absence-mode: INSTALLED_ONLY`
+(otherwise every presence probe denies, which is the point of §"The gate that made all of this
+unreachable"). One real protocol client, `PremiumStaff`, in a controlled Paper + MySQL fixture.
+
+1. `/clear` then `/give` a sword, equip it, `/ig check` → a code comes back, so identity and snapshot
+   exist. Assert `item_snapshots` has a row for the code.
+2. `/matdo check` → the item is listed as eligible (proves the player-facing list path).
+3. `/matdo sos <code>` **while the item is held** → refuse with the `PLAYER_INVENTORY` blocker and a
+   `DENIED` claim. This is the negative case: presence must beat the request.
+4. `/clear <player>` (vanilla) → the item is destroyed; the snapshot is the only copy left.
+5. `/matdo sos <code>` → the issued message arrives and the stack is **in the client's inventory**
+   (client-side assertion, not just a server log line). Assert `reclaim_claims.state = COMMITTED`
+   with `issued to PremiumStaff` in the detail, and one `item_history` row with action
+   `RECLAIM_ISSUED`.
+6. `/matdo sos <code>` again → refused by the claim lock, and the inventory still holds exactly one
+   sword. This is the anti-duplication assertion, and it is the one that matters most.
+7. Restart Paper, `/matdo check` → the identity is still committed; a second issuance is impossible.
+8. Inventory-full retry: with a full inventory, issuance must end `DENIED` (retryable) and the item
+   must still be claimable after making room — the failure path that protects the player's item.
+
+Everything the gate cannot cover, stated up front: it uses `INSTALLED_ONLY`, so it does not prove
+behaviour with PlayerVaults or zAuctionHouse actually installed (their APIs still deny, and a fixture
+with those plugins has not been built); it does not exercise `/finditem giveoldid` (the same flow, a
+different entry point — worth adding); and it does not cover a crash *between* delivery and commit.
+
 ## Boundaries — not implemented, and not claimed
 
 - **Cooldown and per-player quota.** The requirement lists them; today the only limit is the unique

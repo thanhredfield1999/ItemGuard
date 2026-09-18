@@ -55,6 +55,11 @@ public final class ReclaimCapabilityGate {
                 PresenceStatus.UNAVAILABLE
             );
         }
+        // PresenceStatus.NOT_APPLICABLE is deliberately not in the list above: it means the source is
+        // not installed and therefore holds nothing (INSTALLED_ONLY mode records one of these per
+        // skipped plugin). It stays in the evidence so the claim detail names what was skipped, and
+        // it can never turn a present-or-unreadable source into an eligible decision, because those
+        // are checked first.
         return new ReclaimDecision(ReclaimDecisionStatus.ELIGIBLE, evidence);
     }
 

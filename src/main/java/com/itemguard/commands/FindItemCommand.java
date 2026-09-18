@@ -2,6 +2,7 @@ package com.itemguard.commands;
 
 import com.itemguard.ItemGuard;
 import com.itemguard.data.ItemData;
+import com.itemguard.reclaim.ExternalAbsenceMode;
 import com.itemguard.reclaim.ExternalPresenceProbeFactory;
 import com.itemguard.reclaim.PlayerInventoryPresenceProbe;
 import com.itemguard.reclaim.PresenceEvidence;
@@ -187,10 +188,13 @@ public final class FindItemCommand implements CommandExecutor, TabCompleter {
             () -> {
                 ExternalPresenceProbeFactory externalProbes =
                     new ExternalPresenceProbeFactory(this::enabledPluginVersion);
+                ExternalAbsenceMode mode = ExternalAbsenceMode.parse(
+                    plugin.getConfigs().getExternalAbsenceMode()
+                );
                 return List.of(
                     new PlayerInventoryPresenceProbe(plugin.getTrackingService()),
-                    externalProbes.playerVaultsProbe(),
-                    externalProbes.zAuctionHouseProbe()
+                    externalProbes.playerVaultsProbe(mode),
+                    externalProbes.zAuctionHouseProbe(mode)
                 );
             }
         );

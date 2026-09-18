@@ -29,10 +29,14 @@ class ExternalPresenceProbeFactoryTest {
 
         assertEquals("PLAYER_VAULTS", vaults.source());
         assertEquals(PresenceStatus.UNAVAILABLE, vaults.status());
-        assertTrue(vaults.detail().contains("not enabled"));
+        assertTrue(vaults.detail().contains("not installed"),
+            "the wording now distinguishes 'not here' from 'here and unreadable', which is what "
+                + "INSTALLED_ONLY keys off: " + vaults.detail());
+        assertTrue(vaults.detail().contains("absence cannot be proven"));
         assertEquals("ZAUCTIONHOUSE", auction.source());
         assertEquals(PresenceStatus.UNAVAILABLE, auction.status());
-        assertTrue(auction.detail().contains("not enabled"));
+        assertTrue(auction.detail().contains("not installed"), auction.detail());
+        assertTrue(auction.detail().contains("absence cannot be proven"));
     }
 
     @Test

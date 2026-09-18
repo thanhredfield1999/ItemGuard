@@ -17,6 +17,7 @@ public record RestartSensitiveSettings(
     String discordUsername,
     String discordAvatarUrl,
     int reclaimHistoryDays,
+    String externalAbsenceMode,
     boolean reclaimIssuanceEnabled
 ) {
     public RestartSensitiveSettings {
@@ -37,6 +38,7 @@ public record RestartSensitiveSettings(
             config.getString("discord.username", "ItemGuard Alerts"),
             config.getString("discord.avatar-url", ""),
             config.getInt("reclaim.history-days", 20),
+            config.getString("reclaim.external-absence-mode", "STRICT"),
             config.getBoolean("reclaim.issuance-enabled", false)
         );
     }

@@ -23,6 +23,7 @@ public final class ReloadPolicy {
         addIfChanged(changed, "discord.username", current.discordUsername(), candidate.discordUsername());
         addIfChanged(changed, "discord.avatar-url", current.discordAvatarUrl(), candidate.discordAvatarUrl());
         addIfChanged(changed, "reclaim.history-days", current.reclaimHistoryDays(), candidate.reclaimHistoryDays());
+        addIfChanged(changed, "reclaim.external-absence-mode", current.externalAbsenceMode(), candidate.externalAbsenceMode());
         addIfChanged(changed, "reclaim.issuance-enabled", current.reclaimIssuanceEnabled(), candidate.reclaimIssuanceEnabled());
 
         ReloadStatus status = changed.isEmpty()

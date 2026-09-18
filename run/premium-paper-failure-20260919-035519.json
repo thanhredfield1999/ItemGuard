@@ -1,0 +1,85 @@
+{
+  "status": "PASS",
+  "fixture": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-failure-808203833c4d",
+  "probe_sha256": "9869690caf2b71a2bd3ec1549e0ff145c8dc558e0294be079619b26ba9902ac5",
+  "runner_sha256": "8c48e7a2e14bae1f5b9862b8891f0dfc6b8b919dc4a3313bef5b7523a60fd1ac",
+  "premium_jar_sha256": "6baac6ec7d391cf922490f533158b0cb6caa8cf51a272a9ee6a21e92c5d37469",
+  "phases": {
+    "startup_unreachable": {
+      "status": "FAIL_CLOSED_PASS",
+      "unreachable_mysql_port": 51887,
+      "enabled_marker_seen": false,
+      "mysql_initialized_marker_seen": false,
+      "lifecycle_disabled_marker_seen": true,
+      "log_path": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-failure-808203833c4d\\startup-unreachable\\paper-1.log"
+    },
+    "runtime_ready": {
+      "status": "PASS",
+      "committed_baseline": 7,
+      "duplicates_detected": 7
+    },
+    "mysql_outage": {
+      "status": "PORT_CLOSED_PASS",
+      "stdout": "EVIDENCE port_open=False process_gone=True\nstopped\n",
+      "stderr": ""
+    },
+    "outage_write": {
+      "status": "FAIL_CLOSED_NO_RETRY_PASS",
+      "started_markers": 1,
+      "failed_markers": 1,
+      "unexpected_success_markers": 0
+    },
+    "recovery": {
+      "status": "COMMITTED_STATE_PRESERVED_PASS",
+      "expected_committed_value": 7,
+      "rows": [
+        "7"
+      ]
+    }
+  },
+  "cleanup": [
+    {
+      "phase": "startup-unreachable",
+      "pid": 23420,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "port_released": true
+    },
+    {
+      "phase": "runtime-outage",
+      "pid": 37832,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "port_released": true
+    }
+  ],
+  "started_at": "2026-09-19T03:53:03+07:00",
+  "runtime_manifest": {
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-failure-808203833c4d\\runtime-outage",
+    "paper_port": 57577,
+    "mysql_port": 33316,
+    "server_id": "paper-failure-1",
+    "paper_sha256": "6c099540fccd27e10750d1adcb382f1552fb5aa2816aeaf2cc1efb23ddd9e3df",
+    "premium_jar_sha256": "6baac6ec7d391cf922490f533158b0cb6caa8cf51a272a9ee6a21e92c5d37469",
+    "probe_jar_sha256": "9869690caf2b71a2bd3ec1549e0ff145c8dc558e0294be079619b26ba9902ac5",
+    "config_sha256": "a38937c02a381d82fb11f3ae40f4fde33c6d7b395e6e70c4a1d321e054d1d950"
+  },
+  "mysql_cleanup": {
+    "exit": 0,
+    "port_closed": true,
+    "process_gone": true,
+    "stdout": "EVIDENCE port_open=False process_gone=True\nstopped\n",
+    "stderr": ""
+  },
+  "probe_temp_cleanup": {
+    "removed": [
+      "E:\\AI.WORK\\ItemGuard\\tools\\premium-runtime\\.failure-probe.jar",
+      "E:\\AI.WORK\\ItemGuard\\tools\\premium-runtime\\.failure-probe-build"
+    ],
+    "errors": [],
+    "clean": true
+  },
+  "finished_at": "2026-09-19T03:55:19+07:00"
+}

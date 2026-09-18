@@ -278,6 +278,19 @@ reclaim:
   # It ships off because handing out items is the one action a server owner should switch on
   # deliberately, after a controlled runtime gate on their own Paper build. /matdo sos without it
   # answers that the gate is closed and leaves the claim denied — nothing is issued by default.
+  # How to treat storage plugins that are not installed when proving absence.
+  #
+  # STRICT (default): every probe must prove absence. PlayerVaults/PlayerVaultsX and zAuctionHouse
+  # deny even when installed, because no bounded read-only identity query proves absence in their
+  # public APIs — so on a server that does not run them, every reclaim is refused. That is the safe
+  # side and it is the shipped default.
+  #
+  # INSTALLED_ONLY: a plugin that is not installed is recorded as NOT_APPLICABLE in the claim's
+  # evidence and skipped (it holds nothing to search), while any plugin that IS installed and cannot
+  # be read still denies. Choose this only if you know your server does not keep items in those
+  # plugins; the claim detail names every skipped source so the decision stays auditable.
+  external-absence-mode: STRICT
+
   issuance-enabled: false
 
 # ---------- LOGGING ----------

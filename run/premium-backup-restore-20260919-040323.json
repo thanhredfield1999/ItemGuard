@@ -1,0 +1,252 @@
+{
+  "status": "PASS",
+  "fixture": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-863b5fbc696c",
+  "stage": {
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-863b5fbc696c",
+    "server_port": 55385,
+    "server_id": "paper-premium-1",
+    "mysql_host": "127.0.0.1",
+    "mysql_port": 33316,
+    "mysql_database": "itemguard_premium",
+    "paper_sha256": "6c099540fccd27e10750d1adcb382f1552fb5aa2816aeaf2cc1efb23ddd9e3df",
+    "premium_jar_sha256": "6baac6ec7d391cf922490f533158b0cb6caa8cf51a272a9ee6a21e92c5d37469",
+    "probe_jar_sha256": "837e540bf7e34085b7e427810e624bd3f9d17c642494e5dfb2617f8dc0c1ad7e",
+    "probe_source_sha256": "ed88121f137c8b1f52001cdb1a2e232eefc3d7f21810d4fe762913a836f10bad",
+    "client_script_sha256": "4ae6071be232fb48b4c166602abf73ace63c6f92129025438491ca8ae384500e",
+    "config_sha256": "efd60b8794546c7ca436fcc6959de90483d9f911951462f55adeaf19295e4808",
+    "ops_sha256": "b9ee53277facc0f3b8beffa44e6c49c87aa4600b38c425153b932fb8e2fa8070",
+    "runner_sha256": "f1476e3cbf56e84704de4208ba7c284e8180cedc4b0f1c984e654be77c17b06a",
+    "node": "C:\\Program Files\\nodejs\\node.EXE",
+    "java": "C:\\Program Files\\Java\\jdk-21\\bin\\java.exe",
+    "created_at": "2026-09-19T03:58:09+07:00"
+  },
+  "phases": {
+    "A_seed": {
+      "client_result": {
+        "status": "PASS",
+        "mode": "seed",
+        "code": "CMFC5E",
+        "actions": [
+          "give",
+          "equip",
+          "check",
+          "drop",
+          "walk_pickup"
+        ],
+        "event": "CLIENT_RESULT"
+      },
+      "client_events": [
+        {
+          "player": "PremiumStaff",
+          "name": "diamond_sword",
+          "event": "item-equipped"
+        },
+        {
+          "player": "PremiumStaff",
+          "code": "CMFC5E",
+          "event": "identity"
+        },
+        {
+          "player": "PremiumStaff",
+          "entity": 4,
+          "event": "real-drop"
+        },
+        {
+          "player": "PremiumMember",
+          "name": "diamond_sword",
+          "event": "real-pickup"
+        },
+        {
+          "status": "PASS",
+          "mode": "seed",
+          "code": "CMFC5E",
+          "actions": [
+            "give",
+            "equip",
+            "check",
+            "drop",
+            "walk_pickup"
+          ],
+          "event": "CLIENT_RESULT"
+        }
+      ],
+      "server_history_actions": [
+        "PICKUP",
+        "DROP",
+        "INVENTORY_MOVE",
+        "SPAWN"
+      ],
+      "source_rows": {
+        "counts": {
+          "tracked_items": 1,
+          "item_history": 4,
+          "item_observations": 0,
+          "duplicate_findings": 0,
+          "item_search_requests": 0,
+          "item_snapshots": 1,
+          "reclaim_claims": 0,
+          "tag_publications": 2,
+          "plugin_stats": 1
+        },
+        "missing_tables": [],
+        "schema_version": "10"
+      }
+    },
+    "B1_dump": {
+      "path": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-863b5fbc696c\\dump\\itemguard_premium.sql",
+      "sha256": "881eab3867fbef3c2f97e90fa35568255e6230e3e0b98110667b8709eb2aff59",
+      "bytes": 17108,
+      "contains_code": true
+    },
+    "B2_restore": {
+      "database": "itemguard_restore",
+      "rows": {
+        "counts": {
+          "tracked_items": 1,
+          "item_history": 4,
+          "item_observations": 0,
+          "duplicate_findings": 0,
+          "item_search_requests": 0,
+          "item_snapshots": 1,
+          "reclaim_claims": 0,
+          "tag_publications": 2,
+          "plugin_stats": 1
+        },
+        "missing_tables": [],
+        "schema_version": "10"
+      }
+    },
+    "B3_readback": {
+      "database": "itemguard_restore",
+      "config_sha256": "5621103d9c9fdd6c04792f6d18588a672b2564ffaf083e1d3e8391a72c72205d",
+      "client_result": {
+        "status": "PASS",
+        "code": "CMFC5E",
+        "actions": [
+          "inventory_readback",
+          "check_readback",
+          "stats_readback"
+        ],
+        "event": "RESTART_RESULT"
+      },
+      "client_events": [
+        {
+          "status": "PASS",
+          "code": "CMFC5E",
+          "actions": [
+            "inventory_readback",
+            "check_readback",
+            "stats_readback"
+          ],
+          "event": "RESTART_RESULT"
+        }
+      ],
+      "server_history_actions": [
+        "PICKUP",
+        "DROP",
+        "INVENTORY_MOVE",
+        "SPAWN"
+      ],
+      "rows": {
+        "counts": {
+          "tracked_items": 1,
+          "item_history": 4,
+          "item_observations": 0,
+          "duplicate_findings": 0,
+          "item_search_requests": 0,
+          "item_snapshots": 1,
+          "reclaim_claims": 0,
+          "tag_publications": 2,
+          "plugin_stats": 1
+        },
+        "missing_tables": [],
+        "schema_version": "10"
+      }
+    },
+    "C_partial_restore": {
+      "database": "itemguard_partial_restore",
+      "server_started": true,
+      "plugin_enabled": false,
+      "item_history_recreated": false,
+      "refusal_lines": [
+        "[04:00:49 ERROR]: Error occurred while enabling ItemGuard v1.0.0 (Is it up to date?)",
+        "Caused by: java.sql.SQLException: Refusing to start: this database carries ItemGuard's schema metadata but is missing item_history. A restore that lost tables is not repaired by re-creating them empty � that would silently drop the history those tables held. Restore the full dump again (or drop this schema to start fresh) and start ItemGuard once it is complete.",
+        "[04:00:49 INFO]: [ItemGuard] ItemGuard is disabled."
+      ],
+      "observed_verdict": "REFUSED_FAIL_CLOSED"
+    },
+    "D_future_schema": {
+      "database": "itemguard_partial_restore",
+      "server_started": true,
+      "plugin_enabled": false,
+      "refusal_lines": [
+        "[04:02:22 ERROR]: Error occurred while enabling ItemGuard v1.0.0 (Is it up to date?)",
+        "Caused by: java.sql.SQLException: Unsupported future ItemGuard schema version: 99",
+        "[04:02:22 INFO]: [ItemGuard] ItemGuard is disabled."
+      ],
+      "observed_verdict": "REFUSED_FAIL_CLOSED"
+    }
+  },
+  "findings": [],
+  "cleanup": [
+    {
+      "child": "client-1",
+      "pid": 41164,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "mode": "seed"
+    },
+    {
+      "child": "paper-1",
+      "pid": 47812,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "port_released": true
+    },
+    {
+      "child": "client-2",
+      "pid": 39028,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "mode": "restart"
+    },
+    {
+      "child": "paper-2",
+      "pid": 27048,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "port_released": true
+    },
+    {
+      "child": "paper-3",
+      "pid": 40600,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "port_released": true
+    },
+    {
+      "child": "paper-4",
+      "pid": 29272,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "port_released": true
+    }
+  ],
+  "started_at": "2026-09-19T03:58:09+07:00",
+  "mysql_reset": "itemguard_premium recreated on 127.0.0.1:33316",
+  "identity_code": "CMFC5E",
+  "mysql_cleanup": {
+    "exit": 0,
+    "port_closed": true,
+    "process_gone": true,
+    "stdout": "EVIDENCE port_open=False process_gone=True\nstopped\n",
+    "stderr": ""
+  },
+  "finished_at": "2026-09-19T04:03:23+07:00"
+}
