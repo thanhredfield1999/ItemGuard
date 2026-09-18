@@ -522,6 +522,113 @@ async function runRestart() {
   return readback;
 }
 
+
+// ---------------------------------------------------------------------------------------------
+// Reclaim hand-over journey. See docs/design/2026-09-19-premium-reclaim-issuance.md for the
+// scenario this implements and what each step is asserting.
+// ---------------------------------------------------------------------------------------------
+
+async function runReclaim(staff) {
+  await waitUntil(() => Boolean(staff.entity), 60000, 'reclaim client did not spawn');
+  await sleep(1500);
+
+  // 1. A tracked item, in hand: identity and snapshot are written by the check path.
+  await chat(staff, '/clear PremiumStaff');
+  await chat(staff, '/give PremiumStaff minecraft:diamond_sword 1');
+  await ensureSwordInHand(staff);
+  const code = await commandCheck(staff);
+  emit('reclaim-item', { code, held: sword(staff) ? sword(staff).name : null });
+
+  // 2. The item is in this client's inventory, so absence is not proven: the request must be refused.
+  let baseline = messageCursor(staff);
+  await chat(staff, `/matdo sos ${code}`);
+  const refusedWhileHeld = await waitMessage(staff, baseline,
+    (text) => /Tu choi lay lai/i.test(text) || /PLAYER_INVENTORY/i.test(text)
+      || /da co yeu cau/i.test(text),
+    15000, '/matdo sos did not answer while the item was held');
+  emit('reclaim-refused-present', { line: refusedWhileHeld });
+
+  // 3. Destroy it with a vanilla command: now the snapshot is the only copy left.
+  await chat(staff, '/clear PremiumStaff');
+  await sleep(2000);
+  assertNoSword(staff, 'the item was not actually destroyed');
+
+  // 4. The hand-over: the snapshot stack must land in this client's inventory.
+  baseline = messageCursor(staff);
+  await chat(staff, `/matdo sos ${code}`);
+  const issued = await waitMessage(staff, baseline,
+    (text) => /Da tra lai vat pham/i.test(text) || /Khong cap duoc vat pham/i.test(text)
+      || /chua bat cap lai do/i.test(text),
+    20000, '/matdo sos never answered');
+  if (!/Da tra lai vat pham/i.test(issued)) {
+    throw new Error(`the item was not issued: ${issued}`);
+  }
+  const restored = await waitItem(staff, (item) => itemName(item) === 'diamond_sword', 15000,
+    'the issued item never appeared in the client inventory');
+  emit('reclaim-issued', { line: issued, item: restored.name });
+
+  // 5. The claim is committed and that is permanent: asking again must not hand out a second copy.
+  const countBefore = countSwords(staff);
+  baseline = messageCursor(staff);
+  await chat(staff, `/matdo sos ${code}`);
+  const refusedAgain = await waitMessage(staff, baseline,
+    (text) => /da co yeu cau|khong con o trang thai|da cap lai/i.test(text),
+    15000, 'a second /matdo sos was not refused');
+  await sleep(1500);
+  const countAfter = countSwords(staff);
+  emit('reclaim-lock', { line: refusedAgain, before: countBefore, after: countAfter });
+  if (countAfter !== countBefore) {
+    throw new Error(`a second issuance duplicated the item: ${countBefore} -> ${countAfter}`);
+  }
+
+  emit('CLIENT_RESULT', {
+    status: 'PASS',
+    mode: 'reclaim',
+    code,
+    actions: ['give', 'equip', 'check', 'refuse-while-held', 'clear', 'issue', 'refuse-locked'],
+    swords_after_lock: countAfter
+  });
+  return code;
+}
+
+// After a clean restart the claim must still be committed: the item the player is holding must stay
+// the only one, and a fresh attempt must be refused by the same lock rather than issuing again.
+async function runReclaimRestart(staff, code) {
+  await waitUntil(() => Boolean(staff.entity), 60000, 'reclaim restart client did not spawn');
+  await sleep(1500);
+  if (!code) throw new Error('reclaim restart needs the code from generation 1');
+
+  const countBefore = countSwords(staff);
+  const baseline = messageCursor(staff);
+  await chat(staff, `/matdo sos ${code}`);
+  const refused = await waitMessage(staff, baseline,
+    (text) => /da co yeu cau|khong con o trang thai|da cap lai|Tu choi lay lai/i.test(text),
+    15000, 'the committed claim was not refused after a restart');
+  await sleep(1500);
+  const countAfter = countSwords(staff);
+  emit('reclaim-restart', { line: refused, before: countBefore, after: countAfter });
+  if (countAfter !== countBefore) {
+    throw new Error(`a restart allowed a second issuance: ${countBefore} -> ${countAfter}`);
+  }
+
+  emit('CLIENT_RESULT', {
+    status: 'PASS',
+    mode: 'reclaim-restart',
+    code,
+    actions: ['sos-after-restart'],
+    swords_after_lock: countAfter
+  });
+  return code;
+}
+
+function countSwords(bot) {
+  return bot.inventory.items().filter((item) => itemName(item) === 'diamond_sword').length;
+}
+
+function assertNoSword(bot, message) {
+  if (countSwords(bot) !== 0) throw new Error(message);
+}
+
 async function stopBots() {
   for (const bot of bots.values()) {
     try { bot.quit(); } catch (_) {}
@@ -534,6 +641,8 @@ async function stopBots() {
   try {
     if (mode === 'restart') await runRestart();
     else if (mode === 'seed') await runSeed();
+    else if (mode === 'reclaim') await runReclaim(makeBot('PremiumStaff'));
+    else if (mode === 'reclaim-restart') await runReclaimRestart(makeBot('PremiumStaff'), expectedCode);
     else await runFull();
     await stopBots();
     process.exit(0);

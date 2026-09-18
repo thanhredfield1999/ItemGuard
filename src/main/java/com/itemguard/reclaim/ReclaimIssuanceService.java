@@ -54,16 +54,20 @@ public final class ReclaimIssuanceService {
         if (claim.state() != ReclaimClaimState.PENDING) {
             return new ReclaimIssuanceDecision(ReclaimIssuanceStatus.REFUSED_STATE, claim);
         }
+        long now = clockMillis.getAsLong();
+        String detail = "armed for delivery";
         boolean moved = store.transitionReclaimClaim(
             claim.claimId(),
             ReclaimClaimState.PENDING,
             ReclaimClaimState.PREPARED,
-            clockMillis.getAsLong(),
-            "armed for delivery"
+            now,
+            detail
         );
+        // The decision carries the claim *after* the transition: the hand-over's next step requires a
+        // PREPARED record, and returning the pre-arm copy is what made settle refuse for ever.
         return new ReclaimIssuanceDecision(
             moved ? ReclaimIssuanceStatus.ARMED : ReclaimIssuanceStatus.REFUSED_STALE,
-            claim
+            moved ? claim.movedTo(ReclaimClaimState.PREPARED, now, detail) : claim
         );
     }
 

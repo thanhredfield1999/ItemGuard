@@ -1,0 +1,193 @@
+{
+  "status": "PASS",
+  "gate": "premium-reclaim-handover",
+  "started_at": "2026-09-19T04:45:05+07:00",
+  "fixture": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-68498e85fcdd",
+  "manifest": {
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-68498e85fcdd",
+    "server_port": 64812,
+    "server_id": "paper-premium-1",
+    "mysql_host": "127.0.0.1",
+    "mysql_port": 33316,
+    "mysql_database": "itemguard_premium",
+    "paper_sha256": "6c099540fccd27e10750d1adcb382f1552fb5aa2816aeaf2cc1efb23ddd9e3df",
+    "premium_jar_sha256": "5928cab1d2c08248b34cdc212723971be923b907d9635e9dc52a2efee2976371",
+    "probe_jar_sha256": "837e540bf7e34085b7e427810e624bd3f9d17c642494e5dfb2617f8dc0c1ad7e",
+    "probe_source_sha256": "ed88121f137c8b1f52001cdb1a2e232eefc3d7f21810d4fe762913a836f10bad",
+    "client_script_sha256": "92b5439743439e511e30785f4b6a0f99cf50fbe540ef592919587eccf09df193",
+    "config_sha256": "c8b41f5e9bfc8af37894a8368dca6596c5ae734bd4b12e36ab53a90237334d49",
+    "ops_sha256": "b9ee53277facc0f3b8beffa44e6c49c87aa4600b38c425153b932fb8e2fa8070",
+    "runner_sha256": "0e16c347691f98722cc1f7506598c20761c7aceaa5ac27a09134043199da7da6",
+    "node": "C:\\Program Files\\nodejs\\node.EXE",
+    "java": "C:\\Program Files\\Java\\jdk-21\\bin\\java.exe",
+    "created_at": "2026-09-19T04:45:05+07:00",
+    "reclaim_config": {
+      "issuance-enabled": true,
+      "external-absence-mode": "INSTALLED_ONLY"
+    }
+  },
+  "generations": [
+    {
+      "generation": 1,
+      "mode": "reclaim",
+      "client_result": {
+        "status": "PASS",
+        "mode": "reclaim",
+        "code": "NNWHGG",
+        "actions": [
+          "give",
+          "equip",
+          "check",
+          "refuse-while-held",
+          "clear",
+          "issue",
+          "refuse-locked"
+        ],
+        "swords_after_lock": 1,
+        "event": "CLIENT_RESULT"
+      },
+      "client_events": [
+        {
+          "player": "PremiumStaff",
+          "code": "NNWHGG",
+          "event": "identity"
+        },
+        {
+          "code": "NNWHGG",
+          "held": "diamond_sword",
+          "event": "reclaim-item"
+        },
+        {
+          "line": "[ItemGuard] Tu choi lay lai: PLAYER_INVENTORY - Canonical identity is present in inventory or ender chest",
+          "event": "reclaim-refused-present"
+        },
+        {
+          "line": "[ItemGuard] Da tra lai vat pham NNWHGG. Kiem tra tui do cua ban.",
+          "item": "diamond_sword",
+          "event": "reclaim-issued"
+        },
+        {
+          "line": "[ItemGuard] Vat pham da co yeu cau dang xu ly hoac da cap lai.",
+          "before": 1,
+          "after": 1,
+          "event": "reclaim-lock"
+        },
+        {
+          "status": "PASS",
+          "mode": "reclaim",
+          "code": "NNWHGG",
+          "actions": [
+            "give",
+            "equip",
+            "check",
+            "refuse-while-held",
+            "clear",
+            "issue",
+            "refuse-locked"
+          ],
+          "swords_after_lock": 1,
+          "event": "CLIENT_RESULT"
+        }
+      ],
+      "mysql": {
+        "rows": [
+          "DENIED\tPLAYER_INVENTORY: Canonical identity is present in inventory or ender chest",
+          "COMMITTED\tissued to PremiumStaff: delivered to player inventory"
+        ],
+        "committed": 1,
+        "denied": 1,
+        "history_reclaim_rows": "1",
+        "snapshot_rows": "1"
+      },
+      "client_log": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-68498e85fcdd\\client-1.log",
+      "paper_log": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-68498e85fcdd\\paper-1.log"
+    },
+    {
+      "generation": 2,
+      "mode": "reclaim-restart",
+      "client_result": {
+        "status": "PASS",
+        "mode": "reclaim-restart",
+        "code": "NNWHGG",
+        "actions": [
+          "sos-after-restart"
+        ],
+        "swords_after_lock": 1,
+        "event": "CLIENT_RESULT"
+      },
+      "client_events": [
+        {
+          "line": "[ItemGuard] Vat pham da co yeu cau dang xu ly hoac da cap lai.",
+          "before": 1,
+          "after": 1,
+          "event": "reclaim-restart"
+        },
+        {
+          "status": "PASS",
+          "mode": "reclaim-restart",
+          "code": "NNWHGG",
+          "actions": [
+            "sos-after-restart"
+          ],
+          "swords_after_lock": 1,
+          "event": "CLIENT_RESULT"
+        }
+      ],
+      "mysql": {
+        "rows": [
+          "DENIED\tPLAYER_INVENTORY: Canonical identity is present in inventory or ender chest",
+          "COMMITTED\tissued to PremiumStaff: delivered to player inventory"
+        ],
+        "committed": 1,
+        "denied": 1,
+        "history_reclaim_rows": "1",
+        "snapshot_rows": "1"
+      },
+      "client_log": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-68498e85fcdd\\client-2.log",
+      "paper_log": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-68498e85fcdd\\paper-2.log"
+    }
+  ],
+  "cleanup": [
+    {
+      "child": "client-1",
+      "pid": 6408,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "mode": "reclaim"
+    },
+    {
+      "child": "paper-1",
+      "pid": 46708,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "port_released": true
+    },
+    {
+      "child": "client-2",
+      "pid": 46848,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "mode": "reclaim-restart"
+    },
+    {
+      "child": "paper-2",
+      "pid": 43728,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "port_released": true
+    }
+  ],
+  "mysql_reset": "itemguard_premium recreated on 127.0.0.1:33316",
+  "code": "NNWHGG",
+  "mysql_stopped": {
+    "exit": 0,
+    "stdout": [
+      "stopped"
+    ]
+  },
+  "finished_at": "2026-09-19T04:46:46+07:00"
+}

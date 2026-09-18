@@ -71,36 +71,35 @@ two, because they are not installed" is visible to whoever judges the claim. An 
 setting resolves to `STRICT` (`ExternalAbsenceMode.parse`), and the three-argument probe methods still
 default to `STRICT`, so no existing caller silently became permitted to issue.
 
-## The runtime gate that is still owed, spelled out
+## The runtime gate, and the two defects it caught
 
-Issuance has unit, contract and schema coverage and the six gates for the current artifact all pass —
-but none of them *issues* anything. The gate below is what turns "implemented" into "watched working",
-and it is the acceptance criterion named in `docs/release/LITE_VS_FULL.md`:
+This gate now exists and passes: `tools/premium-runtime/premium_reclaim_smoke.py` (one real Mineflayer
+client, its own fixture staged on top of the gameplay fixture with `reclaim.issuance-enabled: true` and
+`reclaim.external-absence-mode: INSTALLED_ONLY`, because without those two keys the fixture would only
+ever measure the refusal path). The steps it performs are the list this section used to carry as
+"owed": give + equip + `/ig check`, `/matdo check`, a refusal while the item is held, a vanilla
+`/clear`, the issuance with a client-side assertion that the stack is in the inventory, a second
+`/matdo sos` that must be refused by the claim lock, a clean restart, and the same refusal afterwards.
+MySQL postconditions: exactly one `COMMITTED` claim naming the actor, at least one `DENIED` claim from
+the while-held refusal, one `RECLAIM_ISSUED` history row, one snapshot row, and the same claim set
+after the restart. Every fixture child exited 0 without a forced stop and both ports were released.
 
-Fixture config: `reclaim.issuance-enabled: true`, `reclaim.external-absence-mode: INSTALLED_ONLY`
-(otherwise every presence probe denies, which is the point of §"The gate that made all of this
-unreachable"). One real protocol client, `PremiumStaff`, in a controlled Paper + MySQL fixture.
+**It earned its keep on the first run by finding two real defects that every offline test had missed:**
 
-1. `/clear` then `/give` a sword, equip it, `/ig check` → a code comes back, so identity and snapshot
-   exist. Assert `item_snapshots` has a row for the code.
-2. `/matdo check` → the item is listed as eligible (proves the player-facing list path).
-3. `/matdo sos <code>` **while the item is held** → refuse with the `PLAYER_INVENTORY` blocker and a
-   `DENIED` claim. This is the negative case: presence must beat the request.
-4. `/clear <player>` (vanilla) → the item is destroyed; the snapshot is the only copy left.
-5. `/matdo sos <code>` → the issued message arrives and the stack is **in the client's inventory**
-   (client-side assertion, not just a server log line). Assert `reclaim_claims.state = COMMITTED`
-   with `issued to PremiumStaff` in the detail, and one `item_history` row with action
-   `RECLAIM_ISSUED`.
-6. `/matdo sos <code>` again → refused by the claim lock, and the inventory still holds exactly one
-   sword. This is the anti-duplication assertion, and it is the one that matters most.
-7. Restart Paper, `/matdo check` → the identity is still committed; a second issuance is impossible.
-8. Inventory-full retry: with a full inventory, issuance must end `DENIED` (retryable) and the item
-   must still be claimable after making room — the failure path that protects the player's item.
+1. **The claim never committed.** `arm` returned the decision with the record it was given — state
+   `PENDING` — and the flow then settled with that same record. `settle` refuses anything that is not
+   `PREPARED`, so every issuance armed the claim, delivered the item, wrote nothing, and left the
+   identity locked in `PREPARED` **for ever**: no later claim could be reserved, and the audit trail
+   showed an armed claim with no outcome. The unit tests missed it because they handed `settle` a
+   `PREPARED` record directly and never exercised the flow. Fixed by carrying the moved claim
+   (`ReclaimClaim.movedTo`), with tests for the armed, lost-race and refused-arming paths.
+2. **A delivered item was reported as success.** The player-facing message was chosen by the
+   `delivered` flag rather than by whether the claim was committed, so a hand-over that was never
+   recorded told the player everything was fine — the exact outcome the design says a human must clean
+   up, hidden by the success text. The message now follows the record (`settled.issued()`), and the
+   delivered-but-unrecorded case has its own alarming text.
 
-Everything the gate cannot cover, stated up front: it uses `INSTALLED_ONLY`, so it does not prove
-behaviour with PlayerVaults or zAuctionHouse actually installed (their APIs still deny, and a fixture
-with those plugins has not been built); it does not exercise `/finditem giveoldid` (the same flow, a
-different entry point — worth adding); and it does not cover a crash *between* delivery and commit.
+Both fixes are in the artifact this gate ran against; the receipt is bound in `run/` like the others.
 
 ## Boundaries — not implemented, and not claimed
 

@@ -178,6 +178,49 @@ class ReclaimIssuanceServiceTest {
     }
 
     @Test
+    void armingHandsBackTheClaimInItsPreparedStateSoTheFlowCanSettleIt() {
+        RecordingStore store = new RecordingStore();
+
+        ReclaimIssuanceDecision armed = service(store, true, new AtomicLong(5_000L))
+            .arm(claim(ReclaimClaimState.PENDING));
+
+        // The runtime gate found this the hard way (2026-09-19): the flow armed a claim and then
+        // settled with the record it already had, whose state still said PENDING, so settle refused
+        // every time and the identity stayed locked in PREPARED. Armed must carry the moved copy.
+        assertEquals(ReclaimClaimState.PREPARED, armed.claim().state(),
+            "the armed decision must carry the claim after the transition, not before it");
+
+        ReclaimIssuanceDecision settled = service(store, true, new AtomicLong(5_100L))
+            .settle(armed.claim(), true, "ThanhRedfield", "delivered to player inventory");
+        assertEquals(ReclaimIssuanceStatus.ISSUED, settled.status(),
+            "settling with the claim the arm step returned must commit the delivery");
+    }
+
+    @Test
+    void aLostArmKeepsTheOriginalClaimBecauseNothingWasApplied() {
+        RecordingStore store = new RecordingStore();
+        store.transitionSucceeds = false;
+
+        ReclaimIssuanceDecision armed = service(store, true, new AtomicLong(5_000L))
+            .arm(claim(ReclaimClaimState.PENDING));
+
+        assertEquals(ReclaimIssuanceStatus.REFUSED_STALE, armed.status());
+        assertEquals(ReclaimClaimState.PENDING, armed.claim().state(),
+            "a transition that did not apply must not be reported as applied to the caller");
+    }
+
+    @Test
+    void aRefusedArmDoesNotMoveTheClaimEither() {
+        RecordingStore store = new RecordingStore();
+
+        ReclaimIssuanceDecision armed = service(store, false, new AtomicLong(5_000L))
+            .arm(claim(ReclaimClaimState.PENDING));
+
+        assertEquals(ReclaimIssuanceStatus.REFUSED_DISABLED, armed.status());
+        assertEquals(ReclaimClaimState.PENDING, armed.claim().state());
+    }
+
+    @Test
     void recordingADeliverySurvivesTheGateBeingSwitchedOffMidFlight() {
         RecordingStore store = new RecordingStore();
 

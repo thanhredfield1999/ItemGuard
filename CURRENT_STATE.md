@@ -1,6 +1,6 @@
 # ItemGuard — Current State
 
-## CURRENT — Branch `premium-mysql` — 2026-09-19 — issuance reachable, Discord wired, dead promises deleted; six gates re-run on the final artifact
+## CURRENT — Branch `premium-mysql` — 2026-09-19 — the hand-over is runtime-proven; two defects the gate caught are fixed
 
 This branch keeps the Premium candidate rebuildable on top of `main` release commit `6292638`.
 The frozen LITE candidate on `main` is not rebuilt or changed by Premium work.
@@ -8,31 +8,37 @@ The frozen LITE candidate on `main` is not rebuilt or changed by Premium work.
 Artifact for this tree:
 
     target/ItemGuard-1.0.0-shaded.jar
-    SHA-256 6baac6ec7d391cf922490f533158b0cb6caa8cf51a272a9ee6a21e92c5d37469   (9,913,449 bytes)
+    SHA-256 5928cab1d2c08248b34cdc212723971be923b907d9635e9dc52a2efee2976371   (9,913,759 bytes)
     Paper 1.21.11-131, Java 21, relocated libraries and relocated SLF4J service provider
 
 Hash lineage this round: `d1aac80a…` (previous session) -> `d513a3cc…` (void: permission and
-anti-dupe-notice changes came after it) -> `d17b8f81…` (void: the absence-mode fix came after it) ->
-`6baac6ec…` (current). Every change voided the earlier artifact's runtime evidence, and every gate was
-re-run for the survivor.
+anti-dupe-notice changes) -> `d17b8f81…` (void: the absence-mode fix) -> `6baac6ec…` (void: the two
+defect fixes the reclaim gate found) -> `5928cab1…` (current). Every change voided the earlier
+artifact's runtime evidence, and every gate was re-run for the survivor.
 
 Offline evidence for the current tree:
 
-    mvnw.cmd -o test                          959/959, 0 failures/errors/skipped
+    mvnw.cmd -o test                          963/963, 0 failures/errors/skipped
     python scripts/check_no_hardcoded_vietnamese.py
                                               0 violations (201 files), self-test 25/25
     python -m unittest discover -s scripts    70/70 tooling contracts
     mvnw.cmd -o -DskipTests package           BUILD SUCCESS
 
-Runtime evidence, all six gates PASS and bound to `6baac6ec…`:
+Runtime evidence, all seven gates PASS and bound to `5928cab1…`:
 
-    run/premium-paper-mysql-20260919-034937.json        single Paper, startup + restart
-    run/premium-two-paper-mysql-20260919-035111.json    two isolated Paper servers, one MySQL schema
-    run/premium-paper-migration-20260919-035300.json    SQLite -> MySQL /ig migrate: dry-run, confirm, non-empty refusal, persistence
-    run/premium-paper-failure-20260919-035519.json      reliability: fail-closed, no retry, port closed, committed state preserved
-    run/premium-paper-gameplay-20260919-035804.json     real-client gameplay journey (two protocol clients)
-    run/premium-backup-restore-20260919-040323.json     dump/restore into a second schema; partial and future-version restores refused
-    run/mysql-schema-gate-20260919-040850.json          43/43 across 11 tagged classes on this tree
+    run/premium-paper-mysql-20260919-042851.json        single Paper, startup + restart
+    run/premium-two-paper-mysql-20260919-043026.json    two isolated Paper servers, one MySQL schema
+    run/premium-paper-migration-20260919-043145.json    SQLite -> MySQL /ig migrate: dry-run, confirm, non-empty refusal, persistence
+    run/premium-paper-failure-20260919-043753.json      reliability: fail-closed, no retry, port closed, committed state preserved
+    run/premium-paper-gameplay-20260919-044020.json     real-client gameplay journey (two protocol clients)
+    run/premium-backup-restore-20260919-044444.json     dump/restore into a second schema; partial and future-version restores refused
+    run/premium-reclaim-handover-20260919-044646.json   the hand-over itself: refusal while held, issuance after /clear, permanent lock, restart
+    run/mysql-schema-gate-20260919-042725.json          43/43 across 11 tagged classes on this tree
+
+The three gates that failed at 04:2x did so because E: filled up
+(`OSError: [WinError 112] There is not enough space on the disk`) after twenty minutes of staging each;
+`tools/premium-runtime/trim_fixture_roots.py` freed 16.5 GB while keeping every receipt, log and
+`stage.json`, and all three passed on the retry. The reclaim gate now refuses to start below 4 GB.
 
 `run/superseded/` holds every receipt from earlier artifacts (moved, not deleted). The two red
 schema-gate receipts (`-024126`, `-024353`) stay in `run/` on purpose: they are the runs that found a
@@ -59,10 +65,22 @@ What this round changed, in the order it matters:
 6. **Earlier traps stay fixed**: alerts use `itemguard.notify` on both editions; the
    `performance.auto-cleanup.enabled` switch is the switch.
 7. **Owner-facing docs**: `docs/release/PREMIUM_HANDOFF.md` (install, MySQL, migration, backup/rollback,
-   permissions, secrets, evidence map), a rewritten `docs/release/LITE_VS_FULL.md` truth table, and
-   `docs/design/2026-09-19-premium-reclaim-issuance.md` — which also spells out the runtime gate
-   issuance still owes (held-item refusal, issuance after `/clear`, permanent lock, restart, the
-   full-inventory retry).
+   permissions, secrets, evidence map, and how to run the gates without filling the disk), a rewritten
+   `docs/release/LITE_VS_FULL.md` truth table, and `docs/design/2026-09-19-premium-reclaim-issuance.md`.
+8. **The issuance gate ran, and it caught two real defects that every offline test had missed.**
+   `tools/premium-runtime/premium_reclaim_smoke.py` stages the reclaim config (`issuance-enabled: true`,
+   `external-absence-mode: INSTALLED_ONLY`) over the gameplay fixture and drives one real client
+   through the whole hand-over. First run: the claim armed, the item was delivered, and **nothing was
+   committed** — `arm` handed back the pre-transition record (state `PENDING`) and `settle` refuses
+   anything that is not `PREPARED`, so every issuance left the identity locked in `PREPARED` for ever
+   with no outcome row; the unit tests missed it because they passed `settle` a `PREPARED` record
+   directly. And the player was told **success** for a hand-over that was never recorded, because the
+   message was chosen by the delivery flag instead of by the claim's fate. Both are fixed
+   (`ReclaimClaim.movedTo`, message follows `settled.issued()`), with tests for the armed, lost-race and
+   refused-arming paths plus a contract that the success text follows the record. Second run: PASS —
+   refusal while held, issuance after `/clear` with the stack back in the client's inventory, a second
+   attempt refused by the lock, and the same lock after a clean restart; one `COMMITTED` claim naming
+   the actor, one `DENIED` claim from the refusal, one `RECLAIM_ISSUED` history row, one snapshot row.
 
 Known flake, recorded because it cost a red run: `SqliteProcessLockCrossProcessTest` (child JVM + `READY`
 line) failed once under load, then passed in isolation and on the next full run.

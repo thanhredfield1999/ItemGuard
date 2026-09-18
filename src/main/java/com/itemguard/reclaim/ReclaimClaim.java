@@ -14,6 +14,23 @@ public record ReclaimClaim(
     long updatedAt,
     String detail
 ) {
+    /**
+     * This claim as it will be after a transition the store has just applied.
+     *
+     * <p>Exists because of a bug the runtime gate found on 2026-09-19: the hand-over flow armed a
+     * claim (PENDING -> PREPARED) and then settled using the record it had been holding, whose
+     * {@code state} still said PENDING. Settling refuses anything that is not PREPARED, so every
+     * issuance armed the claim, delivered the item, wrote nothing, and left the identity locked in
+     * PREPARED for ever — while telling the player it had succeeded. Unit tests missed it because
+     * they handed {@code settle} a PREPARED record directly. The moved copy is what a caller must
+     * carry forward.
+     */
+    public ReclaimClaim movedTo(ReclaimClaimState target, long updatedAt, String detail) {
+        return new ReclaimClaim(
+            claimId, idempotencyKey, playerUuid, code, target, requestedAt, updatedAt, detail
+        );
+    }
+
     public ReclaimClaim {
         claimId = Objects.requireNonNull(claimId, "claimId");
         idempotencyKey = Objects.requireNonNull(idempotencyKey, "idempotencyKey").trim();

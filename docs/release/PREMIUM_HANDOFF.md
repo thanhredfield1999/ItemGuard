@@ -119,6 +119,20 @@ fixture directories (`tools/mysql-runtime/server`, `30_KET_QUA_THU_NGHIEM/`, `ru
 safe: they contain counts, hashes and verdicts, and no credentials). The repository's gates check the
 shipped surface, not your server's files.
 
+## 7b. Running the gates yourself (and the disk)
+
+Each runtime gate stages a full Paper server plus a copy of the Paper cache under
+`E:/AI.WORK/30_KET_QUA_THU_NGHIEM/itemguard-*`, so a root is a few hundred megabytes and a full chain
+adds several gigabytes. When the drive fills, Paper fails with
+`OSError: [WinError 112] There is not enough space on the disk` **after** the gate has spent twenty
+minutes starting servers, which reads like a product failure and is not one. Two habits prevent that:
+
+- `python tools/premium-runtime/trim_fixture_roots.py` keeps every receipt, log and `stage.json` and
+  removes only the bulk (`world*`, `libraries`, `versions`, `cache`, staged jars). It reports what it
+  freed. Run it before a chain, or when free space drops below a few gigabytes.
+- `python tools/premium-runtime/premium_reclaim_smoke.py` refuses to start below 4 GB free and says
+  which script to run; the other gates do not check yet, so the trim script is the general remedy.
+
 ## 8. Evidence map for this artifact
 
 | Claim | Evidence |
@@ -127,7 +141,8 @@ shipped surface, not your server's files.
 | MySQL schema, including the v9→v10 upgrade | `python scripts/run_mysql_schema_gate.py` → 43/43 across 11 tagged classes |
 | Shipped text has no stray Vietnamese on an English surface | `python scripts/check_no_hardcoded_vietnamese.py` → 0; self-test 25/25 |
 | Tooling contracts | `python -m unittest discover -s scripts` → 70/70 |
-| Paper runtime on this hash | the six gates in §9, receipts in `run/`, all bound to `d17b8f81…` |
+| Paper runtime on this hash | the seven gates in §9, receipts in `run/`, all bound to the hash named at the top of this document (artifacts change as fixes land; the ledger's CURRENT section always carries the current hash and receipt names) |
+| The hand-over itself | `premium_reclaim_smoke.py`: refusal while held, issuance after `/clear` with the item back in a real client's inventory, the permanent claim lock, and the same lock after a restart |
 | Ledger | `CURRENT_STATE.md` (CURRENT section) names the hash, the counts and every open boundary |
 
 ## 9. Before publishing (owner actions, in order)

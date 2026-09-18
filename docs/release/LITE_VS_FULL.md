@@ -28,7 +28,7 @@ unimplemented. Those are listed at the bottom, in the owner's language.
 | Commands | `/ig` only | `/ig`, `/igcheck`, `/ighistory`, `/igsearch`, `/igstats`, `/finditem`, `/matdo` | `lite/plugin.yml` vs `plugin.yml` |
 | Duplicate action | forced `NOTIFY` | reads config, but every destructive choice is downgraded | `ConfigManager.java` `isAntiDupeEnabled`, `AntiDupeActionPolicy.resolve(…, false)` |
 | That downgrade, when chosen | n/a | **now announced at startup** | `DestructiveAntiDupeNotice`, called from `ItemGuard.warnAboutIgnoredAntiDupeAction` |
-| Restore / reclaim | absent | **implemented behind a gate** — arm → deliver → settle, `COMMITTED` forever | `ReclaimIssuanceService`, `ReclaimIssuanceFlow`, `MatDoCommand.runIssuancePhase`, `FindItemCommand.giveOldId` |
+| Restore / reclaim | absent | **implemented, gated, and exercised at runtime** — arm → deliver → settle, `COMMITTED` forever | `ReclaimIssuanceService`, `ReclaimIssuanceFlow`, `MatDoCommand.runIssuancePhase`, `FindItemCommand.giveOldId`; gate `premium_reclaim_smoke.py` (receipt in `run/`) |
 | Issuance switch | n/a | `reclaim.issuance-enabled`, ships `false`, LITE off regardless | `ConfigManager.isReclaimIssuanceEnabled`, `config.yml` |
 | Proving absence outside the player | n/a | `reclaim.external-absence-mode`: `STRICT` (ships) refuses when a storage plugin is not installed; `INSTALLED_ONLY` skips absent plugins and records the skip, still refusing for installed-but-unreadable ones | `ExternalAbsenceMode`, `ExternalPresenceProbeFactory`, `ExternalAbsenceModeTest` |
 | Teleport to a container | absent | **absent, and the permission is deleted** | no `itemguard.teleport` in `plugin.yml`; `PermissionDeclarationContractTest` |
@@ -70,10 +70,12 @@ unimplemented. Those are listed at the bottom, in the owner's language.
 
 ## Before FULL can be listed anywhere
 
-1. **Run the runtime gates for issuance and for duplicate detection** on the release artifact: give →
-   snapshot → prove absence → issue → restart → read back, an inventory-full retry, and a fixture with
-   two real copies of one identity producing one finding and one alert. Until those exist, the two
-   headline features are proven only offline.
+1. **Duplicate detection still needs its runtime gate.** The issuance gate is done — a real client
+   journey proved the refusal while held, the issuance after `/clear`, the permanent claim lock and the
+   restart, and it caught two real defects while doing it (`docs/design/2026-09-19-premium-reclaim-issuance.md`).
+   What has never been run end-to-end is confirmation: two real copies of one identity on a controlled
+   fixture producing one finding, one alert and one Discord payload. Until that exists, "anti-dupe" is
+   proven only offline.
 2. **Decide the release shape with the owner**: whether `reclaim.issuance-enabled` ships `false` with
    the listing saying "enable after you have read the runbook" (current state), or the gate's runtime
    evidence lands first and it ships `true`. The second decision that travels with it is

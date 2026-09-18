@@ -79,7 +79,10 @@ final class ReclaimIssuanceFlow {
                     reply.accept(refusal(armed.status()));
                     return;
                 }
-                deliver(playerUuid, item, claim, snapshot, issuance, reply);
+                // The armed decision carries the claim in its PREPARED state. Carrying the original
+                // record forward instead made every settle refuse, which is how this flow once
+                // delivered an item, wrote nothing and still reported success.
+                deliver(playerUuid, item, armed.claim(), snapshot, issuance, reply);
             });
         });
     }
@@ -147,9 +150,14 @@ final class ReclaimIssuanceFlow {
             if (settled.issued() && item != null) {
                 logIssuanceHistory(item, playerUuid);
             }
-            String message = delivered
+            // The message follows the record, not the delivery: an item that was handed over but not
+            // written must say so, because that is the one outcome a human has to clean up and the
+            // success text would hide it.
+            String message = settled.issued()
                 ? success(item)
-                : refusal(settled.status()) + " §7(" + detail + ")";
+                : delivered
+                    ? unrecordedDelivery(settled.status(), detail)
+                    : refusal(settled.status()) + " §7(" + detail + ")";
             runOnServerThread(() -> {
                 reply.accept(message);
                 notifyDeliveredPlayer(playerUuid, delivered, message);
@@ -204,6 +212,12 @@ final class ReclaimIssuanceFlow {
         String code = item == null ? "" : item.code();
         return "§e§l[ItemGuard] §aDa tra lai vat pham §f" + code
             + "§a. Kiem tra tui do cua ban.";
+    }
+
+    /** Delivered but unrecorded: the one outcome that needs a person, never reported as success. */
+    private String unrecordedDelivery(ReclaimIssuanceStatus status, String detail) {
+        return "§e§l[ItemGuard] §cVat pham da tra nhung KHONG ghi duoc trang thai (" + status
+            + "). Bao staff kem ma claim va ID ngay. §7(" + detail + ")";
     }
 
     private String unsettled(boolean delivered) {

@@ -96,6 +96,20 @@ class ReclaimIssuanceFlowContractTest {
     }
 
     @Test
+    void thePlayersMessageFollowsTheRecordRatherThanTheDeliveryFlag() throws Exception {
+        String source = Files.readString(FLOW);
+
+        assertTrue(source.contains("settled.issued()"),
+            "the success text must be chosen by whether the claim was committed, not by whether the "
+                + "item left the plugin's hands");
+        assertTrue(source.contains("unrecordedDelivery("),
+            "the delivered-but-unrecorded case needs its own alarming text: the runtime gate caught "
+                + "a delivered item being reported as success on 2026-09-19");
+        assertTrue(source.contains("deliver(playerUuid, item, armed.claim(), snapshot, issuance, reply)"),
+            "the delivery must use the armed decision's claim, whose state is PREPARED");
+    }
+
+    @Test
     void theAdminPathHasItsOwnPermission() throws Exception {
         String source = Files.readString(FINDITEM);
         String descriptor = Files.readString(Path.of("src/main/resources/plugin.yml"));
