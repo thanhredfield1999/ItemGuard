@@ -41,4 +41,12 @@ public sealed interface FindItemCommandAction {
 
     /** Marks a code's unread findings as read, so triage has an end. */
     record AcknowledgeDupe(String code) implements FindItemCommandAction {}
+
+    /**
+     * Returns a proven-absent identity to its owner, from the stored snapshot.
+     *
+     * <p>Its own permission because it hands out an item: {@code itemguard.giveoldid}, separate from
+     * the read-only admin surface.
+     */
+    record GiveOldId(String code) implements FindItemCommandAction {}
 }

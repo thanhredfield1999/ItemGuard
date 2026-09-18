@@ -92,6 +92,9 @@ permissions:
   itemguard.notify:
     description: Receive duplicate/anti-dupe alerts in chat
     default: op
+  itemguard.giveoldid:
+    description: Return a proven-absent tracked item to its owner (/finditem giveoldid)
+    default: op
   itemguard.finditem.admin:
     description: Quan ly /finditem
     default: op

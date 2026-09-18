@@ -193,12 +193,37 @@ public final class MatDoCommand implements CommandExecutor, TabCompleter {
             return;
         }
 
-        persistDenial(
+        if (!plugin.getConfigs().isReclaimIssuanceEnabled()) {
+            persistDenial(
+                playerUuid,
+                claims,
+                claim,
+                "ISSUANCE_DISABLED",
+                "§e§l[ItemGuard] §cVat pham du dieu kien nhung server chua bat cap lai do "
+                    + "(reclaim.issuance-enabled=false)."
+            );
+            return;
+        }
+        runIssuancePhase(playerUuid, preparation, claims);
+    }
+
+    /**
+     * Hands the snapshot back through the shared protocol: arm, deliver on the server thread, then
+     * record what actually happened. The ordering and its guarantees live in
+     * {@link ReclaimIssuanceFlow}; this method only wires the player's own request to it.
+     */
+    private void runIssuancePhase(
+        UUID playerUuid,
+        ReclaimPreparationResult preparation,
+        ReclaimClaimService claims
+    ) {
+        new ReclaimIssuanceFlow(plugin).issue(
             playerUuid,
+            preparation.item().orElseThrow(),
+            preparation.claim().orElseThrow(),
+            preparation.snapshot().orElseThrow(),
             claims,
-            claim,
-            "ISSUANCE_GATE_CLOSED",
-            "§e§l[ItemGuard] §cIssuance gate dang dong; khong co item nao duoc cap."
+            message -> sendToOnline(playerUuid, message)
         );
     }
 

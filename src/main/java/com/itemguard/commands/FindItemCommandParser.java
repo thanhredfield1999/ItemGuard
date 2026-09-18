@@ -31,6 +31,7 @@ public final class FindItemCommandParser {
             case "infodupe" -> new FindItemCommandAction.InfoDupe(requiredCode(arguments));
             case "readfinding" -> new FindItemCommandAction.ReadFinding(requiredCode(arguments));
             case "readdupe" -> new FindItemCommandAction.AcknowledgeDupe(requiredCode(arguments));
+            case "giveoldid" -> new FindItemCommandAction.GiveOldId(requiredCode(arguments));
             case "clearfinding" -> {
                 if (arguments.length != 2 || !arguments[1].equalsIgnoreCase("confirm")) {
                     throw new IllegalArgumentException(

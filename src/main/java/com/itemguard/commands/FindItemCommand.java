@@ -1,6 +1,18 @@
 package com.itemguard.commands;
 
 import com.itemguard.ItemGuard;
+import com.itemguard.data.ItemData;
+import com.itemguard.reclaim.ExternalPresenceProbeFactory;
+import com.itemguard.reclaim.PlayerInventoryPresenceProbe;
+import com.itemguard.reclaim.PresenceEvidence;
+import com.itemguard.reclaim.ReclaimCapabilityEvaluator;
+import com.itemguard.reclaim.ReclaimClaim;
+import com.itemguard.reclaim.ReclaimClaimService;
+import com.itemguard.reclaim.ReclaimDecision;
+import com.itemguard.reclaim.ReclaimDecisionStatus;
+import com.itemguard.reclaim.ReclaimItemRecord;
+import com.itemguard.reclaim.ReclaimTarget;
+import com.itemguard.snapshot.ItemSnapshot;
 import com.itemguard.search.FindItemService;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
@@ -14,6 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 public final class FindItemCommand implements CommandExecutor, TabCompleter {
@@ -48,8 +61,17 @@ public final class FindItemCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
+        if (action instanceof FindItemCommandAction.GiveOldId
+            && !sender.hasPermission("itemguard.giveoldid")) {
+            plugin.getMessages().send(sender, "no-permission");
+            return true;
+        }
+
         UUID playerUuid = sender instanceof Player player ? player.getUniqueId() : null;
         String actorName = sender.getName();
+        // The hand-over steps report as they happen (they hop between threads), so the sender is
+        // captured here and replies are sent from the flow's own server-thread callbacks.
+        CommandSender replyTo = sender;
         // Player lookups are server state, so the snapshot is taken here on the command thread and
         // handed to the report task; the database reads that follow happen off it.
         Map<String, UUID> onlinePlayers = new java.util.HashMap<>();
@@ -59,7 +81,13 @@ public final class FindItemCommand implements CommandExecutor, TabCompleter {
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
             List<String> messages;
             try {
-                messages = execute(action, playerUuid, actorName, onlinePlayers);
+                messages = execute(
+                    action,
+                    playerUuid,
+                    actorName,
+                    onlinePlayers,
+                    message -> replyTo.sendMessage(message)
+                );
             } catch (RuntimeException failure) {
                 plugin.getLogger().log(
                     java.util.logging.Level.SEVERE,
@@ -90,8 +118,12 @@ public final class FindItemCommand implements CommandExecutor, TabCompleter {
         FindItemCommandAction action,
         UUID playerUuid,
         String actorName,
-        Map<String, UUID> onlinePlayers
+        Map<String, UUID> onlinePlayers,
+        java.util.function.Consumer<String> reply
     ) {
+        if (action instanceof FindItemCommandAction.GiveOldId giveOldId) {
+            return giveOldId(giveOldId.code(), actorName, reply);
+        }
         if (action instanceof FindItemCommandAction.CheckTps) {
             return reportTask(onlinePlayers).checkTps(scanSnapshot());
         }
@@ -115,6 +147,92 @@ public final class FindItemCommand implements CommandExecutor, TabCompleter {
             );
         }
         return task.execute(action, playerUuid, actorName);
+    }
+
+    /**
+     * {@code /finditem giveoldid <id>} — return a proven-absent item to its recorded owner.
+     *
+     * <p>The requirement's rule is "only when canonical absence is proven; otherwise deny", so this
+     * method proves absence with the same capability gate the player path uses (inventory, ender
+     * chest, and each supported adapter; an unavailable adapter denies rather than counting as absent)
+     * and reserves the claim before arming the hand-over. Nothing is created when an identity is
+     * present anywhere — that is the difference between returning an item and duplicating one.
+     *
+     * <p>Replies are sent as the hand-over progresses because it crosses threads; this method returns
+     * the lines that are already final, so the caller's render step still works.
+     */
+    private List<String> giveOldId(String code, String actorName, java.util.function.Consumer<String> reply) {
+        List<String> prelude = new ArrayList<>();
+        prelude.add("§e§l[ItemGuard] §7giveoldid §f" + code + " §7- checking absence before issuing…");
+
+        Optional<com.itemguard.data.ItemData> item = plugin.getDB().getItem(code);
+        if (item.isEmpty()) {
+            return List.of("§e§l[ItemGuard] §cNot tracked: §f" + code
+                + " §7(there is no snapshot to return)");
+        }
+        ItemData row = item.orElseThrow();
+        UUID owner = row.getOwnerUuid();
+        if (owner == null) {
+            return List.of("§e§l[ItemGuard] §cThat record has no owner UUID, so there is nobody to "
+                + "return it to.");
+        }
+        Optional<ItemSnapshot> snapshot = plugin.getDB().getSnapshot(code);
+        if (snapshot.isEmpty()) {
+            return List.of("§e§l[ItemGuard] §cNo full ItemStack snapshot for §f" + code
+                + "§c; refusing to rebuild it from material and name.");
+        }
+
+        ReclaimDecision decision = new ReclaimCapabilityEvaluator().evaluate(
+            new ReclaimTarget(owner, code, row.getItemUuid()),
+            () -> {
+                ExternalPresenceProbeFactory externalProbes =
+                    new ExternalPresenceProbeFactory(this::enabledPluginVersion);
+                return List.of(
+                    new PlayerInventoryPresenceProbe(plugin.getTrackingService()),
+                    externalProbes.playerVaultsProbe(),
+                    externalProbes.zAuctionHouseProbe()
+                );
+            }
+        );
+        if (decision.status() != ReclaimDecisionStatus.ELIGIBLE) {
+            PresenceEvidence blocker = decision.blockingEvidence().orElseThrow();
+            return List.of("§e§l[ItemGuard] §cRefused: absence is not proven §8- §7"
+                + blocker.source() + ": " + blocker.detail());
+        }
+
+        ReclaimClaimService claims = new ReclaimClaimService(
+            plugin.getDB(),
+            UUID::randomUUID,
+            System::currentTimeMillis
+        );
+        Optional<ReclaimClaim> claim = claims.reserve(owner, code);
+        if (claim.isEmpty()) {
+            return List.of("§e§l[ItemGuard] §cRefused: §f" + code
+                + " §cis already being returned or has been returned (claim lock).");
+        }
+        new ReclaimIssuanceFlow(plugin).issue(
+            owner,
+            new ReclaimItemRecord(
+                row.getCode(),
+                row.getItemUuid(),
+                owner,
+                row.getLastSeenAt()
+            ),
+            claim.orElseThrow(),
+            snapshot.orElseThrow(),
+            claims,
+            reply
+        );
+        return List.copyOf(prelude);
+    }
+
+    /** The version of a soft-depended plugin, or empty when it is absent or disabled. */
+    private Optional<String> enabledPluginVersion(String pluginName) {
+        org.bukkit.plugin.Plugin dependency = Bukkit.getPluginManager().getPlugin(pluginName);
+        if (dependency == null || !dependency.isEnabled()) {
+            return Optional.empty();
+        }
+        return Optional.of(dependency.getPluginMeta().getVersion());
     }
 
     private FindItemReportTask reportTask(Map<String, UUID> onlinePlayers) {
@@ -216,6 +334,7 @@ public final class FindItemCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage("§e/finditem readfinding <id> §7- finding rows and their read state");
         sender.sendMessage("§e/finditem readdupe <id> §7- mark findings read (MySQL)");
         sender.sendMessage("§e/finditem checktps §7- this plugin's scan metrics");
+        sender.sendMessage("§e/finditem giveoldid <id> §7- return a proven-absent item to its owner");
     }
 
     @Override
@@ -241,7 +360,8 @@ public final class FindItemCommand implements CommandExecutor, TabCompleter {
                 "infodupe",
                 "readfinding",
                 "readdupe",
-                "checktps"
+                "checktps",
+                "giveoldid"
             ), args[0]);
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("clearfinding")) {

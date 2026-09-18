@@ -82,6 +82,10 @@ SCANNED_INSIDE_EXEMPT = {
 _SKIPPED_COMMANDS = "registered only by ItemGuard.registerCommands(), which ItemGuardLite overrides"
 _SKIPPED_COMMAND_HELPER = "helper of those command classes; nothing outside commands/ references it"
 SKIPPED_INSIDE_EXEMPT = {
+    "com/itemguard/commands/ReclaimIssuanceFlow.java":
+        "the hand-over protocol shared by /matdo sos and /finditem giveoldid, both of which only "
+        "ItemGuard.registerCommands() installs; its player-facing text is Vietnamese without "
+        "diacritics, and the flow is skipped rather than scanned because LITE has no reclaim path",
     "com/itemguard/catalog/CatalogRepository.java":
         "constructed by DatabaseManager for both editions, but getCatalog() has exactly one caller, "
         "CatalogUi, which is built only when !isLiteEdition; its query text cannot reach LITE",

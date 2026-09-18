@@ -1,6 +1,49 @@
 # ItemGuard — Current State
 
-## CURRENT — Branch `premium-mysql` — 2026-09-19 — config and permission traps closed; the admin info/ack surface and scan metrics land with schema v10
+## CURRENT — Branch `premium-mysql` — 2026-09-19 — reclaim issuance exists: the hand-over protocol lands behind an off-by-default gate
+
+This branch keeps the Premium candidate rebuildable on top of `main` release commit `6292638`.
+The frozen LITE candidate on `main` is not rebuilt or changed by Premium work.
+
+**The artifact hash recorded below is stale for this tree.** Product source changed after
+`d1aac80a…`, so the JAR has not been rebuilt and all six Paper receipts are void for the current
+tree until the next rebuild and full rerun. Fresh for this tree: `mvnw.cmd -o test` **942/942**, the
+MySQL gate **43/43** across 11 tagged classes, the Vietnamese gate **0 violations** with its self-test
+**25/25**, and the tooling contracts **70/70**.
+
+What changed in this step, most important first:
+
+1. **The plugin can hand an item back.** Before this, an eligible reclaim ended in a `DENIED` row
+   whose detail said `ISSUANCE_GATE_CLOSED`: the machinery proved an item was recoverable and then
+   refused forever. The protocol is now arm (PENDING → PREPARED, off-thread — this is what locks the
+   identity through the claim table's unique index), deliver (one snapshot stack into the inventory,
+   server thread, empty slot checked immediately before the write), settle (delivered → COMMITTED
+   permanently; not delivered → DENIED and retryable). `ReclaimIssuanceService` owns the transitions,
+   `ReclaimIssuanceFlow` owns the ordering, and both `/matdo sos` and `/finditem giveoldid` use that
+   one flow rather than a copy each. Detail: `docs/design/2026-09-19-premium-reclaim-issuance.md`.
+2. **`reclaim.issuance-enabled` now means something.** The key existed and was read by nothing
+   (same trap as `performance.auto-cleanup.enabled`, fixed in the previous section). It ships `false`;
+   LITE is off whatever a copied config says; the comment now describes what the gate blocks instead
+   of claiming the transaction does not exist. With it off, `/matdo sos` denies with the reason.
+3. **`/finditem giveoldid <id>`** returns a proven-absent item to its recorded owner, with its own
+   permission `itemguard.giveoldid`. Absence is proven through the same capability gate as the player
+   path *before* a claim is reserved, so an item that is present anywhere is refused rather than
+   duplicated. The parser test that asserted this subcommand was "destructive unreleased syntax" now
+   asserts it parses, with the guard moved to the runtime rules the flow contract pins.
+4. **Deliberately not implemented, and documented as such**: per-player cooldown/quota,
+   `addbackitem`/`removebackitem`/`showbackitem`, `givenewid`, quarantine/destructive actions, and the
+   player-facing reclaim GUI. Issuance has unit + contract + schema coverage but **no Paper runtime
+   evidence yet** — that gate is required before the flag ships enabled.
+
+Current receipts: `run/mysql-schema-gate-20260919-025656.json` (PASS). Superseded-but-kept:
+`run/mysql-schema-gate-20260919-024126.json`, `run/mysql-schema-gate-20260919-024353.json` (the two
+runs the gate's own defects were found in).
+
+## PREVIOUS — Branch `premium-mysql` — 2026-09-19 — config and permission traps closed; the admin info/ack surface and scan metrics land with schema v10
+
+Superseded 2026-09-19 by the section above. Kept for the schema-v10 record, the two defects the MySQL
+gate found (a late `wasNull()` read, and a missing `tracked_items` seed in the new test class), and
+the permission/auto-cleanup fixes it introduced.
 
 This branch keeps the Premium candidate rebuildable on top of `main` release commit `6292638`.
 The frozen LITE candidate on `main` is not rebuilt or changed by Premium work.

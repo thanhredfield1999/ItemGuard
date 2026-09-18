@@ -267,13 +267,17 @@ reclaim:
   # /matdo check retention window.
   history-days: 20
 
-  # Release gate remains closed: PlayerVaults/zAuctionHouse version detection
-  # is audited fail-closed. Official APIs exist, but their sync I/O/full-list
-  # or full-bucket queries lack the hard bounds, side-effect/thread and read-consistency
-  # contracts required to prove canonical identity absence everywhere.
-  # The separate Modrinth PlayerVaultsX 1.0.x fork lacks enumerate/read APIs.
-  # Persistent issuance transaction and controlled external-plugin tests are
-  # also not implemented/verified.
+  # Whether the plugin may actually issue an item back (/matdo sos, /finditem giveoldid).
+  #
+  # The transaction exists: a claim is armed (PENDING -> PREPARED) so the identity is locked while the
+  # hand-over is in flight, the snapshot stack is written into the player's inventory on the server
+  # thread, and the claim is then committed (delivered) or denied (retryable). Absence must still be
+  # proven first — /matdo sos probes the player inventory, ender chest, PlayerVaults and zAuctionHouse,
+  # and an adapter that is unavailable denies rather than counting as absent.
+  #
+  # It ships off because handing out items is the one action a server owner should switch on
+  # deliberately, after a controlled runtime gate on their own Paper build. /matdo sos without it
+  # answers that the gate is closed and leaves the claim denied — nothing is issued by default.
   issuance-enabled: false
 
 # ---------- LOGGING ----------

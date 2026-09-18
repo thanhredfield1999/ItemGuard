@@ -96,14 +96,30 @@ class FindItemCommandParserTest {
     }
 
     @Test
-    void rejectsMissingInvalidOrDestructiveUnreleasedSyntax() {
+    void rejectsMissingOrInvalidArguments() {
         assertThrows(IllegalArgumentException.class,
             () -> parser.parse(new String[] {"startfinding", "AB12CD"}));
         assertThrows(IllegalArgumentException.class,
             () -> parser.parse(new String[] {"listfinding", "0"}));
         assertThrows(IllegalArgumentException.class,
             () -> parser.parse(new String[] {"clearfinding"}));
+    }
+
+    /**
+     * This used to sit in the rejection list above, as the guard for a requirement that was not
+     * implemented yet ("destructive unreleased syntax"). It is implemented now, so the guard moves to
+     * where the safety actually lives: parsing accepts it and the command refuses at runtime unless
+     * absence is proven, the claim is free, the gate is on and the caller holds
+     * {@code itemguard.giveoldid}. Pinned in {@code ReclaimIssuanceFlowContractTest}.
+     */
+    @Test
+    void giveOldIdIsParsedNowThatItExists() {
+        assertEquals(
+            new FindItemCommandAction.GiveOldId("AB12CD"),
+            parser.parse(new String[] {"giveoldid", "#ab12cd"})
+        );
         assertThrows(IllegalArgumentException.class,
-            () -> parser.parse(new String[] {"giveoldid", "AB12CD"}));
+            () -> parser.parse(new String[] {"giveoldid"}),
+            "the item id is still required");
     }
 }

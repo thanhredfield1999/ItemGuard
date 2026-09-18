@@ -322,6 +322,12 @@ public class ConfigManager {
         return config.getInt("performance.max-track-per-player", 500);
     }
 
+    public boolean isReclaimIssuanceEnabled() {
+        // The gate gates *issuing*, and LITE has no reclaim command at all, so it can never be on
+        // there regardless of what a copied config says.
+        return !plugin.isLiteEdition() && config.getBoolean("reclaim.issuance-enabled", false);
+    }
+
     public int getReclaimHistoryDays() {
         return Math.max(1, config.getInt("reclaim.history-days", 20));
     }
