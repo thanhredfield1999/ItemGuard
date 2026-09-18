@@ -30,11 +30,13 @@ commands:
     usage: /<command>
     permission: itemguard.stats
   finditem:
-    description: Quan ly yeu cau tim vat pham theo ID
-    usage: /<command> <startfinding|starttaking|stopfinding|listfinding|removefinding|clearfinding>
+    description: Manage item searches by ID, and the admin reports
+    usage: /<command> <startfinding|starttaking|stopfinding|listfinding|removefinding|clearfinding|infoitem|infoplayer|infodupe|readfinding|readdupe|checktps|giveoldid>
+    aliases: [itemsearch]
   matdo:
-    description: Xem lich su va yeu cau ho tro lay lai vat pham
+    description: View an item's history and request support to get it back
     usage: /<command> <check|sos>
+    aliases: [itemreturn]
 
 permissions:
   itemguard.*:
@@ -46,12 +48,9 @@ permissions:
       itemguard.history.others: true
       itemguard.search: true
       itemguard.stats: true
-      itemguard.restore: true
-      itemguard.teleport: true
       itemguard.reload: true
       itemguard.migrate: true
       itemguard.gui: true
-      itemguard.bypass: true
       itemguard.notify: true
       itemguard.finditem.admin: true
       itemguard.matdo: true
@@ -71,12 +70,6 @@ permissions:
   itemguard.stats:
     description: View plugin statistics
     default: op
-  itemguard.teleport:
-    description: Teleport to a tracked item's container location from the timeline
-    default: op
-  itemguard.restore:
-    description: Judge and carry out the restore of a destroyed item
-    default: op
   itemguard.reload:
     description: Reload plugin configuration
     default: op
@@ -85,9 +78,6 @@ permissions:
     default: op
   itemguard.gui:
     description: Open history GUI
-    default: op
-  itemguard.bypass:
-    description: Bypass anti-dupe checks (staff)
     default: op
   itemguard.notify:
     description: Receive duplicate/anti-dupe alerts in chat

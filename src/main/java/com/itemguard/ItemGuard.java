@@ -92,6 +92,7 @@ public class ItemGuard extends JavaPlugin {
         }
 
         loadRuntimeManagers();
+        warnAboutIgnoredAntiDupeAction();
         registerHooks();
         registerListeners();
         registerCommands();
@@ -259,6 +260,20 @@ public class ItemGuard extends JavaPlugin {
         MatDoCommand matDoCommand = new MatDoCommand(this);
         getCommand("matdo").setExecutor(matDoCommand);
         getCommand("matdo").setTabCompleter(matDoCommand);
+    }
+
+    /**
+     * Says out loud what {@code anti-dupe.action} will not do.
+     *
+     * <p>The config offers destructive choices and the resolver downgrades all of them to NOTIFY.
+     * Ignoring a setting an owner deliberately chose, without a word, is the failure mode this project
+     * keeps finding by running the server rather than by reading the code — see
+     * {@link com.itemguard.config.DestructiveAntiDupeNotice}.
+     */
+    private void warnAboutIgnoredAntiDupeAction() {
+        new com.itemguard.config.DestructiveAntiDupeNotice()
+            .warningFor(configManager.getAntiDupeAction())
+            .ifPresent(getLogger()::warning);
     }
 
     private void scheduleTasks() {

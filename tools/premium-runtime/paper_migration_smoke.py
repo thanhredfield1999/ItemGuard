@@ -399,7 +399,10 @@ def main() -> int:
         receipt["commands"].append({"command": "ig migrate", "status": "DRY_RUN_PASS"})
         dry_rows = mysql_counts()
         receipt["mysql_postconditions"].append({"phase": "after_dry_run", "rows": dry_rows})
-        if dry_rows != ["0", "0", "0", "0", "0", "0", "0", "0", "9\t0"]:
+        # The last entry is the plugin's own schema stamp, not migrated data: the server initialized
+        # the schema at v10 before the dry-run, and plugin_stats is where it records that. The
+        # version moves with the schema (v10 added the finding acknowledgement columns).
+        if dry_rows != ["0", "0", "0", "0", "0", "0", "0", "0", "10\t0"]:
             raise RuntimeError(f"dry-run wrote or changed target: {dry_rows!r}")
         wait_migration_command(paper, "ig migrate confirm", "ItemGuard migration completed:")
         if not any("Row-count verification passed" in line for line in paper.lines[-20:]):
@@ -407,7 +410,8 @@ def main() -> int:
         receipt["commands"].append({"command": "ig migrate confirm", "status": "CONFIRM_PASS"})
         migrated_rows = mysql_counts()
         receipt["mysql_postconditions"].append({"phase": "after_confirm", "rows": migrated_rows})
-        expected = ["1"] * 8 + ["9\t7", SERVER_ID, SERVER_ID, SERVER_ID]
+        # schema_version 10, duplicates_detected 7 carried over from the seeded SQLite source.
+        expected = ["1"] * 8 + ["10\t7", SERVER_ID, SERVER_ID, SERVER_ID]
         if migrated_rows != expected:
             raise RuntimeError(f"unexpected migrated target: {migrated_rows!r}")
         source_after_confirm = sha256(source)

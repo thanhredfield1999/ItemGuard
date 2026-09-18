@@ -328,7 +328,9 @@ def verify_generation(process: PaperProcess) -> dict[str, object]:
         "'item_search_requests','item_snapshots','reclaim_claims','tag_publications','plugin_stats');"
         "SELECT @@innodb_flush_log_at_trx_commit, @@sql_mode;"
     ).splitlines()
-    if len(rows) < 3 or rows[0] != "9\t0" or rows[1] != "9":
+    # Schema version 10 and the full table list: the runtime must initialize the current schema, so
+    # this pin moves with it (v9 -> v10 added the finding acknowledgement columns).
+    if len(rows) < 3 or rows[0] != "10\t0" or rows[1] != "9":
         raise RuntimeError(f"Unexpected MySQL runtime state: {rows!r}")
     if "STRICT_TRANS_TABLES" not in rows[2] or not rows[2].startswith("1\t"):
         raise RuntimeError(f"Unexpected MySQL durability/session state: {rows!r}")

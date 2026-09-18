@@ -1,56 +1,65 @@
 # ItemGuard — Current State
 
-## CURRENT — Branch `premium-mysql` — 2026-09-19 — reclaim issuance exists: the hand-over protocol lands behind an off-by-default gate
+## CURRENT — Branch `premium-mysql` — 2026-09-19 — issuance exists, Discord wired, dead permissions deleted; runtime re-verification in progress
 
 This branch keeps the Premium candidate rebuildable on top of `main` release commit `6292638`.
 The frozen LITE candidate on `main` is not rebuilt or changed by Premium work.
 
-**The artifact hash recorded below is stale for this tree.** Product source changed after
-`d1aac80a…`, so the JAR has not been rebuilt and all six Paper receipts are void for the current
-tree until the next rebuild and full rerun. Fresh for this tree: `mvnw.cmd -o test` **942/942**, the
-MySQL gate **43/43** across 11 tagged classes, the Vietnamese gate **0 violations** with its self-test
-**25/25**, and the tooling contracts **70/70**. The Discord wiring below brings the offline total to
-**944/944**.
+Artifact for this tree:
 
-What changed in this step, most important first:
+    target/ItemGuard-1.0.0-shaded.jar
+    SHA-256 d17b8f81e7dccc02f035ab00255381a3de9770d7fe0c943ee5f82b0ec2432f0a   (9,910,588 bytes)
+    Paper 1.21.11-131, Java 21, relocated libraries and relocated SLF4J service provider
 
-1. **The plugin can hand an item back.** Before this, an eligible reclaim ended in a `DENIED` row
-   whose detail said `ISSUANCE_GATE_CLOSED`: the machinery proved an item was recoverable and then
-   refused forever. The protocol is now arm (PENDING → PREPARED, off-thread — this is what locks the
-   identity through the claim table's unique index), deliver (one snapshot stack into the inventory,
-   server thread, empty slot checked immediately before the write), settle (delivered → COMMITTED
-   permanently; not delivered → DENIED and retryable). `ReclaimIssuanceService` owns the transitions,
-   `ReclaimIssuanceFlow` owns the ordering, and both `/matdo sos` and `/finditem giveoldid` use that
-   one flow rather than a copy each. Detail: `docs/design/2026-09-19-premium-reclaim-issuance.md`.
-2. **`reclaim.issuance-enabled` now means something.** The key existed and was read by nothing
-   (same trap as `performance.auto-cleanup.enabled`, fixed in the previous section). It ships `false`;
-   LITE is off whatever a copied config says; the comment now describes what the gate blocks instead
-   of claiming the transaction does not exist. With it off, `/matdo sos` denies with the reason.
-3. **`/finditem giveoldid <id>`** returns a proven-absent item to its recorded owner, with its own
-   permission `itemguard.giveoldid`. Absence is proven through the same capability gate as the player
-   path *before* a claim is reserved, so an item that is present anywhere is refused rather than
-   duplicated. The parser test that asserted this subcommand was "destructive unreleased syntax" now
-   asserts it parses, with the guard moved to the runtime rules the flow contract pins.
-4. **Deliberately not implemented, and documented as such**: per-player cooldown/quota,
-   `addbackitem`/`removebackitem`/`showbackitem`, `givenewid`, quarantine/destructive actions, and the
-   player-facing reclaim GUI. Issuance has unit + contract + schema coverage but **no Paper runtime
-   evidence yet** — that gate is required before the flag ships enabled.
+Hash lineage this round: `d1aac80a…` (previous session) -> `d513a3cc…` (intermediate, void: the
+permission and anti-dupe-notice changes came after it) -> `d17b8f81…` (current).
 
-5. **Discord finally reaches Discord.** `DiscordWebhook` was constructed and exposed and never
-   called — `discord.enabled` did nothing observable. A confirmed finding now calls it, on its own
-   switch (in-chat alerts obey `notify-staff`, the webhook obeys `discord.enabled`). The old
-   `sendDuplicateAlert(itemName, code, holderName, location)` was replaced rather than wired: nothing
-   called it and detection cannot fill in a holder or a location, because that is the question the
-   alert is asking. Test totals for this tree are **944/944** with the webhook cases included.
+Offline evidence for the current tree:
+
+    mvnw.cmd -o test                          952/952, 0 failures/errors/skipped
+    python scripts/check_no_hardcoded_vietnamese.py
+                                              0 violations (201 files), self-test 25/25
+    python -m unittest discover -s scripts    70/70 tooling contracts
+    mvnw.cmd -o -DskipTests package           BUILD SUCCESS
+
+Runtime evidence, six gates bound to `d17b8f81…`: the receipt names are in the `run/` directory and
+are listed here once the chain finishes. Two harness pins had to move for schema v10:
+`paper_mysql_smoke.py` expected `plugin_stats` = 9, and `paper_migration_smoke.py` expected 9 after the
+dry-run and `9	7` after confirm; both now pin 10, with the comment recording that the last entry is
+the plugin's own schema stamp rather than migrated data.
+
+What this round changed, in the order it matters:
+
+1. **Reclaim issuance.** An eligible reclaim used to end in `DENIED`/`ISSUANCE_GATE_CLOSED`. Now:
+   arm (PENDING -> PREPARED, off-thread, locking the identity through the claim table's unique index) ->
+   deliver (one snapshot stack, server thread, empty slot checked immediately before the write) ->
+   settle (delivered -> COMMITTED permanently; not delivered -> DENIED, retryable). One protocol, two
+   entry points: `/matdo sos` and `/finditem giveoldid` (own permission `itemguard.giveoldid`; absence
+   proven before anything is reserved). `reclaim.issuance-enabled` gates it, ships `false`, LITE off
+   regardless. Detail plus the not-implemented list:
+   `docs/design/2026-09-19-premium-reclaim-issuance.md`.
+2. **Discord is wired.** `DiscordWebhook` was constructed, exposed and never called. A confirmed
+   finding now sends it, on `discord.enabled` independently of `anti-dupe.notify-staff`; the unused
+   `sendDuplicateAlert(itemName, code, holderName, location)` was replaced by
+   `sendDuplicateFinding(code, itemUuid, distinctLocations, scanEpoch)` because detection cannot fill
+   in a holder or a location — that is the question the alert is asking.
+3. **Dead promises removed, and a test so they cannot come back.** `itemguard.restore` and
+   `itemguard.teleport` are gone from `plugin.yml`; `PermissionDeclarationContractTest` fails if any
+   declared node has no Java literal behind it (three-entry reasoned allow-list). Running it is what
+   turned up `itemguard.bypass` as a third case: with the alert gate corrected, nothing read it.
+4. **`anti-dupe.action` stops being silent.** A destructive choice is still downgraded to NOTIFY, but
+   it now logs one warning naming the effective action and how to silence it
+   (`DestructiveAntiDupeNotice`).
+5. **The earlier traps stay fixed**: duplicate alerts use `itemguard.notify` on both editions, and
+   `performance.auto-cleanup.enabled` is the switch it claims to be.
+6. **Owner-facing documentation**: `docs/release/PREMIUM_HANDOFF.md` (install, MySQL, migration,
+   backup/restore and rollback, permissions, secrets, evidence map) and a rewritten
+   `docs/release/LITE_VS_FULL.md` truth table, which also carries the list that still blocks a paid
+   listing.
 
 Known flake, recorded because it cost a red run: `SqliteProcessLockCrossProcessTest` (the case that
 spawns a child JVM and waits for its `READY` line) failed once under load with an empty line and a
-still-locked temp database, then passed 3/3 in isolation and in the next full-suite run. The machine
-was busy; nothing in this change touches that path.
-
-Current receipts: `run/mysql-schema-gate-20260919-025656.json` (PASS). Superseded-but-kept:
-`run/mysql-schema-gate-20260919-024126.json`, `run/mysql-schema-gate-20260919-024353.json` (the two
-runs the gate's own defects were found in).
+still-locked temp database, then passed 3/3 in isolation and in the next full-suite run.
 
 ## PREVIOUS — Branch `premium-mysql` — 2026-09-19 — config and permission traps closed; the admin info/ack surface and scan metrics land with schema v10
 
