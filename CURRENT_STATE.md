@@ -31,18 +31,42 @@ failed operation and zero unexpected-success markers, restarted MySQL, and obser
 delayed recovery reads preserving the committed value `7`. Paper and MySQL cleanup were independently
 verified (`exit=0`, no forced stop, log closed, port released, process gone).
 
-Other current bound receipts: `run/mysql-schema-gate-20260918-205756.json`,
-`run/premium-paper-mysql-20260918-210311.json`, `run/premium-two-paper-mysql-20260918-210735.json`,
-and `run/premium-paper-migration-20260918-211038.json`.
+Other current bound receipts: `run/mysql-schema-gate-20260918-235129.json` (35/35, nine tagged classes,
+fixture stopped with the port closed), `run/premium-paper-mysql-20260918-210311.json`,
+`run/premium-two-paper-mysql-20260918-210735.json`, and
+`run/premium-paper-migration-20260918-211038.json`.
+
+Real-player gameplay evidence: `run/premium-paper-gameplay-20260918-234747.json`. Two real protocol
+clients (`PremiumStaff`, `PremiumMember`) ran the player journey against the same exact JAR: real
+`/give`, client-side equip, `/ig check`, `/ig info`, `/ig stats`, `/ig search`, the legacy player
+browser GUI (items → history → detail → back → exit → close), a real drop with a real walk-pickup by
+the second player, a real chest put/take through window clicks, the member's own history GUI (detail,
+back, exit), and the Premium catalog (page → profile → history → event → back chain → close). The
+fixture's MySQL postcondition was one tracked row, seven history rows, one snapshot, every history row
+stamped `paper-premium-1`, member actions including `PICKUP` and staff actions including
+`SPAWN`/`DROP`. Generation 2 (clean stop, restart) restored the item into the member's inventory and
+`/ig check` read the same identity back. All four owned processes exited 0 without a forced stop, and
+the MySQL fixture was stopped with its port closed.
+
+Recorded rather than smoothed over: the catalog admits one read per second across all viewers, so the
+second read of the journey was refused and the UI rendered its own retry screen. The client's retry
+recovered it (`catalog_history_retries: 1`). Reads issued inside that window return the retry screen
+instead of data — a documented throttle, not a free pass.
+
+Harness for that receipt: `tools/premium-runtime/paper_gameplay_smoke.py`,
+`tools/premium-runtime/premium_gameplay_client.cjs` and `tools/premium-runtime/PremiumGameplayProbe.java`
+(fixture-only observer; it holds no product code).
 
 The P0 async slice covers `CheckCommand`, scheduled history cleanup, and persisted scan-epoch
 initialization; History/Search/Stats/Lite/GUI verified paths remain async. Sync public APIs remain
 compatibility surfaces and are not claimed safe for arbitrary external callers. MySQL identity-
 affecting writes use `FOR UPDATE`; SQLite keeps its serialized executor path.
 
-Open evidence boundaries: no full player/gameplay/GUI journey; no backup/restore or production
-deployment evidence; IG-R022 remains partially mitigated for compatibility/external sync callers
-and GUI in-flight boundaries. The Premium JAR is not uploaded, tagged, or released.
+Open evidence boundaries: no backup/restore or production deployment evidence; IG-R022 remains
+partially mitigated for compatibility/external sync callers. The player/GUI journey above covers the
+command, drop, pickup, chest and GUI paths of this exact JAR; it does not cover every behavioural
+boundary the risk register still lists (destructive actions, external storage, scale, production
+topology). The Premium JAR is not uploaded, tagged, or released.
 
 The detailed M1–M6 narrative below is historical. The section above is the only current binding.
 
