@@ -9,7 +9,8 @@ The frozen LITE candidate on `main` is not rebuilt or changed by Premium work.
 `d1aac80a…`, so the JAR has not been rebuilt and all six Paper receipts are void for the current
 tree until the next rebuild and full rerun. Fresh for this tree: `mvnw.cmd -o test` **942/942**, the
 MySQL gate **43/43** across 11 tagged classes, the Vietnamese gate **0 violations** with its self-test
-**25/25**, and the tooling contracts **70/70**.
+**25/25**, and the tooling contracts **70/70**. The Discord wiring below brings the offline total to
+**944/944**.
 
 What changed in this step, most important first:
 
@@ -34,6 +35,18 @@ What changed in this step, most important first:
    `addbackitem`/`removebackitem`/`showbackitem`, `givenewid`, quarantine/destructive actions, and the
    player-facing reclaim GUI. Issuance has unit + contract + schema coverage but **no Paper runtime
    evidence yet** — that gate is required before the flag ships enabled.
+
+5. **Discord finally reaches Discord.** `DiscordWebhook` was constructed and exposed and never
+   called — `discord.enabled` did nothing observable. A confirmed finding now calls it, on its own
+   switch (in-chat alerts obey `notify-staff`, the webhook obeys `discord.enabled`). The old
+   `sendDuplicateAlert(itemName, code, holderName, location)` was replaced rather than wired: nothing
+   called it and detection cannot fill in a holder or a location, because that is the question the
+   alert is asking. Test totals for this tree are **944/944** with the webhook cases included.
+
+Known flake, recorded because it cost a red run: `SqliteProcessLockCrossProcessTest` (the case that
+spawns a child JVM and waits for its `READY` line) failed once under load with an empty line and a
+still-locked temp database, then passed 3/3 in isolation and in the next full-suite run. The machine
+was busy; nothing in this change touches that path.
 
 Current receipts: `run/mysql-schema-gate-20260919-025656.json` (PASS). Superseded-but-kept:
 `run/mysql-schema-gate-20260919-024126.json`, `run/mysql-schema-gate-20260919-024353.json` (the two

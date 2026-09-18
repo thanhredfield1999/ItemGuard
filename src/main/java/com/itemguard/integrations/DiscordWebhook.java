@@ -29,7 +29,16 @@ public class DiscordWebhook {
             && !webhookUrl.isEmpty();
     }
 
-    public void sendDuplicateAlert(String itemName, String code, String holderName, String location) {
+    /**
+     * Sends a confirmed finding to Discord.
+     *
+     * <p>Replaces a {@code sendDuplicateAlert(itemName, code, holderName, location)} that nothing ever
+     * called and that detection cannot fill in: a confirmed finding knows the identity, the epoch and
+     * how many locations it was seen in — not who holds it or where, because those are exactly the
+     * question the alert is asking. The wording therefore states what is known and says what it is not:
+     * two locations in consecutive scans is a finding to investigate, not a verdict about a copy.
+     */
+    public void sendDuplicateFinding(String code, String itemUuid, int distinctLocations, long scanEpoch) {
         if (!isEnabled()) return;
 
         if (System.currentTimeMillis() < cooldownUntil) return;
@@ -37,10 +46,11 @@ public class DiscordWebhook {
 
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
             String payload = buildPayload(
-                "\u26A0\uFE0F **DUPLICATE ITEM DETECTED**",
-                "Item: **" + itemName + "** (`" + code + "`)\n" +
-                "Holder: `" + holderName + "`\n" +
-                "Location: `" + location + "`",
+                "\u26A0\uFE0F **Duplicate finding confirmed**",
+                "Item: **" + code + "**\n" +
+                "Identity: `" + itemUuid + "`\n" +
+                "Seen in **" + distinctLocations + " locations** in scan epoch **" + scanEpoch + "**\n" +
+                "_More than one location is a finding to investigate, not proof that a copy was made._",
                 15158332
             );
             send(payload);

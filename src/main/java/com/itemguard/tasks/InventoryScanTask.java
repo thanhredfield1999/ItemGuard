@@ -199,6 +199,14 @@ public class InventoryScanTask extends BukkitRunnable {
                     + " locations=" + finding.distinctLocations()
                     + " action=" + finding.action()
             );
+            // Discord is its own channel with its own switch (`discord.enabled`): a server that
+            // wants the alert in a staff channel but not in chat gets exactly that.
+            plugin.getDiscordWebhook().sendDuplicateFinding(
+                finding.code(),
+                String.valueOf(finding.itemUuid()),
+                finding.distinctLocations(),
+                finding.scanEpoch()
+            );
             if (!plugin.getConfigs().isNotifyStaff()) {
                 continue;
             }
