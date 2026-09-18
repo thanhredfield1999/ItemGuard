@@ -1,6 +1,67 @@
 # ItemGuard — Current State
 
-## CURRENT — Branch `premium-mysql` — 2026-09-19 — Premium async boundary closed; the public API marks its blocking lookups
+## CURRENT — Branch `premium-mysql` — 2026-09-19 — config and permission traps closed; the admin info/ack surface and scan metrics land with schema v10
+
+This branch keeps the Premium candidate rebuildable on top of `main` release commit `6292638`.
+The frozen LITE candidate on `main` is not rebuilt or changed by Premium work.
+
+**The artifact hash recorded below is stale for this tree.** Product source changed after
+`d1aac80a…`, so the JAR has not been rebuilt and all six Paper receipts are void for the current
+tree until the next rebuild and full rerun. What is fresh for this tree is the offline evidence:
+
+    mvnw.cmd -o test                          922/922, 0 failures/errors/skipped
+    python scripts/run_mysql_schema_gate.py   43/43 across 11 tagged classes, 0 failures/errors/skipped
+    python scripts/check_no_hardcoded_vietnamese.py
+                                              0 violations (197 files, 3 scanned inside exempt dirs)
+    python -m unittest (vietnamese gate)      25/25
+    MySQL fixture                             stopped, port closed, process gone
+
+Four things this section exists for, in the order they matter to an owner:
+
+1. **A duplicate alert on FULL went to the wrong permission.** `InventoryScanTask` gated staff
+   alerts on `itemguard.bypass` on FULL and `itemguard.notify` on LITE, and `itemguard.notify` was
+   not declared in `plugin.yml` at all. A staff member without op never saw an alert; the one node
+   that did receive it is the node that means "skip the anti-dupe check". One node, both editions,
+   declared, with the old expectation removed from `LiteDuplicateNotificationTest` (that test used to
+   assert the bug).
+2. **`performance.auto-cleanup.enabled` was read by nothing.** Only `interval-hours` was consulted,
+   so `enabled: false` still deleted history older than `keep-days`. The switch is now the switch
+   (LITE stays off regardless), the shipped default is `false`, and the flag joined
+   `RestartSensitiveSettings`/`ReloadPolicy` so flipping it at runtime reports restart-required
+   instead of appearing to take effect.
+3. **The admin surface the product requirements list, minus the parts that need issuance.** Six new
+   `/finditem` subcommands: `infoitem`, `infoplayer`, `infodupe`, `readfinding`, `readdupe`,
+   `checktps` (the last one reports this plugin's own scan numbers, p50/p95 included, and says so
+   rather than impersonating server TPS). Reporting lives in a Bukkit-free `FindItemReportTask` over
+   a data port, so the wording is unit-tested; reads stay inside the existing async dispatch and the
+   online-player snapshot is taken on the server thread (both pinned by
+   `FindItemReportAsyncContractTest`).
+4. **Schema v10 and where acknowledgement lives.** `duplicate_findings` gains
+   `acknowledged_at`/`acknowledged_by`; `readdupe` marks a code's unread findings once, with the
+   actor. Existing v9 databases are upgraded in place by `ensureFindingAcknowledgementColumns`
+   (idempotent, information-schema-checked) rather than only fresh installs gaining the columns. On
+   SQLite `readdupe` answers "needs the MySQL backend" — never "0 marked read", which an operator
+   would read as "nothing needed reading".
+
+Two real defects were found by the MySQL gate itself, which is why its failed receipts are kept
+next to the passing one: `result.wasNull()` was read after a later getter, so a finding with any
+detail text read back as *acknowledged* (the flag was testing `detail`), and the test class first
+failed on a missing `tracked_items` seed because `duplicate_findings` has a foreign key.
+
+Current receipts: `run/mysql-schema-gate-20260919-025656.json` (PASS). Superseded-but-kept:
+`run/mysql-schema-gate-20260919-024126.json` (3 errors: missing seed),
+`run/mysql-schema-gate-20260919-024353.json` (1 failure: the `wasNull` defect).
+
+Artifact bound to the *previous* source tree, not to this one:
+
+    target/ItemGuard-1.0.0-shaded.jar
+    SHA-256 d1aac80a4e0a33284df1b8dd5c0af6efb63f41c2196dd8a9075e3d1883e2a4b4
+
+## PREVIOUS — Branch `premium-mysql` — 2026-09-19 — Premium async boundary closed; the public API marks its blocking lookups
+
+Superseded 2026-09-19 by the section above. Kept for the six runtime receipts bound to
+`d1aac80a…` and the IG-R022 closure record; the code descriptions still describe the tree except
+where the section above says otherwise.
 
 This branch keeps the Premium candidate rebuildable on top of `main` release commit `6292638`.
 The frozen LITE candidate on `main` is not rebuilt or changed by Premium work.
@@ -137,11 +198,14 @@ a pair of tests — the same two-writer read-modify-write loses an update *witho
 different-identities-don't-block, rollback-releases, and an aborted connection leaving nothing
 visible. Detail: `docs/design/2026-09-16-premium-mysql-contract.md` §9.
 
-M3 is server identity and the cross-server rule. The MySQL schema is now **version 9** — the
-ladder moved, SQLite stayed at 8, and the parity test asserts the one-migration difference with
-the reason, because adding the column to the shipped LITE schema would change a candidate whose
-evidence is bound to its jar. `server_id` is on observations, history and publications, indexed
-with the observation time. `CrossServerFindingPolicy` answers only "seen on N servers, named",
+M3 is server identity and the cross-server rule. The MySQL schema is now **version 10** — the
+ladder moved twice while SQLite stayed at 8, and the parity test asserts the gap with its reasons
+rather than equality, because adding these columns to the shipped LITE schema would change a
+candidate whose evidence is bound to its jar. The two migrations are `server_id` on observations,
+history and publications, indexed with the observation time, and the acknowledgement columns
+`acknowledged_at`/`acknowledged_by` on `duplicate_findings` (`/finditem readdupe`; existing v9
+databases gain them through the startup upgrade path, fresh ones in the `CREATE TABLE`).
+`CrossServerFindingPolicy` answers only "seen on N servers, named",
 with a test that fails if any status or message says duplicate/dupe/copy/cloned — observations
 cannot tell a move from a copy. The rule has its own vocabulary (`CrossServerSighting`) rather
 than widening `ItemObservation`, so a change here cannot reach the epoch rule that has runtime
@@ -159,7 +223,7 @@ then `mvnw.cmd -o test` = 884/884 PASS, and `scripts/run_mysql_schema_gate.py` =
 
 M5 is implemented: `MySqlMigrationService` opens SQLite read-only, requires source schema 8,
 does dry-run first, refuses non-empty MySQL targets, copies all eight data tables, stamps
-`server_id`, updates target metadata to MySQL schema 9, and verifies per-table counts. `/ig migrate`
+`server_id`, updates target metadata to the current MySQL schema version, and verifies per-table counts. `/ig migrate`
 is admin-only and dry-run by default; `/ig migrate confirm` is the explicit copy operation.
 The runtime path now uses Connector/J `MysqlDataSource` behind HikariCP, with Maven relocation for
 Connector/J, HikariCP and SLF4J; global `DriverManager` is not the shipping migration path.

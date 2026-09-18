@@ -290,9 +290,20 @@ public class ConfigManager {
         return config.getInt("performance.batch-size", 100);
     }
 
+    public boolean isAutoCleanupEnabled() {
+        // The switch decides *whether*, the interval only says how often. Nothing read this key
+        // before: `enabled: false` still deleted history on the next cycle, which is the one setting
+        // whose whole purpose is to say "do not touch my audit trail".
+        return !plugin.isLiteEdition()
+            && config.getBoolean("performance.auto-cleanup.enabled", false);
+    }
+
     public int getCleanupIntervalHours() {
         // LITE is an investigation build: automatic history deletion stays off regardless of config.
-        return plugin.isLiteEdition() ? 0 : config.getInt("performance.auto-cleanup.interval-hours", 24);
+        if (!isAutoCleanupEnabled()) {
+            return 0;
+        }
+        return config.getInt("performance.auto-cleanup.interval-hours", 24);
     }
 
     public int getCleanupKeepDays() {

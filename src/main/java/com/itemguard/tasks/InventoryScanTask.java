@@ -25,13 +25,24 @@ public class InventoryScanTask extends BukkitRunnable {
     private final ScanEpochGenerator epochGenerator;
     private final ObservationEpochFinalizer epochFinalizer;
     private final ObservationEpochScanner<Player> epochScanner;
+    private final ScanMetrics metrics;
     private final BukkitTask sweepAdvanceTask;
     private ChunkSweepCursor<Chunk> sweepCursor;
     private volatile boolean epochInitialized;
     private volatile Throwable epochInitializationFailure;
 
+    /**
+     * Keeps the previous one-argument shape for tests and any caller that does not need to read the
+     * numbers back; the plugin itself passes the instance it exposes to the admin command, so the
+     * counters a player sees are the ones the scheduler wrote.
+     */
     public InventoryScanTask(ItemGuard plugin) {
+        this(plugin, new ScanMetrics());
+    }
+
+    public InventoryScanTask(ItemGuard plugin, ScanMetrics metrics) {
         this.plugin = plugin;
+        this.metrics = java.util.Objects.requireNonNull(metrics, "metrics");
         this.epochGenerator = new ScanEpochGenerator(System::currentTimeMillis);
         this.epochFinalizer = new ObservationEpochFinalizer(
             plugin.getDB()::completeObservationEpochAndAudit,
@@ -97,12 +108,18 @@ public class InventoryScanTask extends BukkitRunnable {
         sweepAdvanceTask.cancel();
     }
 
+    /** The scan's own numbers, for the admin diagnostics command. */
+    public ScanMetrics metrics() {
+        return metrics;
+    }
+
     @Override
     public void run() {
         if (epochInitializationFailure != null || !epochInitialized) {
             return;
         }
         if (sweepCursor.isPassInFlight()) {
+            metrics.recordSkippedBusyScan();
             plugin.getLogger().log(
                 plugin.getConfigs().isDebug() ? Level.INFO : Level.FINE,
                 "Skipping ItemGuard inventory scan tick: chunk container sweep still in flight"
@@ -110,17 +127,22 @@ public class InventoryScanTask extends BukkitRunnable {
             return;
         }
 
-        long scanEpoch = epochGenerator.next();
-        if (!plugin.getConfigs().isSweepEnabled()) {
-            epochScanner.scan(scanEpoch, Bukkit.getOnlinePlayers());
-            return;
-        }
+        long startedNanos = System.nanoTime();
+        try {
+            long scanEpoch = epochGenerator.next();
+            if (!plugin.getConfigs().isSweepEnabled()) {
+                epochScanner.scan(scanEpoch, Bukkit.getOnlinePlayers());
+                return;
+            }
 
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            plugin.getTrackingService().scanPlayerInventory(player, scanEpoch);
-            plugin.getTrackingService().scanOpenBlockContainerInventory(player, scanEpoch);
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                plugin.getTrackingService().scanPlayerInventory(player, scanEpoch);
+                plugin.getTrackingService().scanOpenBlockContainerInventory(player, scanEpoch);
+            }
+            startSweepPass(scanEpoch);
+        } finally {
+            metrics.recordScan(System.nanoTime() - startedNanos);
         }
-        startSweepPass(scanEpoch);
     }
 
     private void startSweepPass(long scanEpoch) {
@@ -130,6 +152,7 @@ public class InventoryScanTask extends BukkitRunnable {
         }
         sweepCursor = newSweepCursor();
         sweepCursor.startPass(loadedChunks, scanEpoch);
+        metrics.setSweepInFlight(true);
     }
 
     /**
@@ -141,6 +164,7 @@ public class InventoryScanTask extends BukkitRunnable {
         if (!sweepCursor.isPassInFlight()) {
             return;
         }
+        long startedNanos = System.nanoTime();
         ChunkSweepCursor.SweepBatch<Chunk> batch = sweepCursor.advance(Chunk::isLoaded);
         for (Chunk chunk : batch.visited()) {
             for (BlockState state : chunk.getTileEntities()) {
@@ -150,11 +174,13 @@ public class InventoryScanTask extends BukkitRunnable {
             }
         }
         if (batch.passComplete()) {
+            metrics.recordSweepPass(System.nanoTime() - startedNanos);
             finalizeEpoch(batch.epochId());
         }
     }
 
     private void finalizeEpoch(long scanEpoch) {
+        metrics.recordEpoch();
         epochFinalizer.complete(
             scanEpoch,
             plugin.getConfigs().isAntiDupeEnabled(),
@@ -165,6 +191,7 @@ public class InventoryScanTask extends BukkitRunnable {
 
     private void reportFindings(List<DuplicateFinding> findings) {
         for (DuplicateFinding finding : findings) {
+            metrics.recordFinding();
             plugin.getLogger().warning(
                 "ITEMGUARD_DUPLICATE_CONFIRMED code=" + finding.code()
                     + " uuid=" + finding.itemUuid()
@@ -182,12 +209,18 @@ public class InventoryScanTask extends BukkitRunnable {
             String locations = plugin.getMessages().getRaw("dupe-locations", Map.of(
                 "locations", String.valueOf(finding.distinctLocations())
             ));
+            int alerted = 0;
             for (Player player : Bukkit.getOnlinePlayers()) {
-                if (player.hasPermission(plugin.isLiteEdition() ? "itemguard.notify" : "itemguard.bypass")) {
+                // `itemguard.notify` and not `itemguard.bypass`: bypass means "skip the checks", and
+                // gating alerts on it meant a staff member trusted to see duplicates but not to skip
+                // checks never received one. One node, both editions, declared in plugin.yml.
+                if (player.hasPermission("itemguard.notify")) {
                     player.sendMessage(alert);
                     player.sendMessage(locations);
+                    alerted++;
                 }
             }
+            metrics.recordAlert(alerted);
         }
     }
 }

@@ -21,6 +21,7 @@ import com.itemguard.search.FindItemService;
 import com.itemguard.tasks.CleanupTask;
 import com.itemguard.tasks.InventoryScanTask;
 import com.itemguard.tasks.InventoryScanScheduler;
+import com.itemguard.tasks.ScanMetrics;
 import org.bukkit.NamespacedKey;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -55,6 +56,7 @@ public class ItemGuard extends JavaPlugin {
 
     private ItemGuardAPI api;
     private FindItemService findItemService;
+    private final ScanMetrics scanMetrics = new ScanMetrics();
     private final ReloadPolicy reloadPolicy = new ReloadPolicy();
 
     @Override
@@ -262,7 +264,7 @@ public class ItemGuard extends JavaPlugin {
     private void scheduleTasks() {
         int scanInterval = configManager.getInventoryScanInterval();
         if (scanInterval > 0) {
-            inventoryScanTask = new InventoryScanTask(this);
+            inventoryScanTask = new InventoryScanTask(this, scanMetrics);
             InventoryScanScheduler scheduler = new InventoryScanScheduler(
                 (task, delay, period) -> {
                     var bukkitTask = getServer().getScheduler().runTaskTimer(
@@ -356,6 +358,19 @@ public class ItemGuard extends JavaPlugin {
 
     public GUIListener getGuiListener() {
         return guiListener;
+    }
+
+    /**
+     * The observation scan's own numbers, shared with the scheduler that writes them so the admin
+     * command reads the live instance rather than an empty copy.
+     */
+    public ScanMetrics getScanMetrics() {
+        return scanMetrics;
+    }
+
+    /** The scheduled scan task, or null when scanning is disabled by config. */
+    public InventoryScanTask getInventoryScanTask() {
+        return inventoryScanTask;
     }
 
     public NamespacedKey getNamespacedKey(String key) {

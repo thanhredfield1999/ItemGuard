@@ -13,6 +13,57 @@ class FindItemCommandParserTest {
     private final FindItemCommandParser parser = new FindItemCommandParser();
 
     @Test
+    void parsesTheAdminReportingSubcommands() {
+        assertEquals(
+            FindItemCommandAction.CheckTps.INSTANCE,
+            parser.parse(new String[] {"checktps"})
+        );
+        assertEquals(
+            new FindItemCommandAction.InfoItem("AB12CD"),
+            parser.parse(new String[] {"infoitem", "#ab12cd"})
+        );
+        assertEquals(
+            new FindItemCommandAction.InfoPlayer("ThanhRedfield"),
+            parser.parse(new String[] {"infoplayer", "ThanhRedfield"})
+        );
+        assertEquals(
+            new FindItemCommandAction.InfoDupe("AB12CD"),
+            parser.parse(new String[] {"infodupe", "ab12cd"})
+        );
+        assertEquals(
+            new FindItemCommandAction.ReadFinding("AB12CD"),
+            parser.parse(new String[] {"readfinding", "ab12cd"})
+        );
+        assertEquals(
+            new FindItemCommandAction.AcknowledgeDupe("AB12CD"),
+            parser.parse(new String[] {"readdupe", "ab12cd"})
+        );
+    }
+
+    @Test
+    void everyReportingSubcommandRejectsAMissingArgument() {
+        for (String subcommand : new String[] {
+            "infoitem", "infoplayer", "infodupe", "readfinding", "readdupe"
+        }) {
+            assertThrows(
+                IllegalArgumentException.class,
+                () -> parser.parse(new String[] {subcommand}),
+                subcommand + " must not run without its code or player argument"
+            );
+            assertThrows(
+                IllegalArgumentException.class,
+                () -> parser.parse(new String[] {subcommand, "code", "extra"}),
+                subcommand + " must not accept a third argument"
+            );
+        }
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> parser.parse(new String[] {"checktps", "extra"}),
+            "checktps takes no argument"
+        );
+    }
+
+    @Test
     void parsesStartFindAndTakeCommands() {
         assertEquals(
             new FindItemCommandAction.Start("AB12CD", ItemSearchMode.FIND, Duration.ofMinutes(5)),

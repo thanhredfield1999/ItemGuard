@@ -14,6 +14,7 @@ public final class ReloadPolicy {
         addIfChanged(changed, "database.type", current.databaseType(), candidate.databaseType());
         addIfChanged(changed, "database.sqlite.file-name", current.sqliteFileName(), candidate.sqliteFileName());
         addIfChanged(changed, "performance.inventory-scan-interval", current.inventoryScanInterval(), candidate.inventoryScanInterval());
+        addIfChanged(changed, "performance.auto-cleanup.enabled", current.autoCleanupEnabled(), candidate.autoCleanupEnabled());
         addIfChanged(changed, "performance.auto-cleanup.interval-hours", current.cleanupIntervalHours(), candidate.cleanupIntervalHours());
         addIfChanged(changed, "tracking.force-track-materials", current.forceTrackMaterials(), candidate.forceTrackMaterials());
         addIfChanged(changed, "worlds.worldguard-support", current.worldGuardEnabled(), candidate.worldGuardEnabled());

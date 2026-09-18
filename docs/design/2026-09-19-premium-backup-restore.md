@@ -40,11 +40,11 @@ the boundaries it does **not** cover.
 
 | Case | Result (receipt phase) |
 |---|---|
-| Full restore into a second schema | per-table row counts identical to the source (`tracked_items` 1, `item_history` 4, `item_snapshots` 1, `tag_publications` 2, `plugin_stats` 1), schema version 9 |
+| Full restore into a second schema | per-table row counts identical to the source (`tracked_items` 1, `item_history` 4, `item_snapshots` 1, `tag_publications` 2, `plugin_stats` 1), schema version 9 at the time of the gate (10 after the acknowledgement columns were added) |
 | Plugin starts on the restored schema | enables, and a real client reads the same identity back: `/ig check` returns the same code, `/ig stats` reads MYSQL, and the server-side history for that code still lists `PICKUP`, `DROP`, `INVENTORY_MOVE`, `SPAWN` (phase B3) |
 | Restore that is **missing a data table** | refused by name — `Refusing to start: … is missing item_history …` — and the missing table is **not** re-created (phase C, after the fix) |
 | Recorded schema version newer than this build | refused by name: `Unsupported future ItemGuard schema version: 99` (phase D) |
-| A database with no ItemGuard schema at all | created from scratch, version 9 seeded (test `MySqlPartialRestoreRefusalTest.emptyDatabaseIsInitialized`) |
+| A database with no ItemGuard schema at all | created from scratch, version seeded (test `MySqlPartialRestoreRefusalTest.emptyDatabaseIsInitialized`) |
 
 Phase C is the case that used to pass silently. On the previous artifact the same fixture produced
 `SILENT_RECREATE_EMPTY_HISTORY`: the missing table was re-created empty, the plugin enabled, and

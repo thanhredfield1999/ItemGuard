@@ -66,6 +66,9 @@ SCANNED_INSIDE_EXEMPT = {
     "com/itemguard/commands/ItemCodeInput.java":
         "LiteCommand calls normalize(); its exception text is caught there, so this is scanned "
         "rather than exempted in case it ever stops being caught",
+    "com/itemguard/commands/FindItemReportTask.java":
+        "reachable from the /finditem family, whose subcommands LITE does not register; its own "
+        "strings are English, so it is scanned rather than exempted in case that stops being true",
     "com/itemguard/catalog/CatalogText.java":
         "runs on BOTH editions: SqliteConnectionOwner.registerIndexFunction is not edition-guarded, "
         "so 'it holds no player text today' has to be checked rather than assumed",

@@ -9,6 +9,8 @@ import com.itemguard.dupe.DuplicateAction;
 import com.itemguard.dupe.DuplicateDetector;
 import com.itemguard.dupe.DuplicateFinding;
 import com.itemguard.dupe.DuplicateStatus;
+import com.itemguard.dupe.FindingAcknowledgement;
+import com.itemguard.dupe.FindingRecord;
 import com.itemguard.dupe.HolderType;
 import com.itemguard.dupe.ItemObservation;
 import com.itemguard.dupe.ObservationKey;
@@ -448,6 +450,96 @@ public final class ItemSqliteRepository implements
                 }
             }
         });
+    }
+
+    /**
+     * The findings recorded for one identity, newest first.
+     *
+     * <p>Reads on both backends; the acknowledgement columns are selected as NULL where the backend
+     * has none, so the mapping stays one shape. That is why {@link FindingAcknowledgement} carries a
+     * {@code supported} flag rather than this method guessing from the rows.
+     */
+    public List<FindingRecord> findingsFor(String code, int limit) {
+        Objects.requireNonNull(code, "code");
+        int boundedLimit = Math.max(1, Math.min(limit, 200));
+        return owner.call(connection -> {
+            String sql = mysql()
+                ? """
+                  SELECT finding_id, code, item_uuid, scan_epoch, status, distinct_locations, action,
+                         created_at, detail, acknowledged_at, acknowledged_by
+                  FROM duplicate_findings WHERE code = ?
+                  ORDER BY scan_epoch DESC, finding_id DESC LIMIT ?
+                  """
+                : """
+                  SELECT finding_id, code, item_uuid, scan_epoch, status, distinct_locations, action,
+                         created_at, detail, NULL AS acknowledged_at, NULL AS acknowledged_by
+                  FROM duplicate_findings WHERE code = ?
+                  ORDER BY scan_epoch DESC, finding_id DESC LIMIT ?
+                  """;
+            List<FindingRecord> findings = new ArrayList<>();
+            try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, code);
+                statement.setInt(2, boundedLimit);
+                try (ResultSet result = statement.executeQuery()) {
+                    while (result.next()) {
+                        // Read each nullable column into a local and take its null flag *immediately*:
+                        // `wasNull()` describes the last column read, so a flag taken after the next
+                        // getter belongs to that column instead. Reading it late made every row with a
+                        // non-null `detail` look acknowledged, because the flag was testing `detail`.
+                        long acknowledgedAtValue = result.getLong("acknowledged_at");
+                        boolean acknowledgedAtWasNull = result.wasNull();
+                        String acknowledgedBy = result.getString("acknowledged_by");
+                        String detail = result.getString("detail");
+                        findings.add(new FindingRecord(
+                            result.getLong("finding_id"),
+                            result.getString("code"),
+                            result.getString("item_uuid"),
+                            result.getLong("scan_epoch"),
+                            result.getString("status"),
+                            result.getInt("distinct_locations"),
+                            result.getString("action"),
+                            result.getLong("created_at"),
+                            detail,
+                            acknowledgedAtWasNull ? null : acknowledgedAtValue,
+                            acknowledgedBy
+                        ));
+                    }
+                }
+            }
+            return List.copyOf(findings);
+        });
+    }
+
+    /**
+     * Marks every unread finding of an identity as read by the given actor.
+     *
+     * <p>MySQL only: the columns belong to the Premium schema (see
+     * {@link MySqlSchemaManager#CURRENT_SCHEMA_VERSION} for why the SQLite ladder is untouched), so on
+     * SQLite this answers "not supported" instead of pretending a write happened.
+     */
+    public FindingAcknowledgement acknowledgeFindings(
+        String code,
+        String actor,
+        long acknowledgedAt
+    ) {
+        Objects.requireNonNull(code, "code");
+        if (!mysql()) {
+            return FindingAcknowledgement.noneOnThisBackend();
+        }
+        String boundedActor = actor == null ? "unknown" : actor.substring(0, Math.min(64, actor.length()));
+        int updated = owner.call(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement("""
+                UPDATE duplicate_findings
+                SET acknowledged_at = ?, acknowledged_by = ?
+                WHERE code = ? AND acknowledged_at IS NULL
+                """)) {
+                statement.setLong(1, acknowledgedAt);
+                statement.setString(2, boundedActor);
+                statement.setString(3, code);
+                return statement.executeUpdate();
+            }
+        });
+        return FindingAcknowledgement.of(updated);
     }
 
     public long getMaximumPersistedObservationEpoch() {

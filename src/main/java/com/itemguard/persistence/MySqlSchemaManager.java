@@ -64,15 +64,23 @@ public final class MySqlSchemaManager {
     /**
      * The schema version this manager produces.
      *
-     * <p>Deliberately <strong>one ahead</strong> of {@link SqliteSchemaManager#CURRENT_SCHEMA_VERSION}
-     * (8): the {@code server_id} columns exist only where several servers share one database, and
-     * a single-server SQLite install has nothing to record in them. Adding the column to the
-     * shipped LITE schema instead would change a candidate that is already built and verified, so
-     * the ladder is expressed as "MySQL is one migration ahead, and the parity test says why"
-     * rather than as two schemas claiming one version. {@code /ig migrate} therefore reads a
-     * version-8 SQLite file and writes version-9 rows, stamping {@code server_id} from config.
+     * <p>Deliberately <strong>two ahead</strong> of {@link SqliteSchemaManager#CURRENT_SCHEMA_VERSION}
+     * (8), and each step is a decision that is stated rather than inherited:
+     *
+     * <ol>
+     *   <li><b>v9 — {@code server_id}.</b> The column exists only where several servers share one
+     *       database, and a single-server SQLite install has nothing to record in it.</li>
+     *   <li><b>v10 — finding acknowledgement.</b> {@code duplicate_findings} carries who marked a
+     *       finding read. It is MySQL-only for an interoperability reason, not a preference: the
+     *       shipped LITE jar opens a SQLite file at version 8 and refuses a database whose recorded
+     *       version is newer (correctly — it cannot validate columns it does not know). Raising the
+     *       SQLite ladder here would make a database written by this build unopenable by the LITE
+     *       jar that is already published, so the column stays on the backend where Premium lives.
+     *       On SQLite, {@code /finditem readdupe} answers that acknowledgement needs the MySQL
+     *       backend instead of pretending a write happened.</li>
+     * </ol>
      */
-    public static final int CURRENT_SCHEMA_VERSION = 9;
+    public static final int CURRENT_SCHEMA_VERSION = 10;
 
     /** MySQL 8.0 is the floor: {@code utf8mb4_0900_bin} and real descending indexes are 8.0 features. */
     public static final int MINIMUM_SERVER_MAJOR_VERSION = 8;
@@ -188,6 +196,10 @@ public final class MySqlSchemaManager {
                     action VARCHAR(16) NOT NULL,
                     created_at BIGINT NOT NULL,
                     detail TEXT,
+                    -- v10: who marked this finding read, and when. NULL means unread, which is the
+                    -- only state that carries a triage duty.
+                    acknowledged_at BIGINT NULL,
+                    acknowledged_by VARCHAR(64) NULL,
                     UNIQUE KEY idx_duplicate_finding_identity_epoch (item_uuid, scan_epoch),
                     KEY idx_duplicate_finding_identity_created (item_uuid, created_at),
                     CONSTRAINT fk_finding_item FOREIGN KEY (code) REFERENCES tracked_items (code)
@@ -283,6 +295,7 @@ public final class MySqlSchemaManager {
                 """.formatted(COLLATION));
             createHistoryIndex(connection, statement);
             validateHistoryIndex(connection);
+            ensureFindingAcknowledgementColumns(connection, statement);
             statement.executeUpdate("""
                 INSERT IGNORE INTO plugin_stats
                 (id, schema_version, duplicates_detected, last_updated)
@@ -359,6 +372,40 @@ public final class MySqlSchemaManager {
                         + "engine for a table this schema defines as InnoDB."
                 );
             }
+        }
+    }
+
+    /**
+     * Adds the v10 acknowledgement columns to a database created at v9.
+     *
+     * <p>MySQL has no {@code ADD COLUMN IF NOT EXISTS}, so the existing columns are looked up first —
+     * the same shape {@link #createHistoryIndex} uses. Both columns are nullable with no default, so
+     * the ALTER is a metadata-only change on InnoDB and existing rows stay unread, which is the right
+     * starting state: a finding nobody has triaged.
+     */
+    private void ensureFindingAcknowledgementColumns(Connection connection, Statement statement)
+        throws SQLException {
+        java.util.Set<String> existing = new java.util.HashSet<>();
+        try (var lookup = connection.prepareStatement("""
+                SELECT COLUMN_NAME FROM information_schema.columns
+                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'duplicate_findings'
+                  AND COLUMN_NAME IN ('acknowledged_at', 'acknowledged_by')
+                """)) {
+            try (ResultSet rows = lookup.executeQuery()) {
+                while (rows.next()) {
+                    existing.add(rows.getString(1));
+                }
+            }
+        }
+        if (!existing.contains("acknowledged_at")) {
+            statement.execute(
+                "ALTER TABLE duplicate_findings ADD COLUMN acknowledged_at BIGINT NULL"
+            );
+        }
+        if (!existing.contains("acknowledged_by")) {
+            statement.execute(
+                "ALTER TABLE duplicate_findings ADD COLUMN acknowledged_by VARCHAR(64) NULL"
+            );
         }
     }
 

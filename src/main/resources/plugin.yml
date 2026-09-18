@@ -52,6 +52,7 @@ permissions:
       itemguard.migrate: true
       itemguard.gui: true
       itemguard.bypass: true
+      itemguard.notify: true
       itemguard.finditem.admin: true
       itemguard.matdo: true
       itemguard.track: true
@@ -87,6 +88,9 @@ permissions:
     default: op
   itemguard.bypass:
     description: Bypass anti-dupe checks (staff)
+    default: op
+  itemguard.notify:
+    description: Receive duplicate/anti-dupe alerts in chat
     default: op
   itemguard.finditem.admin:
     description: Quan ly /finditem

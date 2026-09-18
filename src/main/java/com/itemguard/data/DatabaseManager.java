@@ -276,6 +276,23 @@ public final class DatabaseManager implements
         return repository.getMaximumPersistedObservationEpoch();
     }
 
+    /** Findings recorded for one identity, newest first, for the admin triage commands. */
+    public List<com.itemguard.dupe.FindingRecord> findingsFor(String code, int limit) {
+        return repository.findingsFor(code, limit);
+    }
+
+    /**
+     * Marks a code's unread findings as read. MySQL only: the acknowledgement columns are part of the
+     * Premium schema, so on SQLite the result says it was not supported instead of reporting zero.
+     */
+    public com.itemguard.dupe.FindingAcknowledgement acknowledgeFindings(
+        String code,
+        String actor,
+        long acknowledgedAt
+    ) {
+        return repository.acknowledgeFindings(code, actor, acknowledgedAt);
+    }
+
     public CompletableFuture<Long> getMaximumPersistedObservationEpochAsync() {
         return repository.getMaximumPersistedObservationEpochAsync();
     }

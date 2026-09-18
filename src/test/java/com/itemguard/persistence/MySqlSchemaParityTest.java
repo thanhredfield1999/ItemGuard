@@ -62,14 +62,18 @@ class MySqlSchemaParityTest {
     }
 
     @Test
-    @DisplayName("the MySQL schema is exactly one migration ahead, and the extra is server_id")
-    void mysqlSchemaIsOneMigrationAhead() throws Exception {
-        assertEquals(SqliteSchemaManager.CURRENT_SCHEMA_VERSION + 1,
+    @DisplayName("the MySQL schema is two migrations ahead, and the parity test says which and why")
+    void mysqlSchemaIsTwoMigrationsAhead() throws Exception {
+        assertEquals(SqliteSchemaManager.CURRENT_SCHEMA_VERSION + 2,
             MySqlSchemaManager.CURRENT_SCHEMA_VERSION,
-            "MySQL carries server_id, which a single-server SQLite install has nothing to record "
-                + "in; moving one ladder without the other is a decision, not a detail");
+            "MySQL is ahead by server_id (v9) and by finding acknowledgement (v10); moving one "
+                + "ladder without the other is a decision, not a detail");
         assertTrue(code().contains("server_id"),
-            "the migration the MySQL ladder is ahead by is the server column");
+            "the first migration ahead is the server column");
+        assertTrue(code().contains("acknowledged_at") && code().contains("acknowledged_by"),
+            "the second migration ahead is finding acknowledgement, which stays on MySQL because "
+                + "raising the SQLite ladder would make a database written here unopenable by the "
+                + "published LITE jar");
     }
 
     @Test

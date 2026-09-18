@@ -37,6 +37,7 @@ EXPECTED_CLASSES = (
     'com.itemguard.persistence.MySqlCrossServerFindingTest',
     'com.itemguard.persistence.MySqlConnectionOwnerTest',
     'com.itemguard.persistence.MySqlPartialRestoreRefusalTest',
+    'com.itemguard.persistence.MySqlFindingAcknowledgementTest',
     'com.itemguard.catalog.MySqlCatalogRepositoryTest',
     'com.itemguard.persistence.MySqlMigrationServiceTest',
     'com.itemguard.persistence.MySqlRepositoryRuntimeTest',

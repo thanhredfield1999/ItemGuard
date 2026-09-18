@@ -370,13 +370,13 @@ server; it is not two servers, and it is not a Paper server.
 
 Three columns and one rule, and the rule's vocabulary is the interesting part.
 
-**Schema, now version 9.** `server_id VARCHAR(64) NOT NULL` on `item_observations`,
+**Schema, now version 10.** `server_id VARCHAR(64) NOT NULL` on `item_observations`,
 `item_history` and `tag_publications` (D1), plus `KEY idx_observation_identity_server
 (item_uuid, server_id, observed_at)` — the cross-server question is "which servers has this
 identity been seen on inside a window", and without that index it reads every observation ever
 taken.
 
-**The ladder moved, and LITE did not.** MySQL is now one migration ahead of SQLite (8), and the
+**The ladder moved, and LITE did not.** MySQL is now two migrations ahead of SQLite (8), and the
 parity test asserts exactly that difference rather than equality — with the reason in the failure
 message. The alternative was adding `server_id` to the shipped SQLite schema, which would change a
 candidate that is built and verified and whose whole evidence chain is bound to its jar; a

@@ -167,6 +167,13 @@ class LiteCommandTest {
         var fullYaml = new YamlConfiguration();
         fullYaml.set("performance.auto-cleanup.interval-hours", 24);
         when(full.getConfig()).thenReturn(fullYaml);
-        assertEquals(24, new ConfigManager(full).getCleanupIntervalHours());
+        // The switch, not the interval, decides whether FULL prunes at all: an interval of 24 with
+        // no `enabled: true` is a configured-but-off retention job, and reading only the interval is
+        // how an operator who turned cleanup off still lost rows.
+        assertEquals(0, new ConfigManager(full).getCleanupIntervalHours());
+
+        fullYaml.set("performance.auto-cleanup.enabled", true);
+        assertEquals(24, new ConfigManager(full).getCleanupIntervalHours(),
+            "with the switch on, FULL follows the configured interval");
     }
 }

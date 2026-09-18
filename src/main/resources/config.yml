@@ -131,7 +131,11 @@ uuid-tag:
 
 # ---------- ANTI-DUPE ----------
 anti-dupe:
-  # Release gate: keep disabled until controlled Paper verification passes.
+  # Keep false until a controlled runtime gate has produced a real duplicate on the active backend.
+  # The detection rule itself (two locations in two consecutive epochs) is unit/MySQL tested, but the
+  # end-to-end path — two real copies seen by the scan, one finding, one staff alert — has been run
+  # on paper and not yet on a controlled Paper/MySQL fixture. Turning it on early would promise
+  # detection nobody has watched work.
   enabled: false
 
   # MVP only permits NOTIFY. Destructive actions are fail-closed.
@@ -295,9 +299,18 @@ performance:
   # Batch size for bulk database operations
   batch-size: 100
 
-  # Enable periodic database cleanup
+  # Enable periodic database cleanup.
+  #
+  # This deletes item history older than keep-days. It now ships OFF, and the switch is the switch:
+  # `enabled: false` means the plugin never runs the retention job, whatever `interval-hours` says.
+  # (Before, only the interval was read, so an operator who turned cleanup off still lost rows on the
+  # next cycle — the opposite of what the file said.) LITE ignores this section entirely and never
+  # deletes history.
+  #
+  # Turning it on is a deliberate choice to trade audit depth for database size: the history rows a
+  # restore decision would stand on are exactly the ones it removes.
   auto-cleanup:
-    enabled: true
+    enabled: false
     # Run cleanup every X hours
     interval-hours: 24
     # Delete history entries older than X days

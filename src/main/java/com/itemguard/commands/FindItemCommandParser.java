@@ -20,6 +20,17 @@ public final class FindItemCommandParser {
             case "stopfinding" -> new FindItemCommandAction.Stop(requiredCode(arguments));
             case "listfinding" -> new FindItemCommandAction.ListActive(parsePage(arguments));
             case "removefinding" -> new FindItemCommandAction.Remove(requiredCode(arguments));
+            case "checktps" -> {
+                if (arguments.length != 1) {
+                    throw new IllegalArgumentException("Use /finditem checktps");
+                }
+                yield FindItemCommandAction.CheckTps.INSTANCE;
+            }
+            case "infoitem" -> new FindItemCommandAction.InfoItem(requiredCode(arguments));
+            case "infoplayer" -> new FindItemCommandAction.InfoPlayer(requiredPlayer(arguments));
+            case "infodupe" -> new FindItemCommandAction.InfoDupe(requiredCode(arguments));
+            case "readfinding" -> new FindItemCommandAction.ReadFinding(requiredCode(arguments));
+            case "readdupe" -> new FindItemCommandAction.AcknowledgeDupe(requiredCode(arguments));
             case "clearfinding" -> {
                 if (arguments.length != 2 || !arguments[1].equalsIgnoreCase("confirm")) {
                     throw new IllegalArgumentException(
@@ -55,6 +66,14 @@ public final class FindItemCommandParser {
             throw new IllegalArgumentException("Item code is required");
         }
         return normalizeCode(arguments[1]);
+    }
+
+    /** A player name, kept as typed: the command resolves it against online players. */
+    private String requiredPlayer(String[] arguments) {
+        if (arguments.length != 2 || arguments[1].isBlank()) {
+            throw new IllegalArgumentException("Player name is required");
+        }
+        return arguments[1];
     }
 
     private int parsePage(String[] arguments) {

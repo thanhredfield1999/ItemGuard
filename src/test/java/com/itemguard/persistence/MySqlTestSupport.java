@@ -49,6 +49,27 @@ public final class MySqlTestSupport {
         return connection;
     }
 
+    /**
+     * A repository on the fixture's own pool, for tests that exercise SQL rather than DDL.
+     *
+     * <p>The owner is the test's; closing it (try-with-resources) closes the pool, so a caller that
+     * builds the repository this way must close the owner, not just the repository.
+     */
+    public static MySqlConnectionOwner owner() {
+        return new MySqlConnectionOwner(
+            MySqlConnectionOwner.hikariDataSource(
+                setting("IG_MYSQL_TEST_URL", DEFAULT_URL),
+                setting("IG_MYSQL_TEST_USER", "itemguard"),
+                setting("IG_MYSQL_TEST_PASSWORD", "itemguard_test_password"),
+                3,
+                1,
+                5_000
+            ),
+            3,
+            ignored -> { }
+        );
+    }
+
     public static void dropTargetTablesForMigration() {
         try (Connection connection = connect()) {
             connection.setAutoCommit(false);
