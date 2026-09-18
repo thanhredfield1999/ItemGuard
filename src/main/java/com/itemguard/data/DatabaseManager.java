@@ -276,6 +276,10 @@ public final class DatabaseManager implements
         return repository.getMaximumPersistedObservationEpoch();
     }
 
+    public CompletableFuture<Long> getMaximumPersistedObservationEpochAsync() {
+        return repository.getMaximumPersistedObservationEpochAsync();
+    }
+
     public Optional<ItemData> getItem(String code) {
         return repository.getItem(code);
     }
@@ -365,6 +369,10 @@ public final class DatabaseManager implements
         return repository.getHistoryCount(code);
     }
 
+    public CompletableFuture<Integer> getHistoryCountAsync(String code) {
+        return repository.getHistoryCountAsync(code);
+    }
+
     public PluginStats getStats() {
         return repository.getStats();
     }
@@ -395,6 +403,14 @@ public final class DatabaseManager implements
         plugin.getLogger().info(
             "Deleted " + deleted + " old history entries (older than " + keepDays + " days)"
         );
+    }
+
+    public CompletableFuture<Integer> deleteOldHistoryAsync(int keepDays) {
+        if (keepDays < 0) {
+            throw new IllegalArgumentException("History retention days cannot be negative");
+        }
+        long cutoff = System.currentTimeMillis() - Math.multiplyExact(keepDays, 86_400_000L);
+        return repository.deleteHistoryBeforeAsync(cutoff);
     }
 
     public void flush() {

@@ -30,4 +30,8 @@ public final class ScanEpochGenerator {
             }
         }
     }
+
+    public void initializeEpochFloor(long persistedEpochFloor) {
+        previous.accumulateAndGet(persistedEpochFloor, Math::max);
+    }
 }

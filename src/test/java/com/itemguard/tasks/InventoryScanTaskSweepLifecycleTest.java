@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -35,6 +36,8 @@ class InventoryScanTaskSweepLifecycleTest {
         ItemGuard plugin = mock(ItemGuard.class, RETURNS_DEEP_STUBS);
         when(plugin.getConfigs().isSweepEnabled()).thenAnswer(inv -> sweepEnabled.get());
         when(plugin.getConfigs().getSweepChunksPerTick()).thenReturn(chunksPerTick);
+        when(plugin.getDB().getMaximumPersistedObservationEpochAsync())
+            .thenReturn(CompletableFuture.completedFuture(Long.MIN_VALUE));
         return plugin;
     }
 

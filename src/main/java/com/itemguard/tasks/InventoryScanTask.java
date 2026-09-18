@@ -16,6 +16,7 @@ import org.bukkit.scheduler.BukkitTask;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.logging.Level;
 
 public class InventoryScanTask extends BukkitRunnable {
@@ -26,13 +27,12 @@ public class InventoryScanTask extends BukkitRunnable {
     private final ObservationEpochScanner<Player> epochScanner;
     private final BukkitTask sweepAdvanceTask;
     private ChunkSweepCursor<Chunk> sweepCursor;
+    private volatile boolean epochInitialized;
+    private volatile Throwable epochInitializationFailure;
 
     public InventoryScanTask(ItemGuard plugin) {
         this.plugin = plugin;
-        this.epochGenerator = new ScanEpochGenerator(
-            System::currentTimeMillis,
-            plugin.getDB().getMaximumPersistedObservationEpoch()
-        );
+        this.epochGenerator = new ScanEpochGenerator(System::currentTimeMillis);
         this.epochFinalizer = new ObservationEpochFinalizer(
             plugin.getDB()::completeObservationEpochAndAudit,
             runnable -> plugin.getServer().getScheduler().runTask(plugin, runnable),
@@ -59,6 +59,32 @@ public class InventoryScanTask extends BukkitRunnable {
             1L,
             1L
         );
+        initializeEpochFloorAsync();
+    }
+
+    private void initializeEpochFloorAsync() {
+        CompletableFuture<Long> persistedEpoch = plugin.getDB()
+            .getMaximumPersistedObservationEpochAsync();
+        if (persistedEpoch == null) {
+            // The production DatabaseManager always returns a future. A null test seam represents
+            // an empty store and must not make construction block the server thread.
+            persistedEpoch = CompletableFuture.completedFuture(Long.MIN_VALUE);
+        }
+        persistedEpoch.whenComplete((floor, failure) -> {
+            if (failure != null) {
+                epochInitializationFailure = failure;
+                plugin.getLogger().log(
+                    Level.SEVERE,
+                    "Failed to initialize ItemGuard observation epoch; scan remains disabled",
+                    failure
+                );
+                return;
+            }
+            epochGenerator.initializeEpochFloor(
+                floor == null ? Long.MIN_VALUE : floor
+            );
+            epochInitialized = true;
+        });
     }
 
     private ChunkSweepCursor<Chunk> newSweepCursor() {
@@ -73,6 +99,9 @@ public class InventoryScanTask extends BukkitRunnable {
 
     @Override
     public void run() {
+        if (epochInitializationFailure != null || !epochInitialized) {
+            return;
+        }
         if (sweepCursor.isPassInFlight()) {
             plugin.getLogger().log(
                 plugin.getConfigs().isDebug() ? Level.INFO : Level.FINE,

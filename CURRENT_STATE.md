@@ -1,37 +1,43 @@
 # ItemGuard — Current State
 
-## CURRENT — Branch `premium-mysql` — 2026-09-18 — Premium runtime wiring verified offline/fixture
+## CURRENT — Branch `premium-mysql` — 2026-09-18 — Premium wiring + async P0 slice verified offline/fixture
 
-This branch exists so that the release candidate keeps a tree it can be rebuilt from: `main` is
-the release commit `6292638`, and this branch holds the Premium work on top of it.
+This branch keeps the Premium candidate rebuildable on top of `main` release commit `6292638`.
+The frozen LITE candidate on `main` is not rebuilt or changed by Premium work.
 
-**The LITE release boundary remains unchanged.** `main` and the frozen LITE candidate are not
-rebuilt or changed by Premium work. On `premium-mysql`, `DatabaseManager` now selects SQLite or
-MySQL explicitly; MySQL fails closed during construction if configuration, durability, strictness,
-schema, or server identity is unacceptable. This is Premium runtime-wired at source level, but
-not Paper-runtime or production verified.
+On `premium-mysql`, `DatabaseManager` explicitly selects SQLite or MySQL. MySQL fails closed during
+construction when configuration, durability, strictness, schema, or server identity is unacceptable.
+The P0 async slice now removes DB waits from `CheckCommand`, scheduled history cleanup, and
+`InventoryScanTask` construction; scan startup remains fail-closed until the persisted epoch floor
+has loaded. This is source-level/fixture evidence, not Paper-runtime or production verification.
 
-Fresh evidence bound to the current working tree:
+Fresh evidence bound to the current source tree:
 
-    mvnw.cmd -o test                                      886/886, 0 failures/errors/skipped
+    mvnw.cmd -o test                                      890/890, 0 failures/errors/skipped
     python scripts/run_mysql_schema_gate.py               35/35, 0 failures/errors/skipped
-                                                            MySQL 8.4.6; all expected tagged
-                                                            classes present; fixture stopped,
-                                                            port closed, process gone
+                                                            MySQL 8.4.6; expected tagged classes
+                                                            present; fixture stopped, port closed,
+                                                            process gone
     mvnw.cmd -o -DskipTests package                       BUILD SUCCESS
-    target/ItemGuard-1.0.0-shaded.jar                     SHA-256 4f569b4353dff25f2296c6095475946418356bdc0031ee0df4b9c0e34b1dfd4d
-                                                            Connector/J/Hikari/SLF4J relocated
+    target/ItemGuard-1.0.0-shaded.jar                     SHA-256 8dfcda67c091dc4f65b9e126276cffab7c7ab1ab29e4383e62dac492d27023eb
+                                                            1,267 relocated Connector/J/Hikari/SLF4J
+                                                            entries
 
-MySQL gate evidence: `run/mysql-schema-gate-20260918-155405.json`.
+MySQL gate evidence: `run/mysql-schema-gate-20260918-171956.json`.
+Async boundary evidence includes RED→GREEN contract tests for `CheckCommand`, cleanup, persisted
+epoch initialization, and the async epoch-floor behavior. Existing History/Search/Stats/Lite/GUI
+read paths remain async; sync public APIs remain compatibility surfaces and are not claimed safe for
+arbitrary external callers.
 
 Runtime-wiring coverage includes canonical item and snapshot upsert, history with `server_id`,
 observation upsert, epoch audit, search request, reclaim idempotency, tag publication, loss journal
-atomic write, and server identity on a real fixture. MySQL identity-affecting writes now use
-`FOR UPDATE`; SQLite keeps its serialized executor path.
+atomic write, and server identity on a real fixture. MySQL identity-affecting writes use `FOR UPDATE`;
+SQLite keeps its serialized executor path.
 
 Open evidence boundaries: no controlled Paper startup with `database.type: MYSQL`; no two Paper
 servers; no production deployment. Cross-server proof remains the database-level two-owner fixture.
-The Premium jar is not uploaded, tagged, or released.
+IG-R022 remains partially mitigated until the remaining compatibility/GUI boundaries receive Paper
+proof. The Premium jar is not uploaded, tagged, or released.
 
 The detailed M1–M6 narrative below is historical. The section above is the only current binding.
 

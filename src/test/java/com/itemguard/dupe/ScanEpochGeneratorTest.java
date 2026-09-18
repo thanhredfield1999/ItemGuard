@@ -41,4 +41,14 @@ class ScanEpochGeneratorTest {
         assertEquals(5_001L, generator.next());
         assertEquals(5_002L, generator.next());
     }
+
+    @Test
+    void persistedEpochFloorCanBeAppliedAfterAsyncInitialization() {
+        AtomicLong clock = new AtomicLong(1_000L);
+        ScanEpochGenerator generator = new ScanEpochGenerator(clock::get);
+
+        generator.initializeEpochFloor(5_000L);
+
+        assertEquals(5_001L, generator.next());
+    }
 }

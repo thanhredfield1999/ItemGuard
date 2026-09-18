@@ -3,6 +3,7 @@ package com.itemguard.commands;
 import com.itemguard.ItemGuard;
 import com.itemguard.data.ItemData;
 import com.itemguard.services.ItemTrackingService;
+import com.itemguard.gui.UiMainThreadHandoff;
 import org.bukkit.Material;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -67,14 +68,26 @@ public class CheckCommand implements CommandExecutor, TabCompleter {
             return;
         }
 
-        Optional<ItemData> dataOpt = plugin.getDB().getItem(code);
-        if (dataOpt.isEmpty()) {
-            plugin.getMessages().send(player, "item-not-tracked");
-            return;
-        }
+        plugin.getDB().getItemAsync(code).thenCombine(
+            plugin.getDB().getHistoryCountAsync(code),
+            java.util.AbstractMap.SimpleImmutableEntry::new
+        ).whenComplete((loaded, failure) -> UiMainThreadHandoff.dispatch(plugin, () -> {
+            if (failure != null) {
+                plugin.getLogger().log(java.util.logging.Level.SEVERE,
+                    "Failed to load ItemGuard check data", failure);
+                player.sendMessage("§e§l[ItemGuard] §cKhông thể kiểm tra lúc này. Vui lòng thử lại.");
+                return;
+            }
+            Optional<ItemData> dataOpt = loaded.getKey();
+            if (dataOpt.isEmpty()) {
+                plugin.getMessages().send(player, "item-not-tracked");
+                return;
+            }
+            renderCheck(player, code, hand, dataOpt.orElseThrow(), loaded.getValue());
+        }));
+    }
 
-        ItemData data = dataOpt.get();
-        int historyCount = plugin.getDB().getHistoryCount(code);
+    private void renderCheck(Player player, String code, ItemStack hand, ItemData data, int historyCount) {
         // M4 (review 2026-09-17), corrected by H4: an adopted row has no creation time, so it is
         // written as 0 and printed as unknown here. Testing `last_action = 'ADOPTED'` instead was
         // only right until the item was next picked up or dropped — after that the row still carries

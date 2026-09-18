@@ -469,6 +469,25 @@ public final class ItemSqliteRepository implements
         });
     }
 
+    public CompletableFuture<Long> getMaximumPersistedObservationEpochAsync() {
+        return owner.callAsync(connection -> {
+            try (Statement statement = connection.createStatement();
+                 ResultSet result = statement.executeQuery("""
+                     SELECT MAX(scan_epoch) FROM (
+                         SELECT scan_epoch FROM item_observations
+                         UNION ALL
+                         SELECT scan_epoch FROM duplicate_findings
+                     ) AS persisted_epochs
+                     """)) {
+                if (!result.next()) {
+                    return Long.MIN_VALUE;
+                }
+                long maximum = result.getLong(1);
+                return result.wasNull() ? Long.MIN_VALUE : maximum;
+            }
+        });
+    }
+
     public int countObservations(UUID itemUuid, long scanEpoch) {
         return owner.call(connection -> {
             try (PreparedStatement statement = connection.prepareStatement("""
@@ -1094,6 +1113,15 @@ public final class ItemSqliteRepository implements
         ));
     }
 
+    public CompletableFuture<Integer> getHistoryCountAsync(String code) {
+        Objects.requireNonNull(code, "code");
+        return owner.callAsync(connection -> count(
+            connection,
+            "SELECT COUNT(*) FROM item_history WHERE code = ?",
+            code
+        ));
+    }
+
     public PluginStats getStats() {
         return owner.call(connection -> {
             PluginStats stats = new PluginStats();
@@ -1138,6 +1166,16 @@ public final class ItemSqliteRepository implements
 
     public int deleteHistoryBefore(long cutoff) {
         return owner.call(connection -> {
+            try (PreparedStatement statement = connection.prepareStatement(
+                "DELETE FROM item_history WHERE timestamp < ?")) {
+                statement.setLong(1, cutoff);
+                return statement.executeUpdate();
+            }
+        });
+    }
+
+    public CompletableFuture<Integer> deleteHistoryBeforeAsync(long cutoff) {
+        return owner.callAsync(connection -> {
             try (PreparedStatement statement = connection.prepareStatement(
                 "DELETE FROM item_history WHERE timestamp < ?")) {
                 statement.setLong(1, cutoff);
