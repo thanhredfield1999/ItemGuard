@@ -1,6 +1,6 @@
 # ItemGuard — Current State
 
-## CURRENT — Branch `premium-mysql` — 2026-09-18 — Two-Paper shared MySQL lifecycle verified
+## CURRENT — Branch `premium-mysql` — 2026-09-18 — Paper migration journey verified
 
 This branch keeps the Premium candidate rebuildable on top of `main` release commit `6292638`.
 The frozen LITE candidate on `main` is not rebuilt or changed by Premium work.
@@ -24,9 +24,10 @@ Fresh evidence bound to the current source tree and JAR:
                                                             1,267 relocated Connector/J/Hikari/SLF4J
                                                             entries; relocated NOP provider descriptor
 
-MySQL gate evidence: `run/mysql-schema-gate-20260918-185037.json`.
+MySQL gate evidence: `run/mysql-schema-gate-20260918-193643.json`.
 Single-Paper evidence: `run/premium-paper-mysql-20260918-180502.json`.
 Two-Paper evidence: `run/premium-two-paper-mysql-20260918-190633.json`.
+Paper migration evidence: `run/premium-paper-migration-20260918-192842.json`.
 
 The two-Paper fixture used Paper `1.21.11-131`, Java 21, two isolated server roots, and the exact
 Premium JAR hash above against one MySQL `8.4.6` fixture. `server-1` stayed live while `server-2`
@@ -41,14 +42,23 @@ The single-Paper lifecycle also passed: startup with `database.type: MYSQL`, `/i
 schema version 9, nine tables, `innodb_flush_log_at_trx_commit=1`, strict SQL mode, clean stop and
 restart against the same schema. Both generations recorded `slf4j_provider_errors: []`.
 
+The Paper migration fixture used a real SQLite schema-version-8 source seeded through
+`SqliteSchemaManager`, Paper `1.21.11-131`, Java 21, and the exact Premium JAR hash above. Through the
+Paper console, `/ig migrate` completed a dry-run with zero MySQL data rows, then `/ig migrate confirm`
+copied one row from each of the eight data tables, preserved `plugin_stats.duplicates_detected=7`,
+stamped `server_id=paper-migrate-1` on history/observation/publication rows, and verified target counts.
+A second confirm was refused because the target was non-empty. The SQLite source stayed byte- and
+hash-identical (`ba9d3051…05ee2bd`) before and after both operations. Paper generation 1 stopped
+cleanly; generation 2 restarted against the migrated target and retained all rows and schema version 9.
+
 Async boundary evidence includes RED→GREEN contract tests for `CheckCommand`, cleanup, persisted
 epoch initialization, and async epoch-floor behavior. Existing History/Search/Stats/Lite/GUI read
 paths remain async; sync public APIs remain compatibility surfaces and are not claimed safe for
 arbitrary external callers. MySQL identity-affecting writes use `FOR UPDATE`; SQLite keeps its
 serialized executor path.
 
-Open evidence boundaries: migration command has not been exercised through Paper; no full player/
-gameplay journey; no production deployment. IG-R022 remains partially mitigated for compatibility/
+Open evidence boundaries: no full player/gameplay journey; no production deployment. IG-R022 remains
+partially mitigated for compatibility/
 external sync callers and GUI in-flight boundaries. The Premium jar is not uploaded, tagged, or released.
 
 The detailed M1–M6 narrative below is historical. The section above is the only current binding.

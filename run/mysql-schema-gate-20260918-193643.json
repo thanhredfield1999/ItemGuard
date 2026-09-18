@@ -1,6 +1,6 @@
 {
   "gate": "mysql-schema-invariants",
-  "started_at": "2026-09-18T18:49:16+07:00",
+  "started_at": "2026-09-18T19:35:26+07:00",
   "port": 33316,
   "maven_exit": 0,
   "totals": {
