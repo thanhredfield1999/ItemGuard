@@ -131,12 +131,15 @@ the lock must be held for exactly the window the old serial executor gave us for
 `code` and `item_uuid` preserved unchanged, verifying row counts at the end, and **never
 deleting the SQLite file**. No reverse path.
 
-### Defaults this document proposes (not yet approved)
+### Product decisions (D4–D6; D4 controlled-runtime verified 2026-09-18)
 
-**D4 — Connection loss fails closed, with no write buffer.** A mid-write network failure
+**D4 — Connection loss fails closed, with no write buffer (approved).** A mid-write network failure
 denies the operation and does not mint an identity it cannot prove was written. Writes are
 never queued to local disk for later replay — a replay buffer is a new duplication source, and
-the plugin's whole value is that it does not create those.
+the plugin's whole value is that it does not create those. Controlled Paper/MySQL evidence is
+bound to `run/premium-paper-failure-20260918-211756.json`: an in-flight write was interrupted
+after start, failed exactly once with no unexpected-success marker, and a pre-existing committed
+value survived restart and immediate/delayed reads.
 
 **D5 — The single-owner sidecar lock becomes backend-conditional.** `IG-R005`'s guarantee
 ("exactly one cooperating owner") exists because two plugin instances must not share a SQLite
@@ -322,11 +325,12 @@ runs the work, commits and rolls back itself; a caller cannot express the wrong 
   the one thing this product may not create, and a retry is unsafe anyway because the caller
   cannot distinguish a rollback from a commit whose acknowledgement was lost.
 
-That last bullet is D4, which this document still lists under "defaults proposed, not yet
-approved". It is implemented in the shape above; if Thanh wants the opposite (a buffered mode),
-that is a decision to make before M5 ships, not a detail to drift into. D5 (sidecar lock
-backend-conditional) remains satisfied by construction while MySQL does not reuse
-`SqliteConnectionOwner`, and no MySQL connection owner exists yet.
+That last bullet is D4, now approved and controlled-runtime verified by
+`run/premium-paper-failure-20260918-211756.json`. The implementation keeps the denied-operation
+semantics: no retry, replay or local buffer. D5 remains satisfied because MySQL does not reuse
+`SqliteConnectionOwner`; the current runtime owner is `MySqlConnectionOwner`. The earlier wording
+that described D4 as unapproved and the owner as absent is historical and superseded by §11 and
+`CURRENT_STATE.md`.
 
 ### The evidence is a pair, and the first half is the falsifiable one
 

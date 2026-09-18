@@ -1,65 +1,48 @@
 # ItemGuard — Current State
 
-## CURRENT — Branch `premium-mysql` — 2026-09-18 — Paper migration journey verified
+## CURRENT — Branch `premium-mysql` — 2026-09-18 — Premium reliability gates verified
 
 This branch keeps the Premium candidate rebuildable on top of `main` release commit `6292638`.
 The frozen LITE candidate on `main` is not rebuilt or changed by Premium work.
 
-On `premium-mysql`, `DatabaseManager` explicitly selects SQLite or MySQL. MySQL fails closed during
-construction when configuration, durability, strictness, schema, or server identity is unacceptable.
-The P0 async slice removes DB waits from `CheckCommand`, scheduled history cleanup, and
-`InventoryScanTask` construction; scan startup remains fail-closed until the persisted epoch floor
-has loaded. Premium's shaded JAR ships a relocated SLF4J NOP provider descriptor, so Paper has no
-missing-provider error.
+Artifact bound to the current Premium product source:
 
-Fresh evidence bound to the current source tree and JAR:
+    target/ItemGuard-1.0.0-shaded.jar
+    SHA-256 ed13af62069dfb78a626c104c032d52fe95eb12204212f87bbcc7ac735d0989b
+    Paper `1.21.11-131`, Java 21, 1,287 relocated library entries, relocated SLF4J service provider
 
-    mvnw.cmd -o test                                      891/891, 0 failures/errors/skipped
-    python scripts/run_mysql_schema_gate.py               35/35, 0 failures/errors/skipped
-                                                            MySQL 8.4.6; expected tagged classes
-                                                            present; fixture stopped, port closed,
-                                                            process gone
-    mvnw.cmd -o -DskipTests package                       BUILD SUCCESS
-    target/ItemGuard-1.0.0-shaded.jar                     SHA-256 8f39da47c5caec16549bea5e444eb554c78f9f17ea8f7fb2885f83db33392fc9
-                                                            1,267 relocated Connector/J/Hikari/SLF4J
-                                                            entries; relocated NOP provider descriptor
+Fresh evidence on the current source tree:
 
-MySQL gate evidence: `run/mysql-schema-gate-20260918-193643.json`.
-Single-Paper evidence: `run/premium-paper-mysql-20260918-180502.json`.
-Two-Paper evidence: `run/premium-two-paper-mysql-20260918-190633.json`.
-Paper migration evidence: `run/premium-paper-migration-20260918-192842.json`.
+    mvnw.cmd -o test                         891/891, 0 failures/errors/skipped
+    python scripts/run_mysql_schema_gate.py  35/35, 0 failures/errors/skipped
+    mvnw.cmd -o -DskipTests package           BUILD SUCCESS
+    MySQL fixture                             stopped, port closed, process gone
 
-The two-Paper fixture used Paper `1.21.11-131`, Java 21, two isolated server roots, and the exact
-Premium JAR hash above against one MySQL `8.4.6` fixture. `server-1` stayed live while `server-2`
-started against the same schema; both had distinct configured `server_id` values. A fixture-only
-probe used the real `DatabaseManager` and `CrossServerFindingPolicy`: same-server observations on
-`server-1` returned `CONFIRMED`; adding `server-2` produced `SEEN_ON_MULTIPLE_SERVERS` with named
-servers `server-1|server-2` and no duplicate/copy language. MySQL postcondition was one tracked
-identity, three observations total, split `server-1=2` and `server-2=1`. Both Paper processes exited
-0 without forced kill and released their ports; MySQL stopped with port closed/process gone.
+All current Premium Paper evidence is bound to the exact JAR hash above: single-Paper startup/restart,
+two isolated Paper servers sharing MySQL, SQLite-to-MySQL `/ig migrate` dry-run/confirm/refusal/
+restart, and the reliability receipt below. MySQL fixture version is 8.4.6; Paper is 1.21.11-131;
+runtime Java is 21. All fixture-owned processes and ports were closed without forced kill.
 
-The single-Paper lifecycle also passed: startup with `database.type: MYSQL`, `/ig info`, `/ig stats`,
-schema version 9, nine tables, `innodb_flush_log_at_trx_commit=1`, strict SQL mode, clean stop and
-restart against the same schema. Both generations recorded `slf4j_provider_errors: []`.
+Reliability evidence: `run/premium-paper-failure-20260918-211756.json`.
+It proves unreachable-MySQL startup failed closed with no enabled/initialized marker. The fixture then
+committed a baseline `duplicates_detected=7` through the real `DatabaseManager`; during a real
+in-flight write, the runner waited for `OUTAGE_WRITE_STARTED`, stopped MySQL, observed exactly one
+failed operation and zero unexpected-success markers, restarted MySQL, and observed immediate and
+delayed recovery reads preserving the committed value `7`. Paper and MySQL cleanup were independently
+verified (`exit=0`, no forced stop, log closed, port released, process gone).
 
-The Paper migration fixture used a real SQLite schema-version-8 source seeded through
-`SqliteSchemaManager`, Paper `1.21.11-131`, Java 21, and the exact Premium JAR hash above. Through the
-Paper console, `/ig migrate` completed a dry-run with zero MySQL data rows, then `/ig migrate confirm`
-copied one row from each of the eight data tables, preserved `plugin_stats.duplicates_detected=7`,
-stamped `server_id=paper-migrate-1` on history/observation/publication rows, and verified target counts.
-A second confirm was refused because the target was non-empty. The SQLite source stayed byte- and
-hash-identical (`ba9d3051…05ee2bd`) before and after both operations. Paper generation 1 stopped
-cleanly; generation 2 restarted against the migrated target and retained all rows and schema version 9.
+Other current bound receipts: `run/mysql-schema-gate-20260918-205756.json`,
+`run/premium-paper-mysql-20260918-210311.json`, `run/premium-two-paper-mysql-20260918-210735.json`,
+and `run/premium-paper-migration-20260918-211038.json`.
 
-Async boundary evidence includes RED→GREEN contract tests for `CheckCommand`, cleanup, persisted
-epoch initialization, and async epoch-floor behavior. Existing History/Search/Stats/Lite/GUI read
-paths remain async; sync public APIs remain compatibility surfaces and are not claimed safe for
-arbitrary external callers. MySQL identity-affecting writes use `FOR UPDATE`; SQLite keeps its
-serialized executor path.
+The P0 async slice covers `CheckCommand`, scheduled history cleanup, and persisted scan-epoch
+initialization; History/Search/Stats/Lite/GUI verified paths remain async. Sync public APIs remain
+compatibility surfaces and are not claimed safe for arbitrary external callers. MySQL identity-
+affecting writes use `FOR UPDATE`; SQLite keeps its serialized executor path.
 
-Open evidence boundaries: no full player/gameplay journey; no production deployment. IG-R022 remains
-partially mitigated for compatibility/
-external sync callers and GUI in-flight boundaries. The Premium jar is not uploaded, tagged, or released.
+Open evidence boundaries: no full player/gameplay/GUI journey; no backup/restore or production
+deployment evidence; IG-R022 remains partially mitigated for compatibility/external sync callers
+and GUI in-flight boundaries. The Premium JAR is not uploaded, tagged, or released.
 
 The detailed M1–M6 narrative below is historical. The section above is the only current binding.
 

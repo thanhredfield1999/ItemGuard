@@ -83,6 +83,7 @@ class MySqlRepositoryRuntimeTest {
             );
             repository.recordObservation(observation);
             repository.recordObservation(observation);
+            owner.flush();
             assertEquals(1, repository.countObservations(ITEM_UUID, 40L));
             assertEquals(40L, repository.getMaximumPersistedObservationEpoch());
 
