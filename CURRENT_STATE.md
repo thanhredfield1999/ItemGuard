@@ -1,6 +1,6 @@
 # ItemGuard — Current State
 
-## CURRENT — Branch `premium-mysql` — 2026-09-18 — Paper MySQL single-server lifecycle verified
+## CURRENT — Branch `premium-mysql` — 2026-09-18 — Two-Paper shared MySQL lifecycle verified
 
 This branch keeps the Premium candidate rebuildable on top of `main` release commit `6292638`.
 The frozen LITE candidate on `main` is not rebuilt or changed by Premium work.
@@ -9,8 +9,8 @@ On `premium-mysql`, `DatabaseManager` explicitly selects SQLite or MySQL. MySQL 
 construction when configuration, durability, strictness, schema, or server identity is unacceptable.
 The P0 async slice removes DB waits from `CheckCommand`, scheduled history cleanup, and
 `InventoryScanTask` construction; scan startup remains fail-closed until the persisted epoch floor
-has loaded. Premium's shaded JAR now also ships a relocated SLF4J NOP provider descriptor, so the
-Paper runtime has no missing-provider error.
+has loaded. Premium's shaded JAR ships a relocated SLF4J NOP provider descriptor, so Paper has no
+missing-provider error.
 
 Fresh evidence bound to the current source tree and JAR:
 
@@ -24,14 +24,22 @@ Fresh evidence bound to the current source tree and JAR:
                                                             1,267 relocated Connector/J/Hikari/SLF4J
                                                             entries; relocated NOP provider descriptor
 
-MySQL gate evidence: `run/mysql-schema-gate-20260918-180105.json`.
-Paper + MySQL lifecycle evidence: `run/premium-paper-mysql-20260918-180502.json`.
-The controlled fixture used Paper `1.21.11-131`, Java 21, MySQL `8.4.6`, and the exact JAR hash above.
-It started with `database.type: MYSQL`, verified `/ig info` and `/ig stats` as MYSQL, checked schema
-version 9, nine tables, `innodb_flush_log_at_trx_commit=1`, strict SQL mode, then cleanly stopped
-and restarted Paper against the same MySQL schema. Both generations exited 0 without forced kill,
-closed their Paper ports, and the MySQL fixture stopped with port closed/process gone. The receipt
-records `slf4j_provider_errors: []` for both generations.
+MySQL gate evidence: `run/mysql-schema-gate-20260918-185037.json`.
+Single-Paper evidence: `run/premium-paper-mysql-20260918-180502.json`.
+Two-Paper evidence: `run/premium-two-paper-mysql-20260918-190633.json`.
+
+The two-Paper fixture used Paper `1.21.11-131`, Java 21, two isolated server roots, and the exact
+Premium JAR hash above against one MySQL `8.4.6` fixture. `server-1` stayed live while `server-2`
+started against the same schema; both had distinct configured `server_id` values. A fixture-only
+probe used the real `DatabaseManager` and `CrossServerFindingPolicy`: same-server observations on
+`server-1` returned `CONFIRMED`; adding `server-2` produced `SEEN_ON_MULTIPLE_SERVERS` with named
+servers `server-1|server-2` and no duplicate/copy language. MySQL postcondition was one tracked
+identity, three observations total, split `server-1=2` and `server-2=1`. Both Paper processes exited
+0 without forced kill and released their ports; MySQL stopped with port closed/process gone.
+
+The single-Paper lifecycle also passed: startup with `database.type: MYSQL`, `/ig info`, `/ig stats`,
+schema version 9, nine tables, `innodb_flush_log_at_trx_commit=1`, strict SQL mode, clean stop and
+restart against the same schema. Both generations recorded `slf4j_provider_errors: []`.
 
 Async boundary evidence includes RED→GREEN contract tests for `CheckCommand`, cleanup, persisted
 epoch initialization, and async epoch-floor behavior. Existing History/Search/Stats/Lite/GUI read
@@ -39,10 +47,9 @@ paths remain async; sync public APIs remain compatibility surfaces and are not c
 arbitrary external callers. MySQL identity-affecting writes use `FOR UPDATE`; SQLite keeps its
 serialized executor path.
 
-Open evidence boundaries: no two-Paper-server shared-database fixture; no production deployment;
-no full player/gameplay journey; migration command has not been exercised through Paper. IG-R022
-remains partially mitigated for compatibility/external sync callers and GUI in-flight boundaries.
-The Premium jar is not uploaded, tagged, or released.
+Open evidence boundaries: migration command has not been exercised through Paper; no full player/
+gameplay journey; no production deployment. IG-R022 remains partially mitigated for compatibility/
+external sync callers and GUI in-flight boundaries. The Premium jar is not uploaded, tagged, or released.
 
 The detailed M1–M6 narrative below is historical. The section above is the only current binding.
 
