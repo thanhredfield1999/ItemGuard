@@ -1,43 +1,48 @@
 # ItemGuard — Current State
 
-## CURRENT — Branch `premium-mysql` — 2026-09-18 — Premium wiring + async P0 slice verified offline/fixture
+## CURRENT — Branch `premium-mysql` — 2026-09-18 — Paper MySQL single-server lifecycle verified
 
 This branch keeps the Premium candidate rebuildable on top of `main` release commit `6292638`.
 The frozen LITE candidate on `main` is not rebuilt or changed by Premium work.
 
 On `premium-mysql`, `DatabaseManager` explicitly selects SQLite or MySQL. MySQL fails closed during
 construction when configuration, durability, strictness, schema, or server identity is unacceptable.
-The P0 async slice now removes DB waits from `CheckCommand`, scheduled history cleanup, and
+The P0 async slice removes DB waits from `CheckCommand`, scheduled history cleanup, and
 `InventoryScanTask` construction; scan startup remains fail-closed until the persisted epoch floor
-has loaded. This is source-level/fixture evidence, not Paper-runtime or production verification.
+has loaded. Premium's shaded JAR now also ships a relocated SLF4J NOP provider descriptor, so the
+Paper runtime has no missing-provider error.
 
-Fresh evidence bound to the current source tree:
+Fresh evidence bound to the current source tree and JAR:
 
-    mvnw.cmd -o test                                      890/890, 0 failures/errors/skipped
+    mvnw.cmd -o test                                      891/891, 0 failures/errors/skipped
     python scripts/run_mysql_schema_gate.py               35/35, 0 failures/errors/skipped
                                                             MySQL 8.4.6; expected tagged classes
                                                             present; fixture stopped, port closed,
                                                             process gone
     mvnw.cmd -o -DskipTests package                       BUILD SUCCESS
-    target/ItemGuard-1.0.0-shaded.jar                     SHA-256 8dfcda67c091dc4f65b9e126276cffab7c7ab1ab29e4383e62dac492d27023eb
+    target/ItemGuard-1.0.0-shaded.jar                     SHA-256 8f39da47c5caec16549bea5e444eb554c78f9f17ea8f7fb2885f83db33392fc9
                                                             1,267 relocated Connector/J/Hikari/SLF4J
-                                                            entries
+                                                            entries; relocated NOP provider descriptor
 
-MySQL gate evidence: `run/mysql-schema-gate-20260918-171956.json`.
+MySQL gate evidence: `run/mysql-schema-gate-20260918-180105.json`.
+Paper + MySQL lifecycle evidence: `run/premium-paper-mysql-20260918-180502.json`.
+The controlled fixture used Paper `1.21.11-131`, Java 21, MySQL `8.4.6`, and the exact JAR hash above.
+It started with `database.type: MYSQL`, verified `/ig info` and `/ig stats` as MYSQL, checked schema
+version 9, nine tables, `innodb_flush_log_at_trx_commit=1`, strict SQL mode, then cleanly stopped
+and restarted Paper against the same MySQL schema. Both generations exited 0 without forced kill,
+closed their Paper ports, and the MySQL fixture stopped with port closed/process gone. The receipt
+records `slf4j_provider_errors: []` for both generations.
+
 Async boundary evidence includes RED→GREEN contract tests for `CheckCommand`, cleanup, persisted
-epoch initialization, and the async epoch-floor behavior. Existing History/Search/Stats/Lite/GUI
-read paths remain async; sync public APIs remain compatibility surfaces and are not claimed safe for
-arbitrary external callers.
+epoch initialization, and async epoch-floor behavior. Existing History/Search/Stats/Lite/GUI read
+paths remain async; sync public APIs remain compatibility surfaces and are not claimed safe for
+arbitrary external callers. MySQL identity-affecting writes use `FOR UPDATE`; SQLite keeps its
+serialized executor path.
 
-Runtime-wiring coverage includes canonical item and snapshot upsert, history with `server_id`,
-observation upsert, epoch audit, search request, reclaim idempotency, tag publication, loss journal
-atomic write, and server identity on a real fixture. MySQL identity-affecting writes use `FOR UPDATE`;
-SQLite keeps its serialized executor path.
-
-Open evidence boundaries: no controlled Paper startup with `database.type: MYSQL`; no two Paper
-servers; no production deployment. Cross-server proof remains the database-level two-owner fixture.
-IG-R022 remains partially mitigated until the remaining compatibility/GUI boundaries receive Paper
-proof. The Premium jar is not uploaded, tagged, or released.
+Open evidence boundaries: no two-Paper-server shared-database fixture; no production deployment;
+no full player/gameplay journey; migration command has not been exercised through Paper. IG-R022
+remains partially mitigated for compatibility/external sync callers and GUI in-flight boundaries.
+The Premium jar is not uploaded, tagged, or released.
 
 The detailed M1–M6 narrative below is historical. The section above is the only current binding.
 
