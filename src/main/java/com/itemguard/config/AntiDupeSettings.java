@@ -8,6 +8,7 @@ public record AntiDupeSettings(
     boolean notifyStaff,
     boolean notifyPlayer,
     long detectionCooldown,
+    long observationRetentionMillis,
     int maxHistoryPerItem,
     long gracePeriod,
     boolean sweepEnabled,
@@ -20,6 +21,7 @@ public record AntiDupeSettings(
             config.getBoolean("anti-dupe.notify-staff", true),
             config.getBoolean("anti-dupe.notify-player", false),
             detectionCooldown(config),
+            observationRetention(config),
             config.getInt("anti-dupe.max-history-per-item", 1_000),
             config.getLong("anti-dupe.grace-period-ms", 3_000L),
             config.getBoolean("anti-dupe.sweep.enabled", true),
@@ -50,6 +52,30 @@ public record AntiDupeSettings(
      * would otherwise become. Refusing to start over a number the plugin can clamp would help
      * nobody.
      */
+    /**
+     * How long an observation row is kept.
+     *
+     * <p>The old rule deleted every observation older than the current scan epoch, which is per server
+     * and therefore deleted other servers' rows on a shared database: the cross-server question M3
+     * built the {@code (item_uuid, server_id, observed_at)} index for could never be answered, and a
+     * migrated target lost its observations on the first audit. The window is now time-based, so the
+     * rows a sighting needs stay as long as the sighting itself is meaningful.
+     *
+     * <p>Floored at two scan cycles for the same reason {@link #detectionCooldown} is: one cycle is
+     * not a window, and a value below it would delete the previous epoch out from under the
+     * consecutive-epoch rule.
+     */
+    static long observationRetention(FileConfiguration config) {
+        long configured = config.getLong("anti-dupe.observation-retention-minutes", 30L);
+        long intervalTicks = Math.max(1L, config.getLong("performance.inventory-scan-interval", 600L));
+        long cycleMillis = intervalTicks > Long.MAX_VALUE / 100L ? Long.MAX_VALUE : intervalTicks * 50L;
+        long floor = cycleMillis > Long.MAX_VALUE / 2 ? Long.MAX_VALUE : cycleMillis * 2;
+        long configuredMillis = configured > Long.MAX_VALUE / 60_000L
+            ? Long.MAX_VALUE
+            : configured * 60_000L;
+        return Math.max(Math.max(0L, configuredMillis), floor);
+    }
+
     static long detectionCooldown(FileConfiguration config) {
         long intervalTicks = Math.max(1L, config.getLong("performance.inventory-scan-interval", 600L));
         // Clamped before multiplying: a nonsense interval used to overflow into a negative cycle,

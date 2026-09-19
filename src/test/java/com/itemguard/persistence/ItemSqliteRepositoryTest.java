@@ -135,14 +135,14 @@ class ItemSqliteRepositoryTest {
                 "AB12CD",
                 77L,
                 new ObservationKey(HolderType.PLAYER, "player-a", 5),
-                1_000L
+                nowIfFixtureEpoch(1_000L)
             );
             ItemObservation slotEight = new ItemObservation(
                 itemUuid,
                 "AB12CD",
                 77L,
                 new ObservationKey(HolderType.PLAYER, "player-a", 8),
-                1_001L
+                nowIfFixtureEpoch(1_001L)
             );
 
             repository.recordObservation(slotFive);
@@ -219,8 +219,7 @@ class ItemSqliteRepositoryTest {
                 itemUuid,
                 "AB12CD",
                 88L,
-                new ObservationKey(HolderType.PLAYER, "player-a", 8),
-                900L
+                new ObservationKey(HolderType.PLAYER, "player-a", 8), nowIfFixtureEpoch(900L)
             ));
             repository.recordObservation(new ItemObservation(
                 itemUuid,
@@ -230,8 +229,7 @@ class ItemSqliteRepositoryTest {
                     HolderType.CONTAINER,
                     "BLOCK:world-a:10:64:-7",
                     3
-                ),
-                901L
+                ), nowIfFixtureEpoch(901L)
             ));
             assertTrue(repository.completeObservationEpochAndAudit(
                 88L, true, DuplicateAction.NOTIFY, 5_000L, 1_500L
@@ -241,7 +239,7 @@ class ItemSqliteRepositoryTest {
                 "AB12CD",
                 89L,
                 new ObservationKey(HolderType.PLAYER, "player-a", 8),
-                1_000L
+                nowIfFixtureEpoch(1_000L)
             ));
             repository.recordObservation(new ItemObservation(
                 itemUuid,
@@ -252,7 +250,7 @@ class ItemSqliteRepositoryTest {
                     "BLOCK:world-a:10:64:-7",
                     3
                 ),
-                1_001L
+                nowIfFixtureEpoch(1_001L)
             ));
 
             List<DuplicateFinding> first = repository.completeObservationEpochAndAudit(
@@ -549,6 +547,23 @@ class ItemSqliteRepositoryTest {
         return item;
     }
 
+    /**
+     * Observation rows now carry a retention window (`anti-dupe.observation-retention-minutes`), so a
+     * fixture timestamp from before 2001 is not "an epoch" — it is expired the moment the audit that
+     * these tests are about completes. The fixtures here were written when only the epoch mattered;
+     * a timestamp that predates 2001 is therefore a fixture artifact and is stamped with the current
+     * time, while explicit realistic values are still honoured for the tests that assert them.
+     */
+    /**
+     * A fixture timestamp from before 2001 is an epoch-shaped value, not a real observation time:
+     * these tests were written when only the epoch mattered. Under the retention window such a value
+     * is expired the moment an audit completes, so it is stamped with the current time; realistic
+     * timestamps pass through unchanged.
+     */
+    private static long nowIfFixtureEpoch(long observedAt) {
+        return observedAt < 1_000_000_000_000L ? System.currentTimeMillis() : observedAt;
+    }
+
     private ItemObservation observation(
         UUID itemUuid,
         String code,
@@ -557,12 +572,15 @@ class ItemSqliteRepositoryTest {
         int slot,
         long observedAt
     ) {
+        long effectiveObservedAt = observedAt < 1_000_000_000_000L
+            ? System.currentTimeMillis()
+            : observedAt;
         return new ItemObservation(
             itemUuid,
             code,
             scanEpoch,
             new ObservationKey(HolderType.PLAYER, holderId, slot),
-            observedAt
+            effectiveObservedAt
         );
     }
 

@@ -125,6 +125,11 @@ public class ConfigManager {
         return antiDupeSettings().notifyPlayer();
     }
 
+    /** How long observation rows are kept; see {@link AntiDupeSettings#observationRetention}. */
+    public long getObservationRetentionMillis() {
+        return antiDupeSettings().observationRetentionMillis();
+    }
+
     public long getDetectionCooldown() {
         return antiDupeSettings().detectionCooldown();
     }

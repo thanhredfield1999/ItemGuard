@@ -1,0 +1,76 @@
+{
+  "status": "PASS",
+  "fixture": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-paper-7fc157ac7ebf",
+  "stage": {
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-paper-7fc157ac7ebf",
+    "server_port": 63669,
+    "mysql_host": "127.0.0.1",
+    "mysql_port": 33316,
+    "mysql_database": "itemguard_premium",
+    "paper_sha256": "6c099540fccd27e10750d1adcb382f1552fb5aa2816aeaf2cc1efb23ddd9e3df",
+    "premium_jar_sha256": "09886ec451d020daa4b9b943e27f222adae4b13ec77c24e5a8bf7a2fc74c62d6",
+    "premium_source_sha256": "09886ec451d020daa4b9b943e27f222adae4b13ec77c24e5a8bf7a2fc74c62d6",
+    "config_sha256": "22dfa8ebdf8fca88d8ccc9551bee23b842374c1f7966d409e6e6aafe1c235ef5",
+    "runner_sha256": "1e542208d0c4d01217ed8eba5fc3d515daa5f1fd7435bc1f060ca71cd0115c4c",
+    "java": "C:\\Program Files\\Java\\jdk-21\\bin\\java.exe",
+    "created_at": "2026-09-19T13:39:55+07:00"
+  },
+  "generations": [
+    {
+      "generation": 1,
+      "verification": {
+        "mysql_query_rows": [
+          "10\t0",
+          "9",
+          "1\tONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION"
+        ],
+        "info_marker": "Cơ sở dữ liệu: MYSQL",
+        "stats_marker": "Database: MYSQL",
+        "slf4j_provider_errors": [],
+        "paper_log": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-paper-7fc157ac7ebf\\paper-1.log"
+      }
+    },
+    {
+      "generation": 2,
+      "verification": {
+        "mysql_query_rows": [
+          "10\t0",
+          "9",
+          "1\tONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION"
+        ],
+        "info_marker": "Cơ sở dữ liệu: MYSQL",
+        "stats_marker": "Database: MYSQL",
+        "slf4j_provider_errors": [],
+        "paper_log": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-paper-7fc157ac7ebf\\paper-2.log"
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "generation": 1,
+      "pid": 35612,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "port_released": true
+    },
+    {
+      "generation": 2,
+      "pid": 21164,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "port_released": true
+    }
+  ],
+  "started_at": "2026-09-19T13:39:55+07:00",
+  "mysql_reset": "itemguard_premium recreated on 127.0.0.1:33316",
+  "mysql_cleanup": {
+    "exit": 0,
+    "port_closed": true,
+    "process_gone": true,
+    "stdout": "EVIDENCE port_open=False process_gone=True\nstopped\n",
+    "stderr": ""
+  },
+  "finished_at": "2026-09-19T13:42:12+07:00"
+}

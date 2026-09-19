@@ -163,6 +163,16 @@ anti-dupe:
   # throttle; it is floored whatever the config says.
   detection-cooldown-ms: 300000
 
+  # How long the observation working set is kept, in minutes.
+  #
+  # Observations are what answers two questions: "is this identity in two places in this audit" and
+  # "which servers has it been seen on inside a window" (multi-server.cross-server-window-minutes).
+  # Rows older than this window are deleted; rows inside it are never deleted, whoever wrote them.
+  #
+  # Keep this at least as large as the cross-server window, or a sighting the plugin could answer is
+  # deleted before anyone asks. Floored at two scan cycles whatever is set here.
+  observation-retention-minutes: 30
+
   # Maximum history entries per item before pruning
   max-history-per-item: 1000
 

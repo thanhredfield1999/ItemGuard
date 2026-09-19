@@ -399,7 +399,19 @@ invents a different name and the two runs' findings cannot be told apart. Names 
 `WHERE` clause, and a generator producing junk is refused rather than stored.
 
 **Config** (`multi-server`, inert on SQLite): `server-id: ""` and
-`cross-server-window-minutes: 30`. The window reaches the rule as milliseconds and a non-positive
+`cross-server-window-minutes: 30`.
+
+**Retention, corrected 2026-09-19.** Observations used to be pruned by epoch —
+`DELETE FROM item_observations WHERE scan_epoch < ?` at the end of every completed audit — which is a
+per-server rule on a table `server_id` had just been added to for the cross-server question. Each
+server therefore deleted the rows another server had written seconds earlier, so
+`SEEN_ON_MULTIPLE_SERVERS` could never be answered on a shared database, and a migrated target lost
+its observations as soon as the first audit after startup completed. Both gates that measure this
+(the two-Paper fixture and the migration fixture) had been passing only by winning a race against that
+audit. The prune is now time-based (`anti-dupe.observation-retention-minutes`, default 30, floored at
+two scan cycles): a row goes when it is older than the window that made it interesting, whoever wrote
+it. Keep the retention at least as large as `cross-server-window-minutes`, or a sighting the plugin
+could answer is deleted before anyone asks. The window reaches the rule as milliseconds and a non-positive
 window is refused there — one place, so a setting that reports nothing while looking configured
 cannot exist.
 

@@ -1,0 +1,138 @@
+{
+  "status": "PASS",
+  "manifest": {
+    "fixture": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-migration-3d9668e1f78a",
+    "paper_port": 62015,
+    "server_id": "paper-migrate-1",
+    "mysql_host": "127.0.0.1",
+    "mysql_port": 33316,
+    "mysql_database": "itemguard_premium",
+    "paper_sha256": "6c099540fccd27e10750d1adcb382f1552fb5aa2816aeaf2cc1efb23ddd9e3df",
+    "premium_jar_sha256": "09886ec451d020daa4b9b943e27f222adae4b13ec77c24e5a8bf7a2fc74c62d6",
+    "premium_source_sha256": "09886ec451d020daa4b9b943e27f222adae4b13ec77c24e5a8bf7a2fc74c62d6",
+    "source_sha256_before": "ba9d3051d80a4286011dd1dce44bb3175ddbe1da066d312e7c72789b005ee2bd",
+    "source_bytes_before": 122880,
+    "config_sha256": "c8c11097b2f2ada24a06749ebdadde972599c919146867887ad9fd2750d9d71a",
+    "runner_sha256": "4d25e65215911beb7f9c2fd1d2b59bbaf8c535744761e49bf818da47a6848982",
+    "seeder_sha256": "149175b4256ba28d51965aca3eb35c04e5400966459ffde80a24a6a490a113ae",
+    "created_at": "2026-09-19T13:44:46+07:00"
+  },
+  "source": {
+    "path": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-migration-3d9668e1f78a\\plugins\\ItemGuard\\itemguard.db",
+    "sha256_after": "ba9d3051d80a4286011dd1dce44bb3175ddbe1da066d312e7c72789b005ee2bd",
+    "bytes_after": 122880
+  },
+  "commands": [
+    {
+      "command": "ig migrate",
+      "status": "DRY_RUN_PASS"
+    },
+    {
+      "command": "ig migrate confirm",
+      "status": "CONFIRM_PASS"
+    },
+    {
+      "command": "ig migrate confirm",
+      "status": "NON_EMPTY_TARGET_REFUSED"
+    },
+    {
+      "command": "restart + ig stats",
+      "status": "PERSISTENCE_PASS"
+    }
+  ],
+  "mysql_postconditions": [
+    {
+      "phase": "after_dry_run",
+      "rows": [
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "10\t0"
+      ]
+    },
+    {
+      "phase": "after_confirm",
+      "rows": [
+        "1",
+        "1",
+        "1",
+        "1",
+        "1",
+        "1",
+        "1",
+        "1",
+        "10\t7",
+        "paper-migrate-1",
+        "paper-migrate-1",
+        "paper-migrate-1"
+      ]
+    },
+    {
+      "phase": "after_non_empty_refusal",
+      "rows": [
+        "1",
+        "1",
+        "1",
+        "1",
+        "1",
+        "1",
+        "1",
+        "1",
+        "10\t7",
+        "paper-migrate-1",
+        "paper-migrate-1",
+        "paper-migrate-1"
+      ]
+    },
+    {
+      "phase": "after_restart",
+      "rows": [
+        "1",
+        "1",
+        "1",
+        "1",
+        "1",
+        "1",
+        "1",
+        "1",
+        "10\t7",
+        "paper-migrate-1",
+        "paper-migrate-1",
+        "paper-migrate-1"
+      ]
+    }
+  ],
+  "cleanup": [
+    {
+      "generation": 1,
+      "pid": 46420,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "port_released": true
+    },
+    {
+      "generation": 2,
+      "pid": 32352,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "port_released": true
+    }
+  ],
+  "mysql_reset": "itemguard_premium recreated on 127.0.0.1:33316",
+  "retention_note": "item_observations is kept for anti-dupe.observation-retention-minutes; the seeded rows are older than that window, so the first audit after startup expires them by design. tracked_items, item_history, item_snapshots, reclaim_claims, search requests, findings and plugin_stats are asserted to survive exactly.",
+  "mysql_cleanup": {
+    "exit": 0,
+    "port_closed": true,
+    "process_gone": true,
+    "stdout": "EVIDENCE port_open=False process_gone=True\nstopped\n",
+    "stderr": ""
+  },
+  "finished_at": "2026-09-19T13:46:25+07:00"
+}

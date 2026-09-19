@@ -1,0 +1,134 @@
+{
+  "status": "PASS",
+  "gate": "premium-duplicate-detection",
+  "started_at": "2026-09-19T14:03:21+07:00",
+  "fixture": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-115ebfecdab2",
+  "manifest": {
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-115ebfecdab2",
+    "server_port": 50096,
+    "server_id": "paper-premium-1",
+    "mysql_host": "127.0.0.1",
+    "mysql_port": 33316,
+    "mysql_database": "itemguard_premium",
+    "paper_sha256": "6c099540fccd27e10750d1adcb382f1552fb5aa2816aeaf2cc1efb23ddd9e3df",
+    "premium_jar_sha256": "09886ec451d020daa4b9b943e27f222adae4b13ec77c24e5a8bf7a2fc74c62d6",
+    "probe_jar_sha256": "cda1c2409c8a41a6c9636f4b0adcefc9419d30f490890f4434b82b535c39e3fb",
+    "probe_source_sha256": "fb9f819d3f00705ff25c5a6469e72555ef33bffe490f4f06233733483ab55a21",
+    "client_script_sha256": "0a863385460604eeb81377a08a64f66a0269bd7f9a95d497fb65dd81090b11d2",
+    "config_sha256": "8134934d08d5f9d853bc3add6b714681b703361b0400616616993b0b07999786",
+    "ops_sha256": "b9ee53277facc0f3b8beffa44e6c49c87aa4600b38c425153b932fb8e2fa8070",
+    "runner_sha256": "330d0212dc70377ef0a2dfeb44205a61c213b3fc703d687c98b77112d3b79bd7",
+    "node": "C:\\Program Files\\nodejs\\node.EXE",
+    "java": "C:\\Program Files\\Java\\jdk-21\\bin\\java.exe",
+    "created_at": "2026-09-19T14:03:21+07:00",
+    "probe_source": "E:\\AI.WORK\\ItemGuard\\tools\\premium-runtime\\PremiumDupeProbe.java",
+    "discord_sink": "http://127.0.0.1:50093/itemguard",
+    "dupe_config": {
+      "anti-dupe.enabled": true,
+      "anti-dupe.detection-cooldown-ms": 9000,
+      "anti-dupe.sweep.enabled": false,
+      "performance.inventory-scan-interval": 10,
+      "discord.enabled": true
+    }
+  },
+  "generations": [
+    {
+      "generation": 1,
+      "mode": "dupe",
+      "client_events": [
+        {
+          "player": "PremiumStaff",
+          "code": "Y5R5KA",
+          "event": "identity"
+        },
+        {
+          "code": "Y5R5KA",
+          "holder": "PremiumStaff",
+          "other": "PremiumMember",
+          "event": "dupe-ready"
+        },
+        {
+          "line": "[DUPE ALERT!] Item Y5R5KA (Code: Y5R5KA) has multiple copies!",
+          "event": "dupe-alert"
+        }
+      ],
+      "probe": {
+        "stacks_before": "[14:04:17 INFO]: [PremiumDupeProbe] PREMIUM_DUPE_STACKS staff=Y5R5KA member=none same=false",
+        "cloned": "[14:04:17 INFO]: [PremiumDupeProbe] PREMIUM_DUPE_CLONED code=Y5R5KA uuid=a58805a1-aa4e-417f-89ca-ec51690a8a4e from=PremiumStaff slot=0 to=PremiumMember slot=0",
+        "stacks_after_detection": "[14:04:18 INFO]: [PremiumDupeProbe] PREMIUM_DUPE_STACKS staff=Y5R5KA member=Y5R5KA same=true",
+        "stacks_after_second_epoch": "[14:04:23 INFO]: [PremiumDupeProbe] PREMIUM_DUPE_STACKS staff=Y5R5KA member=Y5R5KA same=true"
+      },
+      "findings_after_duplicate": [
+        "CONFIRMED\t2\tNOTIFY"
+      ],
+      "findings_after_second_epoch": [
+        "CONFIRMED\t2\tNOTIFY"
+      ],
+      "staff_alert": {
+        "line": "[DUPE ALERT!] Item Y5R5KA (Code: Y5R5KA) has multiple copies!",
+        "event": "dupe-alert"
+      },
+      "webhook_payloads": [
+        "{\"username\": \"ItemGuard Alerts\",\"embeds\": [{\"title\": \"⚠️ **Duplicate finding confirmed**\",\"description\": \"Item: **Y5R5KA**\\nIdentity: `a58805a1-aa4e-417f-89ca-ec51690a8a4e`\\nSeen in **2 locations** in scan epoch **1789801458009**\\n_More than one location is a finding to investigate, not proof that a copy was made._\",\"color\": 15158332,\"footer\": {\"text\": \"ItemGuard v1.0.0\"},\"timestamp\": \"2026-09-19T07:04:18.113371300Z\"}]}"
+      ],
+      "webhook_payload_mentions_code": [
+        true
+      ],
+      "history_rows": "1",
+      "paper_log": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-115ebfecdab2\\paper-1.log",
+      "client_log": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-115ebfecdab2\\client-1.log"
+    },
+    {
+      "generation": 2,
+      "mode": "restart",
+      "findings_after_restart": [
+        "CONFIRMED\t2\tNOTIFY",
+        "CONFIRMED\t2\tNOTIFY",
+        "CONFIRMED\t2\tNOTIFY",
+        "CONFIRMED\t2\tNOTIFY"
+      ],
+      "findings_after_restart_epoch": [
+        "CONFIRMED\t2\tNOTIFY",
+        "CONFIRMED\t2\tNOTIFY",
+        "CONFIRMED\t2\tNOTIFY",
+        "CONFIRMED\t2\tNOTIFY"
+      ],
+      "growth_in_10s_window": 0,
+      "throttle_margin_note": "scan interval 10 ticks (0.5 s), detection cooldown 9000 ms: an unthrottled plugin would write about twenty rows in this window",
+      "paper_log": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-115ebfecdab2\\paper-2.log"
+    }
+  ],
+  "cleanup": [
+    {
+      "child": "client-1",
+      "pid": 18240,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "mode": "dupe"
+    },
+    {
+      "child": "paper-1",
+      "pid": 7444,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "port_released": true
+    },
+    {
+      "child": "paper-2",
+      "pid": 38820,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "port_released": true
+    }
+  ],
+  "mysql_reset": "itemguard_premium recreated on 127.0.0.1:33316",
+  "code": "Y5R5KA",
+  "mysql_stopped": {
+    "exit": 0
+  },
+  "webhook_total": 4,
+  "finished_at": "2026-09-19T14:05:37+07:00"
+}

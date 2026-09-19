@@ -1,0 +1,98 @@
+REVIEW REQUEST — ItemGuard Premium, observation retention and the reclaim hand-over
+Reviewer: Astra (gpt-6-astra), medium reasoning, read-only. No tools: everything you need is here.
+Answer in Vietnamese or English; be specific and cite the file/section you are judging.
+
+WHAT THIS IS
+You are reviewing a change to ItemGuard Premium (branch `premium-mysql`, Paper 1.21.11, Java 21,
+MySQL 8.4 behind a shared schema). The change fixes a defect that two runtime gates had been hiding
+behind a race, and it lands on top of three other defects fixed the same day. Judge the design, not the
+prose.
+
+THE DEFECT THAT WAS FIXED (found by re-running gates, after months of green offline suites)
+`ItemSqliteRepository.completeObservationEpoch(...)` pruned observations by epoch:
+    DELETE FROM item_observations WHERE scan_epoch < ?
+called at the end of every completed audit, with no `server_id` clause, on a table that M3 had just
+given `server_id` plus the index `(item_uuid, server_id, observed_at)` for exactly one question:
+"which servers has this identity been seen on inside a window" (`cross-server-window-minutes: 30`).
+Consequences, both reproduced:
+  - the two-Paper fixture can never observe `SEEN_ON_MULTIPLE_SERVERS`: server-2's completed audit
+    deletes the rows server-1 wrote seconds earlier;
+  - a migrated target loses `item_observations` on the first audit after startup while every durable
+    table survives.
+Both gates had been passing by winning a race against that audit (30 s scan interval). Under load the
+audit won and both gates went red twice in a row.
+
+THE CHANGE
+1. The prune is time-based: `DELETE FROM item_observations WHERE observed_at < ?` — one statement,
+   used by both completion paths (`completeObservationEpoch` and `completeObservationEpochAndAudit`).
+2. New config key `anti-dupe.observation-retention-minutes` (default 30), floored at two scan cycles by
+   `AntiDupeSettings.observationRetention(...)`, mirroring the floor already used for the detection
+   cooldown. `DatabaseManager` computes the cutoff (`now - retention`) and passes it down.
+3. The old public signatures (`completeObservationEpoch(long)`, `completeObservationEpochAndAudit(...)`)
+   remain and delegate with a constant default window (`DEFAULT_OBSERVATION_RETENTION_MILLIS = 30 min`),
+   so tests and any caller without config keep compiling.
+4. `ObservationRetentionTest` pins both halves: a fresh row from another epoch survives an audit, an
+   expired row does not.
+5. The migration gate's restart expectation was rewritten: durable tables must match exactly,
+   `item_observations` is asserted only to be inside {0,1} with the retention rule recorded in the
+   receipt, instead of asserting that nothing ever expires.
+6. Several pre-existing tests used epoch-shaped timestamps as observation times (`39L`, `1000L`), which
+   a retention window treats as expired. Their fixtures now stamp such values with the current time
+   (`nowIfFixtureEpoch`), with the reason written at the helper.
+7. Contract doc + owner runbook: the retention rule, why it changed, and the instruction to keep
+   retention ≥ the cross-server window.
+
+EARLIER DEFECTS FIXED THE SAME DAY (same session, all with tests)
+  a. `arm()` returned the pre-transition claim record (state PENDING) while `settle()` refuses anything
+     that is not PREPARED: every issuance armed the claim, delivered the item, wrote nothing, left the
+     identity locked in PREPARED for ever and told the player it had succeeded. Fixed by carrying the
+     moved claim (`ReclaimClaim.movedTo`).
+  b. The success message followed the delivery flag rather than the recorded outcome, hiding exactly the
+     case a human must clean up. Fixed: message follows `settled.issued()`.
+  c. `/finditem giveoldid` ran its absence check on the async dispatch, so the inventory presence probe
+     answered "must run on the server thread" and the admin path refused every identity it was ever
+     given, with a message that read like an ordinary "absence not proven" verdict. Fixed with a hop
+     back to the server thread and a contract test against the two swapping back.
+
+EVIDENCE (all on one artifact; numbers read from the receipts)
+  - `mvnw.cmd -o test`: 966/966, 0 failures/errors/skipped.
+  - Vietnamese-literal gate: 0 violations; tooling contracts: 70/70.
+  - MySQL schema gate: 43/43 across 11 tagged classes (receipt in `run/`).
+  - Runtime gates, each with its own Paper + MySQL fixture and its own receipt: single Paper; two-Paper
+    shared MySQL; SQLite→MySQL migration; reliability/outage; real-client gameplay journey; backup and
+    restore; reclaim hand-over (four generations: refusal while held, issuance after `/clear`, permanent
+    claim lock, restart, full-inventory retry, `/finditem giveoldid`); duplicate detection (two real
+    stacks, one CONFIRMED finding, the staff alert a real client received, a Discord payload captured on
+    a local HTTP sink, nothing removed, a suppressed consecutive epoch, a rate-bounded restart).
+  - Two gates were flaky today for environmental reasons, and both are recorded rather than hidden: the
+    reliability gate timed out once (later several times) on its own 90-second
+    `OUTAGE_WRITE_FAILED` marker, and the MySQL schema gate once failed every test with
+    `CommunicationsException` because the fixture's server was not reachable.
+
+QUESTIONS I WANT ANSWERED
+1. Retention rule: is time-based pruning the right rule for a table whose `server_id` exists for
+   cross-server sightings? Is anything still deleting or ignoring rows by epoch, and is the remaining
+   `DEFAULT_OBSERVATION_RETENTION_MILLIS` overload a landmine for a future caller?
+2. Coherence with `cross-server-window-minutes: 30`: the default retention equals it, so a sighting
+   survives exactly as long as the window it is asked about. Is that the right relationship, and what
+   should happen when an operator sets the window larger than the retention (today: a config comment
+   says to keep them ordered; no runtime warning exists)? Is a startup warning the right mechanism?
+3. Readers of observations: which code reads `item_observations` and would silently degrade if rows are
+   older than the window — the duplicate rule, the cross-server rule, the retained-observations browser,
+   the loss journal, `/ig browser`, the migration/backup receipts? Name any that assume longer life.
+4. Build hashes: rebuilding the same source produced two different SHA-256 values for
+   `target/ItemGuard-1.0.0-shaded.jar` today (same size, different bytes), so a receipt's hash
+   identifies a build, not a source tree. How should receipts bind to artifacts given that? Is there a
+   cheap way to make the shaded jar reproducible, or should the ledger simply say this?
+5. Outage behaviour: the reliability gate sometimes waits 90 s without seeing either a failure or a
+   success for a write issued while MySQL is stopped (the probe runs `SELECT SLEEP(5)` then an UPDATE
+   through the pool). The plugin's published promise is "no retry, no buffering, fail visibly". If a
+   write can instead hang on a half-open connection, is that a fail-closed gap? What would you measure
+   to decide?
+6. Anything else in the change that looks wrong, risky, or unproven — say it plainly, including if you
+   think the conclusion "the two red gates were measuring this defect" is overstated.
+
+CONSTRAINTS
+No tools, no network, no repository access: judge only what is written here. If a question cannot be
+answered from this text, say so instead of guessing. Rank your findings by severity, and mark each as
+BLOCKER / RISK / NIT.

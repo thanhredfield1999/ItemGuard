@@ -311,6 +311,11 @@ def main() -> int:
         first.wait_for("PREMIUM_TWO_SERVER_PROBE READY server-1", 60)
         second = SINGLE.PaperProcess(server_two_root, 2, int(second_manifest["paper_port"]))
         second.wait_for("Done (", 180)
+        # This waits for the cross-server sighting, which is answered from `item_observations`. It
+        # could never arrive while each server's completed audit deleted every row older than its own
+        # current epoch — including the rows the other server had just written. The retention rule is
+        # time-based now (anti-dupe.observation-retention-minutes), so rows inside the window survive
+        # whoever wrote them, and this marker is the proof.
         second.wait_for("PREMIUM_TWO_SERVER_PROBE PASS server-2", 90)
         first_receipt = read_json(server_one_root / "plugins/PremiumTwoServerProbe/probe-receipt.json")
         second_receipt = read_json(server_two_root / "plugins/PremiumTwoServerProbe/probe-receipt.json")

@@ -381,10 +381,21 @@ public final class ItemSqliteRepository implements
         });
     }
 
+    /** The shipped retention when a caller does not have config to hand (tests, LITE paths). */
+    public static final long DEFAULT_OBSERVATION_RETENTION_MILLIS = 30L * 60_000L;
+
     public void completeObservationEpoch(long scanEpoch) {
+        completeObservationEpoch(scanEpoch, System.currentTimeMillis() - DEFAULT_OBSERVATION_RETENTION_MILLIS);
+    }
+
+    /**
+     * @param retentionCutoffMillis rows observed before this instant are deleted; rows inside the
+     *                              window are kept even when another server wrote them
+     */
+    public void completeObservationEpoch(long scanEpoch, long retentionCutoffMillis) {
         owner.execute(connection -> {
             markObservationEpochComplete(connection, scanEpoch);
-            deleteOlderObservationEpochs(connection, scanEpoch);
+            deleteExpiredObservations(connection, retentionCutoffMillis);
             return null;
         });
     }
@@ -395,6 +406,30 @@ public final class ItemSqliteRepository implements
         DuplicateAction action,
         long detectionCooldownMillis,
         long createdAt
+    ) {
+        return completeObservationEpochAndAudit(
+            scanEpoch,
+            antiDupeEnabled,
+            action,
+            detectionCooldownMillis,
+            createdAt,
+            System.currentTimeMillis() - DEFAULT_OBSERVATION_RETENTION_MILLIS
+        );
+    }
+
+    /**
+     * @param retentionCutoffMillis rows observed before this instant are deleted; the deletion is
+     *                              time-based and not scoped to this server, because a row older than
+     *                              every server's window is what the retention rule is about — the old
+     *                              epoch-based rule deleted other servers' fresh rows instead
+     */
+    public CompletableFuture<List<DuplicateFinding>> completeObservationEpochAndAudit(
+        long scanEpoch,
+        boolean antiDupeEnabled,
+        DuplicateAction action,
+        long detectionCooldownMillis,
+        long createdAt,
+        long retentionCutoffMillis
     ) {
         return owner.callAsync(connection -> {
             markObservationEpochComplete(connection, scanEpoch);
@@ -408,7 +443,7 @@ public final class ItemSqliteRepository implements
                 )
                 : new DuplicateInsertResult(0, List.of());
             incrementDuplicateCount(connection, created.inserted(), createdAt);
-            deleteOlderObservationEpochs(connection, scanEpoch);
+            deleteExpiredObservations(connection, retentionCutoffMillis);
             return created.reports();
         });
     }
@@ -1391,13 +1426,23 @@ public final class ItemSqliteRepository implements
         }
     }
 
-    private void deleteOlderObservationEpochs(Connection connection, long scanEpoch)
+    /**
+     * Deletes observations older than a window, whoever wrote them.
+     *
+     * <p>Replaced an epoch-based rule (`WHERE scan_epoch < ?`) that ran on a shared database once per
+     * completed audit: each server deleted every row older than its own current epoch, including rows
+     * another server had written moments earlier, so the cross-server sighting could never be answered
+     * and a migrated target's observations disappeared after the first audit. Time-based is the rule
+     * the feature actually needs: a row only goes once it is older than the window that made it
+     * interesting.
+     */
+    private void deleteExpiredObservations(Connection connection, long retentionCutoffMillis)
         throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
             DELETE FROM item_observations
-            WHERE scan_epoch < ?
+            WHERE observed_at < ?
             """)) {
-            statement.setLong(1, scanEpoch);
+            statement.setLong(1, retentionCutoffMillis);
             statement.executeUpdate();
         }
     }

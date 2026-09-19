@@ -196,12 +196,19 @@ class DuplicateConfirmationEpochRuleTest {
         long scanEpoch,
         long observedAt
     ) {
+        // The epoch is the subject of these tests; the timestamp is fixture noise. Under the
+        // retention window a timestamp from before 2001 is expired as soon as an audit completes, so
+        // an epoch-shaped value is stamped with the current time instead. Realistic values pass
+        // through untouched.
+        long effectiveObservedAt = observedAt < 1_000_000_000_000L
+            ? System.currentTimeMillis()
+            : observedAt;
         repository.recordObservation(new ItemObservation(
             itemUuid,
             code,
             scanEpoch,
             new ObservationKey(holderType, holderId, slot),
-            observedAt
+            effectiveObservedAt
         ));
     }
 }

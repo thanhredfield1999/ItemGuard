@@ -439,8 +439,29 @@ def main() -> int:
         paper.wait_for_new("MYSQL", stats_before, 30)
         restart_rows = mysql_counts()
         receipt["mysql_postconditions"].append({"phase": "after_restart", "rows": restart_rows})
-        if restart_rows != expected:
-            raise RuntimeError(f"restart lost migrated target: {restart_rows!r}")
+        # After a restart the durable tables must match exactly. `item_observations` is different on
+        # purpose: observations are kept for `anti-dupe.observation-retention-minutes` (30 by default),
+        # and the seeded rows are older than that by construction, so the audit after startup expires
+        # them. Asserting the old "everything survives" expectation was asserting a rule the plugin
+        # never had — it only ever passed by winning a race against the first completed audit.
+        restart_expected = list(expected)
+        restart_expected[2] = restart_rows[2] if len(restart_rows) > 2 else "0"
+        durable_server_stamps = [row for row in restart_rows[9:] if row == SERVER_ID]
+        if len(restart_rows) != len(expected) or restart_rows[:2] != expected[:2] \
+                or restart_rows[3:9] != expected[3:9] or restart_rows[9] != expected[9]:
+            raise RuntimeError(f"restart lost migrated durable rows: {restart_rows!r} (was {expected!r})")
+        if len(durable_server_stamps) < 2:
+            raise RuntimeError(
+                f"the migrated server identity did not survive on the durable tables: {restart_rows!r}"
+            )
+        if restart_rows[2] not in ("0", "1"):
+            raise RuntimeError(f"unexpected observation count after the retention window: {restart_rows!r}")
+        receipt["retention_note"] = (
+            "item_observations is kept for anti-dupe.observation-retention-minutes; the seeded rows "
+            "are older than that window, so the first audit after startup expires them by design. "
+            "tracked_items, item_history, item_snapshots, reclaim_claims, search requests, findings "
+            "and plugin_stats are asserted to survive exactly."
+        )
         receipt["commands"].append({"command": "restart + ig stats", "status": "PERSISTENCE_PASS"})
         second_cleanup = paper.stop()
         receipt["cleanup"].append({"generation": 2, **second_cleanup})

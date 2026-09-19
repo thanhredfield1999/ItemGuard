@@ -59,14 +59,14 @@ class MySqlRepositoryRuntimeTest {
                 CODE,
                 39L,
                 new ObservationKey(HolderType.PLAYER, PLAYER_UUID.toString(), 1),
-                39L
+                nowIfFixtureEpoch(39L)
             );
             ItemObservation priorTwo = new ItemObservation(
                 ITEM_UUID,
                 CODE,
                 39L,
                 new ObservationKey(HolderType.PLAYER, PLAYER_UUID.toString(), 2),
-                39L
+                nowIfFixtureEpoch(39L)
             );
             repository.recordObservation(priorOne);
             repository.recordObservation(priorTwo);
@@ -79,7 +79,7 @@ class MySqlRepositoryRuntimeTest {
                 CODE,
                 40L,
                 new ObservationKey(HolderType.PLAYER, PLAYER_UUID.toString(), 0),
-                40L
+                nowIfFixtureEpoch(40L)
             );
             repository.recordObservation(observation);
             repository.recordObservation(observation);
@@ -95,7 +95,7 @@ class MySqlRepositoryRuntimeTest {
                 CODE,
                 40L,
                 new ObservationKey(HolderType.PLAYER, PLAYER_UUID.toString(), 3),
-                40L
+                nowIfFixtureEpoch(40L)
             );
             repository.recordObservation(currentSecond);
             owner.flush();
@@ -183,5 +183,15 @@ class MySqlRepositoryRuntimeTest {
 
     private static ItemSnapshot snapshot() {
         return new ItemSnapshot(1, new byte[] {1, 2, 3}, new byte[32]);
+    }
+
+    /**
+     * An observation timestamp from before 2001 is an epoch-shaped fixture value, not a real time:
+     * under the retention window (`anti-dupe.observation-retention-minutes`) such a row is expired the
+     * moment the audit this test completes runs, which is how the retention change turned a green test
+     * red for a reason that had nothing to do with MySQL. Realistic timestamps pass through unchanged.
+     */
+    private static long nowIfFixtureEpoch(long observedAt) {
+        return observedAt < 1_000_000_000_000L ? System.currentTimeMillis() : observedAt;
     }
 }

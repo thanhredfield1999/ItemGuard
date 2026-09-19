@@ -1,0 +1,349 @@
+{
+  "status": "PASS",
+  "gate": "premium-reclaim-handover",
+  "started_at": "2026-09-19T14:00:01+07:00",
+  "fixture": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-ce86dd66b6fa",
+  "manifest": {
+    "root": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-ce86dd66b6fa",
+    "server_port": 49226,
+    "server_id": "paper-premium-1",
+    "mysql_host": "127.0.0.1",
+    "mysql_port": 33316,
+    "mysql_database": "itemguard_premium",
+    "paper_sha256": "6c099540fccd27e10750d1adcb382f1552fb5aa2816aeaf2cc1efb23ddd9e3df",
+    "premium_jar_sha256": "09886ec451d020daa4b9b943e27f222adae4b13ec77c24e5a8bf7a2fc74c62d6",
+    "probe_jar_sha256": "837e540bf7e34085b7e427810e624bd3f9d17c642494e5dfb2617f8dc0c1ad7e",
+    "probe_source_sha256": "ed88121f137c8b1f52001cdb1a2e232eefc3d7f21810d4fe762913a836f10bad",
+    "client_script_sha256": "0a863385460604eeb81377a08a64f66a0269bd7f9a95d497fb65dd81090b11d2",
+    "config_sha256": "bfbeb6f0f6fcf1eaf74c90da889ff32666078fd80c0e60e53d6f24f5d9f3c842",
+    "ops_sha256": "b9ee53277facc0f3b8beffa44e6c49c87aa4600b38c425153b932fb8e2fa8070",
+    "runner_sha256": "30d603fed0b13571c1e5a99e5aabc125995b46c8749f4978d35acad58b84c98c",
+    "node": "C:\\Program Files\\nodejs\\node.EXE",
+    "java": "C:\\Program Files\\Java\\jdk-21\\bin\\java.exe",
+    "created_at": "2026-09-19T14:00:01+07:00",
+    "reclaim_config": {
+      "issuance-enabled": true,
+      "external-absence-mode": "INSTALLED_ONLY"
+    }
+  },
+  "generations": [
+    {
+      "generation": 1,
+      "mode": "reclaim",
+      "client_result": {
+        "status": "PASS",
+        "mode": "reclaim",
+        "code": "IQ6I4X",
+        "actions": [
+          "give",
+          "equip",
+          "check",
+          "refuse-while-held",
+          "clear",
+          "issue",
+          "refuse-locked"
+        ],
+        "swords_after_lock": 1,
+        "event": "CLIENT_RESULT"
+      },
+      "client_events": [
+        {
+          "player": "PremiumStaff",
+          "code": "IQ6I4X",
+          "event": "identity"
+        },
+        {
+          "code": "IQ6I4X",
+          "held": "diamond_sword",
+          "event": "reclaim-item"
+        },
+        {
+          "line": "[ItemGuard] Tu choi lay lai: PLAYER_INVENTORY - Canonical identity is present in inventory or ender chest",
+          "event": "reclaim-refused-present"
+        },
+        {
+          "line": "[ItemGuard] Da tra lai vat pham IQ6I4X. Kiem tra tui do cua ban.",
+          "item": "diamond_sword",
+          "event": "reclaim-issued"
+        },
+        {
+          "line": "[ItemGuard] Vat pham da co yeu cau dang xu ly hoac da cap lai.",
+          "before": 1,
+          "after": 1,
+          "event": "reclaim-lock"
+        },
+        {
+          "status": "PASS",
+          "mode": "reclaim",
+          "code": "IQ6I4X",
+          "actions": [
+            "give",
+            "equip",
+            "check",
+            "refuse-while-held",
+            "clear",
+            "issue",
+            "refuse-locked"
+          ],
+          "swords_after_lock": 1,
+          "event": "CLIENT_RESULT"
+        }
+      ],
+      "mysql": {
+        "rows": [
+          "DENIED\tPLAYER_INVENTORY: Canonical identity is present in inventory or ender chest",
+          "COMMITTED\tissued to PremiumStaff: delivered to player inventory"
+        ],
+        "committed": 1,
+        "denied": 1,
+        "history_reclaim_rows": "1",
+        "snapshot_rows": "1"
+      },
+      "client_log": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-ce86dd66b6fa\\client-1.log",
+      "paper_log": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-ce86dd66b6fa\\paper-1.log"
+    },
+    {
+      "generation": 2,
+      "mode": "reclaim-restart",
+      "client_result": {
+        "status": "PASS",
+        "mode": "reclaim-restart",
+        "code": "IQ6I4X",
+        "actions": [
+          "sos-after-restart"
+        ],
+        "swords_after_lock": 1,
+        "event": "CLIENT_RESULT"
+      },
+      "client_events": [
+        {
+          "line": "[ItemGuard] Vat pham da co yeu cau dang xu ly hoac da cap lai.",
+          "before": 1,
+          "after": 1,
+          "event": "reclaim-restart"
+        },
+        {
+          "status": "PASS",
+          "mode": "reclaim-restart",
+          "code": "IQ6I4X",
+          "actions": [
+            "sos-after-restart"
+          ],
+          "swords_after_lock": 1,
+          "event": "CLIENT_RESULT"
+        }
+      ],
+      "mysql": {
+        "rows": [
+          "DENIED\tPLAYER_INVENTORY: Canonical identity is present in inventory or ender chest",
+          "COMMITTED\tissued to PremiumStaff: delivered to player inventory"
+        ],
+        "committed": 1,
+        "denied": 1,
+        "history_reclaim_rows": "1",
+        "snapshot_rows": "1"
+      },
+      "client_log": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-ce86dd66b6fa\\client-2.log",
+      "paper_log": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-ce86dd66b6fa\\paper-2.log"
+    },
+    {
+      "generation": 3,
+      "mode": "reclaim-full",
+      "client_result": {
+        "status": "PASS",
+        "mode": "reclaim-full",
+        "code": "7Y1QOA",
+        "actions": [
+          "give",
+          "equip",
+          "check",
+          "clear",
+          "fill-inventory",
+          "refuse-full",
+          "drop-one",
+          "issue"
+        ],
+        "sword_after_retry": 1,
+        "event": "CLIENT_RESULT"
+      },
+      "client_events": [
+        {
+          "player": "PremiumStaff",
+          "code": "7Y1QOA",
+          "event": "identity"
+        },
+        {
+          "line": "[ItemGuard] Khong cap duoc vat pham; chay lai /matdo sos <id>. (inventory full)",
+          "event": "reclaim-refused-full"
+        },
+        {
+          "refusal": "[ItemGuard] Khong cap duoc vat pham; chay lai /matdo sos <id>. (inventory full)",
+          "issued": "[ItemGuard] Da tra lai vat pham 7Y1QOA. Kiem tra tui do cua ban.",
+          "code": "7Y1QOA",
+          "event": "reclaim-full-retry"
+        },
+        {
+          "status": "PASS",
+          "mode": "reclaim-full",
+          "code": "7Y1QOA",
+          "actions": [
+            "give",
+            "equip",
+            "check",
+            "clear",
+            "fill-inventory",
+            "refuse-full",
+            "drop-one",
+            "issue"
+          ],
+          "sword_after_retry": 1,
+          "event": "CLIENT_RESULT"
+        }
+      ],
+      "client_log": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-ce86dd66b6fa\\client-3.log",
+      "paper_log": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-ce86dd66b6fa\\paper-3.log",
+      "mysql": {
+        "rows": [
+          "DENIED\tnot delivered to PremiumStaff: inventory full",
+          "COMMITTED\tissued to PremiumStaff: delivered to player inventory"
+        ],
+        "committed": 1,
+        "denied": 1,
+        "history_reclaim_rows": "1",
+        "snapshot_rows": "1"
+      },
+      "reclaim_code": "7Y1QOA"
+    },
+    {
+      "generation": 4,
+      "mode": "giveoldid",
+      "client_events": [
+        {
+          "player": "PremiumStaff",
+          "code": "Z3B5OG",
+          "event": "identity"
+        },
+        {
+          "code": "Z3B5OG",
+          "event": "giveoldid-ready"
+        },
+        {
+          "code": "Z3B5OG",
+          "item": "diamond_sword",
+          "event": "giveoldid-issued"
+        },
+        {
+          "status": "PASS",
+          "mode": "giveoldid",
+          "code": "Z3B5OG",
+          "actions": [
+            "give",
+            "equip",
+            "check",
+            "clear",
+            "wait-for-admin-issue"
+          ],
+          "sword_after_admin": 1,
+          "event": "CLIENT_RESULT"
+        }
+      ],
+      "admin_command": "finditem giveoldid Z3B5OG",
+      "client_result": {
+        "code": "Z3B5OG",
+        "item": "diamond_sword",
+        "event": "giveoldid-issued"
+      },
+      "mysql": {
+        "rows": [
+          "COMMITTED\tissued to PremiumStaff: delivered to player inventory"
+        ],
+        "committed": 1,
+        "denied": 0,
+        "history_reclaim_rows": "1",
+        "snapshot_rows": "1"
+      },
+      "client_log": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-ce86dd66b6fa\\client-4.log",
+      "paper_log": "E:\\AI.WORK\\30_KET_QUA_THU_NGHIEM\\itemguard-premium-gameplay-ce86dd66b6fa\\paper-4.log"
+    }
+  ],
+  "cleanup": [
+    {
+      "child": "client-1",
+      "pid": 27100,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "mode": "reclaim"
+    },
+    {
+      "child": "paper-1",
+      "pid": 14832,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "port_released": true
+    },
+    {
+      "child": "client-2",
+      "pid": 42916,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "mode": "reclaim-restart"
+    },
+    {
+      "child": "paper-2",
+      "pid": 46504,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "port_released": true
+    },
+    {
+      "child": "client-3",
+      "pid": 32536,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "mode": "reclaim-full"
+    },
+    {
+      "child": "paper-3",
+      "pid": 35980,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "port_released": true
+    },
+    {
+      "child": "client-4",
+      "pid": 27076,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "mode": "giveoldid"
+    },
+    {
+      "child": "paper-4",
+      "pid": 29148,
+      "exit": 0,
+      "forced": false,
+      "log_closed": true,
+      "port_released": true
+    }
+  ],
+  "mysql_reset": "itemguard_premium recreated on 127.0.0.1:33316",
+  "code": "IQ6I4X",
+  "reclaim_codes": {
+    "primary": "IQ6I4X",
+    "full_inventory": "7Y1QOA",
+    "giveoldid": "Z3B5OG"
+  },
+  "mysql_stopped": {
+    "exit": 0,
+    "stdout": [
+      "stopped"
+    ]
+  },
+  "finished_at": "2026-09-19T14:03:18+07:00"
+}

@@ -252,8 +252,13 @@ public final class DatabaseManager implements
         repository.recordObservation(observation);
     }
 
+    /** Rows older than the configured window are expired; see the config key's own comment. */
+    private long observationRetentionCutoff() {
+        return System.currentTimeMillis() - plugin.getConfigs().getObservationRetentionMillis();
+    }
+
     public void completeObservationEpoch(long scanEpoch) {
-        repository.completeObservationEpoch(scanEpoch);
+        repository.completeObservationEpoch(scanEpoch, observationRetentionCutoff());
     }
 
     public CompletableFuture<List<DuplicateFinding>> completeObservationEpochAndAudit(
@@ -268,7 +273,8 @@ public final class DatabaseManager implements
             antiDupeEnabled,
             action,
             detectionCooldownMillis,
-            completedAt
+            completedAt,
+            observationRetentionCutoff()
         );
     }
 

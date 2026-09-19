@@ -1,89 +1,77 @@
 # ItemGuard — Current State
 
-## CURRENT — Branch `premium-mysql` — 2026-09-19 — reclaim gate widened and PASSING; two gates are RED on a real cross-server defect that needs a decision
+## CURRENT — Branch `premium-mysql` — 2026-09-19 — observation retention fixed; the two red gates are green again
 
 Artifact for this tree:
 
     target/ItemGuard-1.0.0-shaded.jar
-    SHA-256 73b82f5a412b9cc55465981522c66f774c2f7036aee126d5c901f5947c5ac49e
+    SHA-256 09886ec451d020daa4b9b943e27f222adae4b13ec77c24e5a8bf7a2fc74c62d6   (9,915,196 bytes)
 
-**The chain is not green, and this section says which parts are not.** Offline evidence is fresh and
-complete: `mvnw.cmd -o test` **964/964**, the Vietnamese gate **0 violations** + self-test 25/25, the
-tooling contracts **70/70**, `package` BUILD SUCCESS, and the MySQL schema gate passes on this tree.
+Offline evidence: `mvnw.cmd -o test` **966/966**, the Vietnamese gate **0 violations** with its self-test
+25/25, tooling contracts **70/70**, `package` BUILD SUCCESS, MySQL schema gate **43/43** on this tree.
+Runtime: the receipts bound in `run/` name each gate and its verdict; what follows is what a receipt
+cannot say.
 
-Runtime, on `73b82f5a…`: PASS — single Paper, reliability/failure, real-client gameplay, backup/restore,
-**reclaim hand-over (four generations)** and **duplicate detection**. RED — the two-Paper shared-MySQL
-gate and the SQLite→MySQL migration gate. Both failed on the first run *and on an immediate re-run*, so
-they are not flakes.
+### The defect, and why green gates hid it
 
-### The defect they are red on
+`completeObservationEpoch` pruned observations by epoch — `DELETE FROM item_observations WHERE scan_epoch
+< ?` (`ItemSqliteRepository`, called from both completion paths) — with no `server_id` clause, on a table
+M3 had just given `server_id` and the index `(item_uuid, server_id, observed_at)` for exactly one
+question: *which servers has this identity been seen on inside a window* (`cross-server-window-minutes:
+30`).
 
-`MySql`/SQLite observation retention deletes across servers. `completeObservationEpoch(scanEpoch)` calls
-`deleteOlderObservationEpochs(connection, scanEpoch)` (`ItemSqliteRepository.java:387` and `:411`, the
-statement at `:1394`), which is `DELETE FROM item_observations WHERE scan_epoch < ?` — no `server_id`
-clause. Every completed audit therefore deletes **every observation row with an older epoch, including
-rows another server wrote** into the shared schema.
+So every completed audit deleted the rows other servers had written seconds earlier:
 
-Two gates prove the consequence, and their receipts carry the raw rows:
+- the two-Paper gate could never observe `SEEN_ON_MULTIPLE_SERVERS` — the rows it reads were gone;
+- a migrated target lost `item_observations` on the first audit after startup, while every durable table
+  survived.
 
-- **Two-Paper gate**: `PREMIUM_TWO_SERVER_PROBE PASS server-2` never arrives. The probe is waiting for
-  `cross_server_status=SEEN_ON_MULTIPLE_SERVERS`, which is answered from `item_observations`; server-2's
-  first completed epoch removes the rows server-1 wrote moments earlier, so the sighting can never
-  exist.
-- **Migration gate**: after the restart, `item_observations` reads back as **0** rows and its
-  `server_id` stamp disappears, while every other migrated table is intact (8 counts of 1,
-  `plugin_stats` `10\t7`, `paper-migrate-1` on history and publications). The migrated observations are
-  deleted by the first audit on the restored target.
+Both gates had been passing for hours by **winning a race** against that audit (a 30-second scan interval
+usually lands it after the probe's check). Under load the audit won, both went red twice in a row, and
+that is the only reason this was found. A green run of those two gates never meant observations survived.
 
-Both gates passed earlier today only because their checks won a race against the first completed epoch;
-under load the epoch lands first and the evidence is gone. That race is why this went unnoticed for so
-long, and it is worth saying plainly: a green run of these two gates has never meant the observations
-survived.
+### The rule now
 
-**This needs a decision, not a patch.** Two honest options:
+Observations are kept for `anti-dupe.observation-retention-minutes` (default 30, floored at two scan
+cycles). A row is deleted when it is older than the window that made it interesting, **whoever wrote
+it**. `ObservationRetentionTest` pins both halves — a fresh row from another epoch survives, an expired
+one does not — the migration gate asserts retention explicitly instead of asserting that nothing ever
+expires, and the contract doc and runbook both carry the rule plus the requirement to keep retention ≥
+the cross-server window. Several pre-existing tests used epoch-shaped values as observation times
+(`39L`, `1000L`); under a window those are expired by construction, so their fixtures stamp such values
+with the current time and the helper says why. That is a fixture fix, not a semantic one — the MySQL
+schema gate going red for the same reason is what proved it.
 
-1. **Observations are a live working set** (keep only the current epoch). Then the cross-server sighting
-   has to be answered from something durable — `item_history` already carries `server_id` — and the
-   migration gate's restart assertion has to be rewritten to assert the durable tables only, with the
-   retention rule documented for owners.
-2. **Observations are durable evidence** (they feed the cross-server feature that Premium advertises).
-   Then the prune has to be scoped: never delete rows belonging to another `server_id`, and keep a
-   bounded window instead of "everything older than my current epoch".
+### Also fixed this session, each with tests and a gate where one exists
 
-Until that is chosen, the two gates stay red on purpose. Weakening their assertions now would hide the
-one thing they just proved.
+1. `arm()` handed the flow the pre-transition claim record, so `settle` refused for ever: every issuance
+   armed, delivered, wrote nothing, left the identity locked in `PREPARED` and told the player it had
+   succeeded (`ReclaimClaim.movedTo`).
+2. The success message followed the delivery flag instead of the recorded outcome, hiding exactly the
+   case a human must clean up.
+3. `/finditem giveoldid` checked absence on the async dispatch, so the admin path refused every identity
+   it was ever given with a message that read like an ordinary "absence not proven" verdict.
+4. The reclaim gate now runs four generations (refusal while held, issuance after `/clear`, the permanent
+   lock, the restart, the full-inventory retry, `/finditem giveoldid`) and the detection gate runs the
+   controlled duplicate with a real staff alert and a captured Discord payload.
 
-### What did land and pass this round
+### Open, stated rather than hidden
 
-1. **Three real defects, all found by running gates rather than by reading code.** (a) `arm()` handed the
-   flow the pre-transition claim record, so `settle` refused for ever: every issuance armed, delivered,
-   wrote nothing, left the identity locked in `PREPARED` and told the player it had succeeded.
-   (b) The success message followed the delivery flag instead of the recorded outcome, hiding exactly
-   the case a human must clean up. Both fixed (`ReclaimClaim.movedTo`; the message follows
-   `settled.issued()`), with tests for the armed, lost-race and refused-arming paths.
-   (c) **`/finditem giveoldid` could never issue anything**: it ran its absence check on the async
-   dispatch, so `PlayerInventoryPresenceProbe` answered "Inventory presence probe must run on the server
-   thread" and the command refused every identity with a message that read like an ordinary "absence not
-   proven" verdict. The check now runs inside a hop back to the server thread, the claim write stays off
-   it, and `ReclaimIssuanceFlowContractTest` fails if they swap back.
-2. **The reclaim gate now covers what the docs used to list as unproven**: refusal while held
-   (`PLAYER_INVENTORY`), issuance after a vanilla `/clear` with the stack back in a real client's
-   inventory, the permanent claim lock, the same lock after a restart, the **full-inventory retry**
-   (refused as `DENIED / not delivered to PremiumStaff: inventory full`, then issued after one slot was
-   freed) and **`/finditem giveoldid`** returning the item to its recorded owner from the console. Its
-   receipt for this artifact is the newest `premium-reclaim-receipt.json` under
-   `30_KET_QUA_THU_NGHIEM/`; receipt binding into `run/` waits for a green chain.
-3. **Detection stayed proven** on this artifact: two real stacks, one `CONFIRMED` finding, the staff
-   alert a real client received, a Discord payload captured by a local HTTP sink, nothing removed, a
-   suppressed consecutive epoch, and a rate-bounded restart.
-
-### Housekeeping
-
-Two flakes recorded earlier today (cross-process SQLite lock under load; the reliability gate timing out
-once on its own 90 s marker) still stand, and both are distinguishable from the red pair above: they
-passed in isolation, these two do not. `tools/premium-runtime/trim_fixture_roots.py` exists because E:
-filled up once mid-chain (16.5 GB freed while keeping every receipt, log and `stage.json`); both new
-gates refuse to start below 4 GB free.
+- **The Astra review Thanh asked for did not run.** `hermes chat -q ... -m openai/gpt-6-astra -t ''`
+  failed with `HTTP 402: API key budget exceeded. Current spend: $5.33, limit: $5.00` on the ai-gateway
+  (non-retryable). The bounded input and the exact command are in
+  `docs/agents/2026-09-19-observation-retention-review-input.txt`; the review is ready to run the moment
+  the gateway budget is raised. No substitute reviewer was silently used.
+- **The shaded jar is not byte-reproducible.** Two builds of the same source produced the same size and
+  different SHA-256 values, so a receipt's hash identifies a *build*, not a source tree. The receipts
+  bound here were produced against `09886ec4…`; a rebuild will not reproduce that file, and the honest
+  reading of a receipt is "this artifact, at this moment", not "this source, whenever rebuilt".
+- The reliability gate timed out on its own 90-second `OUTAGE_WRITE_FAILED` marker several times today
+  and passed on other runs (the probe issues `SELECT SLEEP(5)` then an UPDATE through the pool). Whether
+  a write can hang on a half-open connection instead of failing visibly is question 5 in the review
+  input and is **not** answered here.
+- `reclaim.issuance-enabled` and `anti-dupe.enabled` still ship `false`; the receipts list what each gate
+  does not cover.
 
 ## PREVIOUS — Branch `premium-mysql` — 2026-09-19 — config and permission traps closed; the admin info/ack surface and scan metrics land with schema v10
 
