@@ -621,6 +621,45 @@ async function runReclaimRestart(staff, code) {
   return code;
 }
 
+// Duplicate-detection gate: two real clients stay connected while the fixture probe puts a second
+// stack carrying the same code and item UUID into the member's inventory. This client's job is to
+// hold a real tracked item, wait for the alert the plugin sends to staff, and report the line it
+// received — the product's own text, not a marker the harness wrote.
+async function runDupeWait(staff, member) {
+  await waitUntil(() => Boolean(staff.entity) && Boolean(member.entity), 60000,
+    'dupe clients did not spawn');
+  await sleep(1500);
+
+  await chat(staff, '/clear PremiumStaff');
+  await chat(staff, '/give PremiumStaff minecraft:diamond_sword 1');
+  await ensureSwordInHand(staff);
+  const code = await commandCheck(staff);
+  emit('dupe-ready', { code, holder: staff.username, other: member.username });
+
+  const baseline = messageCursor(staff);
+  const alert = await waitMessage(staff, baseline,
+    (text) => /DUPE ALERT|multiple copies/i.test(text),
+    180000, 'staff never received a duplicate alert');
+  emit('dupe-alert', { line: alert });
+
+  // Stay connected for as long as the runner asks. Both players must still be online for the
+  // post-detection assertions: their inventories are the two locations the finding is about, and a
+  // client that quits immediately leaves the harness reading "absent" for both.
+  const holdMs = Number(process.env.ITEMGUARD_BOT_HOLD_MS || 0);
+  if (holdMs > 0) {
+    emit('dupe-holding', { ms: holdMs });
+    await sleep(holdMs);
+  }
+
+  emit('CLIENT_RESULT', {
+    status: 'PASS',
+    mode: 'dupe',
+    code,
+    actions: ['give', 'equip', 'check', 'alert-received']
+  });
+  return code;
+}
+
 function countSwords(bot) {
   return bot.inventory.items().filter((item) => itemName(item) === 'diamond_sword').length;
 }
@@ -643,6 +682,7 @@ async function stopBots() {
     else if (mode === 'seed') await runSeed();
     else if (mode === 'reclaim') await runReclaim(makeBot('PremiumStaff'));
     else if (mode === 'reclaim-restart') await runReclaimRestart(makeBot('PremiumStaff'), expectedCode);
+    else if (mode === 'dupe') await runDupeWait(makeBot('PremiumStaff'), makeBot('PremiumMember'));
     else await runFull();
     await stopBots();
     process.exit(0);

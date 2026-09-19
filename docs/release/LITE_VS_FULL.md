@@ -27,6 +27,7 @@ unimplemented. Those are listed at the bottom, in the owner's language.
 |---|---|---|---|
 | Commands | `/ig` only | `/ig`, `/igcheck`, `/ighistory`, `/igsearch`, `/igstats`, `/finditem`, `/matdo` | `lite/plugin.yml` vs `plugin.yml` |
 | Duplicate action | forced `NOTIFY` | reads config, but every destructive choice is downgraded | `ConfigManager.java` `isAntiDupeEnabled`, `AntiDupeActionPolicy.resolve(…, false)` |
+| Duplicate detection, end to end | sweep + closed chests proven by the LITE harness | **proven at runtime**: two real stacks of one identity → one CONFIRMED finding, one staff alert, one Discord payload, nothing removed | gate `premium_dupe_smoke.py` (receipt in `run/`), `DuplicateDetector` (two distinct locations inside one epoch) |
 | That downgrade, when chosen | n/a | **now announced at startup** | `DestructiveAntiDupeNotice`, called from `ItemGuard.warnAboutIgnoredAntiDupeAction` |
 | Restore / reclaim | absent | **implemented, gated, and exercised at runtime** — arm → deliver → settle, `COMMITTED` forever | `ReclaimIssuanceService`, `ReclaimIssuanceFlow`, `MatDoCommand.runIssuancePhase`, `FindItemCommand.giveOldId`; gate `premium_reclaim_smoke.py` (receipt in `run/`) |
 | Issuance switch | n/a | `reclaim.issuance-enabled`, ships `false`, LITE off regardless | `ConfigManager.isReclaimIssuanceEnabled`, `config.yml` |
@@ -70,12 +71,15 @@ unimplemented. Those are listed at the bottom, in the owner's language.
 
 ## Before FULL can be listed anywhere
 
-1. **Duplicate detection still needs its runtime gate.** The issuance gate is done — a real client
-   journey proved the refusal while held, the issuance after `/clear`, the permanent claim lock and the
-   restart, and it caught two real defects while doing it (`docs/design/2026-09-19-premium-reclaim-issuance.md`).
-   What has never been run end-to-end is confirmation: two real copies of one identity on a controlled
-   fixture producing one finding, one alert and one Discord payload. Until that exists, "anti-dupe" is
-   proven only offline.
+1. **Both headline features now have runtime gates, and what they do not cover is written down.**
+   Issuance: refusal while held, issuance after `/clear`, the permanent claim lock, the same lock after
+   a restart (and the two defects that gate caught, in
+   `docs/design/2026-09-19-premium-reclaim-issuance.md`). Detection: two real stacks of one identity,
+   one CONFIRMED finding, the staff alert the client actually received, one Discord payload at a local
+   webhook the runner serves, nothing removed, a second consecutive epoch suppressed, and the rate
+   bounded after a restart. Not covered by the detection gate: a scan of *closed containers* on
+   Premium/MySQL (the LITE harness covers that path on LITE), PlayerVaults/zAuctionHouse contents, and
+   the destructive actions, which the resolver refuses anyway.
 2. **Decide the release shape with the owner**: whether `reclaim.issuance-enabled` ships `false` with
    the listing saying "enable after you have read the runbook" (current state), or the gate's runtime
    evidence lands first and it ships `true`. The second decision that travels with it is

@@ -12,7 +12,7 @@ import json
 import pathlib
 import shutil
 
-TARGET = "5928cab1d2c08248b34cdc212723971be923b907d9635e9dc52a2efee2976371"
+TARGET = "029804b9459209be25a9b22f0ded1633379679cd40cd9820400c1fc2bc30fd04"
 ARTIFACTS = pathlib.Path("E:/AI.WORK/30_KET_QUA_THU_NGHIEM")
 RUN = pathlib.Path("run")
 SUPERSEDED = RUN / "superseded"
@@ -25,6 +25,7 @@ RECEIPTS = (
     ("premium-gameplay-receipt.json", "premium-paper-gameplay"),
     ("premium-backup-restore-receipt.json", "premium-backup-restore"),
     ("premium-reclaim-receipt.json", "premium-reclaim-handover"),
+    ("premium-dupe-receipt.json", "premium-duplicate-detection"),
 )
 
 

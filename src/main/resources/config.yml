@@ -131,11 +131,17 @@ uuid-tag:
 
 # ---------- ANTI-DUPE ----------
 anti-dupe:
-  # Keep false until a controlled runtime gate has produced a real duplicate on the active backend.
-  # The detection rule itself (two locations in two consecutive epochs) is unit/MySQL tested, but the
-  # end-to-end path — two real copies seen by the scan, one finding, one staff alert — has been run
-  # on paper and not yet on a controlled Paper/MySQL fixture. Turning it on early would promise
-  # detection nobody has watched work.
+  # Detection, in one sentence: an identity observed in two or more distinct locations within the SAME
+  # scan epoch (a player's inventory, an open container, a swept closed container), reported once that
+  # epoch is complete. Carrying an item from one place to another between epochs is not a finding.
+  #
+  # The end-to-end path — two real stacks of one identity, seen by the scan, producing one confirmed
+  # finding, one staff alert and one Discord payload, with nothing removed — is exercised by
+  # tools/premium-runtime/premium_dupe_smoke.py on a controlled Paper/MySQL fixture; its receipt is
+  # bound in run/ next to the other gates, along with what that gate does not cover.
+  #
+  # It still ships false: detection is the switch an owner turns on deliberately, after reading what
+  # the gate proved and what it did not.
   enabled: false
 
   # MVP only permits NOTIFY. Destructive actions are fail-closed.

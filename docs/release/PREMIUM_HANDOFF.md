@@ -30,7 +30,7 @@ adds writes: shared MySQL, the reclaim hand-over, the admin reports, scan metric
 
 | Key | Ships as | What it gates |
 |---|---|---|
-| `anti-dupe.enabled` | `false` | Whether confirming duplicates runs at all. Detection is unit/MySQL tested; the end-to-end path has not been run on a controlled fixture yet, so it ships off. |
+| `anti-dupe.enabled` | `false` | Whether confirming duplicates runs at all. The end-to-end path is proven by `tools/premium-runtime/premium_dupe_smoke.py` (two real stacks, one finding, one staff alert, one Discord payload, nothing removed); it still ships off because an owner should turn alerting on deliberately, and the receipt lists what the gate did not cover. |
 | `reclaim.issuance-enabled` | `false` | Whether `/matdo sos` and `/finditem giveoldid` may hand an item back. With it off, both refuse and record `ISSUANCE_DISABLED`. |
 | `anti-dupe.action` | `NOTIFY` | Only `NOTIFY` can take effect: a destructive choice is downgraded and, since 2026-09-19, announced in the log at startup instead of being ignored silently. |
 | `reclaim.external-absence-mode` | `STRICT` | How storage plugins that are **not installed** are treated when proving absence (§5). `STRICT` refuses every reclaim on a server that does not run PlayerVaults/zAuctionHouse; `INSTALLED_ONLY` skips a plugin that is not there, records the skip in the claim's evidence, and still refuses when an installed one cannot be read. |
@@ -143,6 +143,7 @@ minutes starting servers, which reads like a product failure and is not one. Two
 | Tooling contracts | `python -m unittest discover -s scripts` → 70/70 |
 | Paper runtime on this hash | the seven gates in §9, receipts in `run/`, all bound to the hash named at the top of this document (artifacts change as fixes land; the ledger's CURRENT section always carries the current hash and receipt names) |
 | The hand-over itself | `premium_reclaim_smoke.py`: refusal while held, issuance after `/clear` with the item back in a real client's inventory, the permanent claim lock, and the same lock after a restart |
+| Duplicate detection | `premium_dupe_smoke.py`: two stacks of one identity, one CONFIRMED finding, the staff alert a real client received, a Discord payload captured on a local webhook, nothing removed, a suppressed consecutive epoch, and a rate bound after a restart |
 | Ledger | `CURRENT_STATE.md` (CURRENT section) names the hash, the counts and every open boundary |
 
 ## 9. Before publishing (owner actions, in order)
