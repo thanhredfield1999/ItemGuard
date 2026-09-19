@@ -142,7 +142,7 @@ minutes starting servers, which reads like a product failure and is not one. Two
 | Shipped text has no stray Vietnamese on an English surface | `python scripts/check_no_hardcoded_vietnamese.py` → 0; self-test 25/25 |
 | Tooling contracts | `python -m unittest discover -s scripts` → 70/70 |
 | Paper runtime on this hash | the seven gates in §9, receipts in `run/`, all bound to the hash named at the top of this document (artifacts change as fixes land; the ledger's CURRENT section always carries the current hash and receipt names) |
-| The hand-over itself | `premium_reclaim_smoke.py`: refusal while held, issuance after `/clear` with the item back in a real client's inventory, the permanent claim lock, and the same lock after a restart |
+| The hand-over itself | `premium_reclaim_smoke.py`, four generations: refusal while held, issuance after `/clear` with the item back in a real client's inventory, the permanent claim lock, the same lock after a restart, the full-inventory retry (denied as `inventory full`, then issued after one slot is freed), and `/finditem giveoldid` returning the item to its recorded owner from the console |
 | Duplicate detection | `premium_dupe_smoke.py`: two stacks of one identity, one CONFIRMED finding, the staff alert a real client received, a Discord payload captured on a local webhook, nothing removed, a suppressed consecutive epoch, and a rate bound after a restart |
 | Ledger | `CURRENT_STATE.md` (CURRENT section) names the hash, the counts and every open boundary |
 

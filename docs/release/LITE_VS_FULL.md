@@ -29,7 +29,7 @@ unimplemented. Those are listed at the bottom, in the owner's language.
 | Duplicate action | forced `NOTIFY` | reads config, but every destructive choice is downgraded | `ConfigManager.java` `isAntiDupeEnabled`, `AntiDupeActionPolicy.resolve(…, false)` |
 | Duplicate detection, end to end | sweep + closed chests proven by the LITE harness | **proven at runtime**: two real stacks of one identity → one CONFIRMED finding, one staff alert, one Discord payload, nothing removed | gate `premium_dupe_smoke.py` (receipt in `run/`), `DuplicateDetector` (two distinct locations inside one epoch) |
 | That downgrade, when chosen | n/a | **now announced at startup** | `DestructiveAntiDupeNotice`, called from `ItemGuard.warnAboutIgnoredAntiDupeAction` |
-| Restore / reclaim | absent | **implemented, gated, and exercised at runtime** — arm → deliver → settle, `COMMITTED` forever | `ReclaimIssuanceService`, `ReclaimIssuanceFlow`, `MatDoCommand.runIssuancePhase`, `FindItemCommand.giveOldId`; gate `premium_reclaim_smoke.py` (receipt in `run/`) |
+| Restore / reclaim | absent | **implemented, gated, and exercised at runtime** — arm → deliver → settle, `COMMITTED` forever; refusal while held, the full-inventory retry, the admin path and the restart lock are all run by the gate | `ReclaimIssuanceService`, `ReclaimIssuanceFlow`, `MatDoCommand.runIssuancePhase`, `FindItemCommand.giveOldId`; gate `premium_reclaim_smoke.py` (receipt in `run/`) |
 | Issuance switch | n/a | `reclaim.issuance-enabled`, ships `false`, LITE off regardless | `ConfigManager.isReclaimIssuanceEnabled`, `config.yml` |
 | Proving absence outside the player | n/a | `reclaim.external-absence-mode`: `STRICT` (ships) refuses when a storage plugin is not installed; `INSTALLED_ONLY` skips absent plugins and records the skip, still refusing for installed-but-unreadable ones | `ExternalAbsenceMode`, `ExternalPresenceProbeFactory`, `ExternalAbsenceModeTest` |
 | Teleport to a container | absent | **absent, and the permission is deleted** | no `itemguard.teleport` in `plugin.yml`; `PermissionDeclarationContractTest` |
@@ -77,9 +77,12 @@ unimplemented. Those are listed at the bottom, in the owner's language.
    `docs/design/2026-09-19-premium-reclaim-issuance.md`). Detection: two real stacks of one identity,
    one CONFIRMED finding, the staff alert the client actually received, one Discord payload at a local
    webhook the runner serves, nothing removed, a second consecutive epoch suppressed, and the rate
-   bounded after a restart. Not covered by the detection gate: a scan of *closed containers* on
-   Premium/MySQL (the LITE harness covers that path on LITE), PlayerVaults/zAuctionHouse contents, and
-   the destructive actions, which the resolver refuses anyway.
+   bounded after a restart. The reclaim gate caught a third real defect while it was being widened:
+   `/finditem giveoldid` ran its absence check off the server thread, so the admin path refused every
+   identity it was ever given (`docs/design/2026-09-19-premium-reclaim-issuance.md`).
+   Not covered by the detection gate: a scan of *closed containers* on Premium/MySQL (the LITE harness
+   covers that path on LITE), PlayerVaults/zAuctionHouse contents, and the destructive actions, which
+   the resolver refuses anyway. Not covered by the reclaim gate: a crash between delivery and commit.
 2. **Decide the release shape with the owner**: whether `reclaim.issuance-enabled` ships `false` with
    the listing saying "enable after you have read the runbook" (current state), or the gate's runtime
    evidence lands first and it ships `true`. The second decision that travels with it is

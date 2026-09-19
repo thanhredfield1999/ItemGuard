@@ -110,6 +110,25 @@ class ReclaimIssuanceFlowContractTest {
     }
 
     @Test
+    void theAdminPathChecksAbsenceOnTheServerThread() throws Exception {
+        String source = Files.readString(FINDITEM);
+
+        int gate = source.indexOf("new ReclaimCapabilityEvaluator()");
+        int hopToServerThread = source.lastIndexOf("Bukkit.getScheduler().runTask(plugin, () -> {", gate);
+        assertTrue(gate > 0, "the admin path must run the absence check");
+        assertTrue(hopToServerThread > 0 && hopToServerThread < gate,
+            "the absence check reads player inventories, so it has to sit inside a hop back to the "
+                + "server thread. The first runtime run of the reclaim gate refused every "
+                + "/finditem giveoldid with 'PLAYER_INVENTORY: Inventory presence probe must run on "
+                + "the server thread', which made the admin path silently unable to issue anything");
+
+        int reserve = source.indexOf("reserveAndIssue(");
+        int offThread = source.lastIndexOf("runTaskAsynchronously", reserve);
+        assertTrue(offThread > 0 && offThread < reserve,
+            "the claim write must stay off the server thread");
+    }
+
+    @Test
     void theAdminPathHasItsOwnPermission() throws Exception {
         String source = Files.readString(FINDITEM);
         String descriptor = Files.readString(Path.of("src/main/resources/plugin.yml"));

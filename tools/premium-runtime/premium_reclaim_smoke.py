@@ -40,6 +40,10 @@ RECLAIM_CONFIG_SWITCHES = (
 
 EVIDENCE_EVENTS = {
     "identity",
+    "reclaim-refused-full",
+    "reclaim-full-retry",
+    "giveoldid-ready",
+    "giveoldid-issued",
     "item-equipped",
     "reclaim-item",
     "reclaim-refused-present",
@@ -103,17 +107,17 @@ def client_evidence(client) -> list[dict[str, object]]:
     return [event for event in client.events if event.get("event") in EVIDENCE_EVENTS]
 
 
-def verify_claims(code: str) -> dict[str, object]:
+def verify_claims(code: str, require_committed: int = 1, require_denied: bool = True) -> dict[str, object]:
     rows = claim_rows(code)
     committed = [row for row in rows if row.startswith("COMMITTED\t")]
     denied = [row for row in rows if row.startswith("DENIED\t")]
-    if len(committed) != 1:
-        raise RuntimeError(f"expected exactly one committed claim, got {rows!r}")
+    if len(committed) != require_committed:
+        raise RuntimeError(f"expected {require_committed} committed claim(s), got {rows!r}")
     if "issued to PremiumStaff" not in committed[0]:
         raise RuntimeError(f"the committed claim does not name the actor: {committed[0]!r}")
-    if not denied:
+    if require_denied and not denied:
         raise RuntimeError(
-            "the refusal while the item was held left no denied claim, so the negative case is "
+            "the refusal this generation expects left no denied claim, so the negative case is "
             f"unproven: {rows!r}"
         )
     return {
@@ -143,6 +147,55 @@ def require_free_space(minimum_gb: float = 4.0) -> None:
             f"only {free_gb:.2f} GB free on the fixture drive, need {minimum_gb:.1f} GB; "
             "run tools/premium-runtime/trim_fixture_roots.py first"
         )
+
+
+def wait_for_client_event(client, event: str, timeout: float) -> dict[str, object]:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        for payload in client.events:
+            if payload.get("event") == event:
+                return payload
+        if client.failure is not None:
+            raise RuntimeError(f"the client reported failure: {client.failure}")
+        time.sleep(0.2)
+    raise TimeoutError(f"the client never reported {event}")
+
+
+def run_generation(fixture, manifest, receipt, generation, mode, code, timeout, required_events, label):
+    """One Paper generation plus one real-client run, with the same cleanup discipline as the others."""
+    paper = SINGLE.PaperProcess(fixture, generation, int(manifest["server_port"]))
+    paper.wait_for("Done (", 180)
+    paper.wait_for(f"MySQL database initialized for server-id {GP.SERVER_ID}", 60)
+    client = GP.ClientProcess(fixture, generation, mode, code, int(manifest["server_port"]))
+    try:
+        result = client.wait_result(timeout=timeout)
+        if result.get("status") != "PASS":
+            raise RuntimeError(f"generation {generation} ({label}) did not pass: {result!r}")
+        by_event = {event.get("event"): event for event in client.events}
+        for required in required_events:
+            if required not in by_event:
+                raise RuntimeError(f"generation {generation} never reported {required}")
+        time.sleep(2.0)
+        receipt["generations"].append(
+            {
+                "generation": generation,
+                "mode": mode,
+                "client_result": result,
+                "client_events": client_evidence(client),
+                "client_log": str(client.log_path),
+                "paper_log": str(paper.log_path),
+            }
+        )
+        return str(result.get("code") or "")
+    finally:
+        cleanup = client.stop()
+        receipt["cleanup"].append({"child": f"client-{generation}", **cleanup})
+        if cleanup["exit"] != 0 or cleanup["forced"] or not cleanup["log_closed"]:
+            raise RuntimeError(f"generation {generation} client cleanup was not clean: {cleanup}")
+        cleanup = paper.stop()
+        receipt["cleanup"].append({"child": f"paper-{generation}", **cleanup})
+        if cleanup["exit"] != 0 or cleanup["forced"] or not cleanup["port_released"]:
+            raise RuntimeError(f"generation {generation} Paper cleanup was not clean: {cleanup}")
 
 
 def main() -> int:
@@ -252,8 +305,65 @@ def main() -> int:
         if cleanup["exit"] != 0 or cleanup["forced"] or not cleanup["port_released"]:
             raise RuntimeError(f"Paper restart cleanup was not clean: {cleanup}")
 
+        # -- generation 3: the inventory-full retry (the failure path that protects the item) ---------
+        code_full = run_generation(
+            fixture, manifest, receipt, 3, "reclaim-full", None, 300,
+            required_events=("reclaim-refused-full", "reclaim-full-retry"),
+            label="full-inventory retry",
+        )
+        full_claims = verify_claims(code_full, require_committed=1)
+        denied_rows = [row for row in full_claims["rows"] if row.startswith("DENIED")]
+        if not any("inventory full" in row for row in denied_rows):
+            raise RuntimeError(
+                f"the full-inventory refusal left no row naming the reason: {full_claims['rows']!r}"
+            )
+        receipt["generations"][-1]["mysql"] = full_claims
+        receipt["generations"][-1]["reclaim_code"] = code_full
+
+        # -- generation 4: /finditem giveoldid, the admin path --------------------------------------
+        paper = SINGLE.PaperProcess(fixture, 4, int(manifest["server_port"]))
+        paper.wait_for("Done (", 180)
+        paper.wait_for(f"MySQL database initialized for server-id {GP.SERVER_ID}", 60)
+        client = GP.ClientProcess(fixture, 4, "giveoldid", None, int(manifest["server_port"]))
+        ready = wait_for_client_event(client, "giveoldid-ready", 240.0)
+        code_admin = str(ready.get("code") or "")
+        if not code_admin:
+            raise RuntimeError("the giveoldid client never reported an identity")
+        paper.send(f"finditem giveoldid {code_admin}")
+        issued = wait_for_client_event(client, "giveoldid-issued", 180.0)
+        time.sleep(2.0)
+        # The admin path destroys the item before issuing, so there is no while-held refusal to
+        # leave a denied claim; requiring one here failed the run after it had already issued.
+        admin_claims = verify_claims(code_admin, require_committed=1, require_denied=False)
+        receipt["generations"].append(
+            {
+                "generation": 4,
+                "mode": "giveoldid",
+                "client_events": client_evidence(client),
+                "admin_command": f"finditem giveoldid {code_admin}",
+                "client_result": issued,
+                "mysql": admin_claims,
+                "client_log": str(client.log_path),
+                "paper_log": str(paper.log_path),
+            }
+        )
+        result = client.wait_result(timeout=120)
+        if result.get("status") != "PASS":
+            raise RuntimeError(f"the giveoldid client did not pass: {result!r}")
+        cleanup = client.stop()
+        receipt["cleanup"].append({"child": "client-4", **cleanup})
+        client = None
+        if cleanup["exit"] != 0 or cleanup["forced"] or not cleanup["log_closed"]:
+            raise RuntimeError(f"giveoldid client cleanup was not clean: {cleanup}")
+        cleanup = paper.stop()
+        receipt["cleanup"].append({"child": "paper-4", **cleanup})
+        paper = None
+        if cleanup["exit"] != 0 or cleanup["forced"] or not cleanup["port_released"]:
+            raise RuntimeError(f"giveoldid Paper cleanup was not clean: {cleanup}")
+
         receipt["status"] = "PASS"
         receipt["code"] = code
+        receipt["reclaim_codes"] = {"primary": code, "full_inventory": code_full, "giveoldid": code_admin}
         return 0
     except Exception as failure:  # noqa: BLE001 - the receipt must carry whatever happened
         receipt["failure"] = f"{type(failure).__name__}: {failure}"

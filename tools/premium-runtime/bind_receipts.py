@@ -12,7 +12,7 @@ import json
 import pathlib
 import shutil
 
-TARGET = "029804b9459209be25a9b22f0ded1633379679cd40cd9820400c1fc2bc30fd04"
+TARGET = "73b82f5a412b9cc55465981522c66f774c2f7036aee126d5c901f5947c5ac49e"
 ARTIFACTS = pathlib.Path("E:/AI.WORK/30_KET_QUA_THU_NGHIEM")
 RUN = pathlib.Path("run")
 SUPERSEDED = RUN / "superseded"

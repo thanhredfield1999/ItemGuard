@@ -591,6 +591,89 @@ async function runReclaim(staff) {
   return code;
 }
 
+// The full-inventory retry: the hand-over must refuse in a way that keeps the item claimable, and the
+// same command must succeed once one slot is free. This is the path that decides whether a full
+// inventory costs the player a retry or costs them the item.
+async function runReclaimFullInventory(staff) {
+  // Every other mode waits for spawn before its first packet; skipping that here made the first
+  // /clear fail with "bot.chat is not a function" on the freshly created client.
+  await waitUntil(() => Boolean(staff.entity), 60000, 'full-inventory client did not spawn');
+  await sleep(1500);
+  await chat(staff, '/clear PremiumStaff');
+  await chat(staff, '/give PremiumStaff minecraft:diamond_sword 1');
+  await ensureSwordInHand(staff);
+  const code = await commandCheck(staff);
+  await chat(staff, '/clear PremiumStaff');
+  await sleep(1500);
+  assertNoSword(staff, 'the second identity was not cleared before filling the inventory');
+
+  // Fill every storage slot with full stacks. Count matters: 36 x `/give dirt 1` merges into ONE
+  // slot, which is how the first version of this step "filled" the inventory without filling it.
+  for (let i = 0; i < 36; i++) staff.chat('/give PremiumStaff minecraft:cobblestone 64');
+  await waitUntil(() => staff.inventory.items().length >= 36, 25000,
+    'the inventory never filled up');
+
+  let baseline = messageCursor(staff);
+  await chat(staff, `/matdo sos ${code}`);
+  const refusal = await waitMessage(staff, baseline,
+    (text) => /Da tra lai vat pham|Khong cap duoc|khong ghi duoc|Tu choi|da co yeu cau/i.test(text),
+    25000, 'the full-inventory request never answered');
+  if (/Da tra lai vat pham/i.test(refusal)) {
+    throw new Error(`the hand-over claimed to deliver into a full inventory: ${refusal}`);
+  }
+  emit('reclaim-refused-full', { line: refusal });
+
+  // Free one slot with a real drop and ask again: the item must still be claimable.
+  const filler = staff.inventory.items().find((item) => itemName(item) === 'cobblestone');
+  await staff.tossStack(filler);
+  await sleep(1500);
+  baseline = messageCursor(staff);
+  await chat(staff, `/matdo sos ${code}`);
+  const issued = await waitMessage(staff, baseline,
+    (text) => /Da tra lai vat pham|Khong cap duoc vat pham/i.test(text),
+    25000, 'the retry after making room never answered');
+  if (!/Da tra lai vat pham/i.test(issued)) {
+    throw new Error(`the retry after making room did not issue: ${issued}`);
+  }
+  await waitItem(staff, (item) => itemName(item) === 'diamond_sword', 15000,
+    'the retried item never arrived');
+  emit('reclaim-full-retry', { refusal, issued, code });
+  emit('CLIENT_RESULT', {
+    status: 'PASS',
+    mode: 'reclaim-full',
+    code,
+    actions: ['give', 'equip', 'check', 'clear', 'fill-inventory', 'refuse-full', 'drop-one', 'issue'],
+    sword_after_retry: countSwords(staff)
+  });
+  return code;
+}
+
+// The admin path: this client stages a third identity, destroys it, and then waits for the runner to
+// run /finditem giveoldid from the console. It asserts the item actually comes back to its owner.
+async function runGiveOldIdTarget(staff) {
+  await waitUntil(() => Boolean(staff.entity), 60000, 'giveoldid client did not spawn');
+  await sleep(1500);
+  await chat(staff, '/clear PremiumStaff');
+  await chat(staff, '/give PremiumStaff minecraft:diamond_sword 1');
+  await ensureSwordInHand(staff);
+  const code = await commandCheck(staff);
+  await chat(staff, '/clear PremiumStaff');
+  await sleep(1500);
+  assertNoSword(staff, 'the giveoldid identity was not destroyed');
+  emit('giveoldid-ready', { code });
+  const returned = await waitItem(staff, (item) => itemName(item) === 'diamond_sword', 120000,
+    '/finditem giveoldid never returned the item to its owner');
+  emit('giveoldid-issued', { code, item: returned.name });
+  emit('CLIENT_RESULT', {
+    status: 'PASS',
+    mode: 'giveoldid',
+    code,
+    actions: ['give', 'equip', 'check', 'clear', 'wait-for-admin-issue'],
+    sword_after_admin: countSwords(staff)
+  });
+  return code;
+}
+
 // After a clean restart the claim must still be committed: the item the player is holding must stay
 // the only one, and a fresh attempt must be refused by the same lock rather than issuing again.
 async function runReclaimRestart(staff, code) {
@@ -681,6 +764,8 @@ async function stopBots() {
     if (mode === 'restart') await runRestart();
     else if (mode === 'seed') await runSeed();
     else if (mode === 'reclaim') await runReclaim(makeBot('PremiumStaff'));
+    else if (mode === 'reclaim-full') await runReclaimFullInventory(makeBot('PremiumStaff'));
+    else if (mode === 'giveoldid') await runGiveOldIdTarget(makeBot('PremiumStaff'));
     else if (mode === 'reclaim-restart') await runReclaimRestart(makeBot('PremiumStaff'), expectedCode);
     else if (mode === 'dupe') await runDupeWait(makeBot('PremiumStaff'), makeBot('PremiumMember'));
     else await runFull();

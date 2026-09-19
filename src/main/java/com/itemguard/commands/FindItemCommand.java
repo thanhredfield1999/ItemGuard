@@ -183,27 +183,58 @@ public final class FindItemCommand implements CommandExecutor, TabCompleter {
                 + "§c; refusing to rebuild it from material and name.");
         }
 
-        ReclaimDecision decision = new ReclaimCapabilityEvaluator().evaluate(
-            new ReclaimTarget(owner, code, row.getItemUuid()),
-            () -> {
-                ExternalPresenceProbeFactory externalProbes =
-                    new ExternalPresenceProbeFactory(this::enabledPluginVersion);
-                ExternalAbsenceMode mode = ExternalAbsenceMode.parse(
-                    plugin.getConfigs().getExternalAbsenceMode()
-                );
-                return List.of(
-                    new PlayerInventoryPresenceProbe(plugin.getTrackingService()),
-                    externalProbes.playerVaultsProbe(mode),
-                    externalProbes.zAuctionHouseProbe(mode)
-                );
+        // The absence check reads player inventories, so it has to run on the server thread. This
+        // method is called from the async dispatch, and the first runtime run of the reclaim gate
+        // showed what happens otherwise: every /finditem giveoldid was refused with
+        // "PLAYER_INVENTORY: Inventory presence probe must run on the server thread", which made the
+        // admin path silently incapable of ever handing an item back.
+        final ItemData resolved = row;
+        final ItemSnapshot resolvedSnapshot = snapshot.orElseThrow();
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            ReclaimDecision decision = new ReclaimCapabilityEvaluator().evaluate(
+                new ReclaimTarget(owner, code, resolved.getItemUuid()),
+                () -> {
+                    ExternalPresenceProbeFactory externalProbes =
+                        new ExternalPresenceProbeFactory(this::enabledPluginVersion);
+                    ExternalAbsenceMode mode = ExternalAbsenceMode.parse(
+                        plugin.getConfigs().getExternalAbsenceMode()
+                    );
+                    return List.of(
+                        new PlayerInventoryPresenceProbe(plugin.getTrackingService()),
+                        externalProbes.playerVaultsProbe(mode),
+                        externalProbes.zAuctionHouseProbe(mode)
+                    );
+                }
+            );
+            if (decision.status() != ReclaimDecisionStatus.ELIGIBLE) {
+                PresenceEvidence blocker = decision.blockingEvidence().orElseThrow();
+                reply.accept("§e§l[ItemGuard] §cRefused: absence is not proven §8- §7"
+                    + blocker.source() + ": " + blocker.detail());
+                return;
             }
-        );
-        if (decision.status() != ReclaimDecisionStatus.ELIGIBLE) {
-            PresenceEvidence blocker = decision.blockingEvidence().orElseThrow();
-            return List.of("§e§l[ItemGuard] §cRefused: absence is not proven §8- §7"
-                + blocker.source() + ": " + blocker.detail());
-        }
+            // Back off the server thread for the claim write and the hand-over, which schedule their
+            // own steps and would otherwise block the player's tick.
+            Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> reserveAndIssue(
+                owner,
+                code,
+                resolved,
+                resolvedSnapshot,
+                actorName,
+                reply
+            ));
+        });
+        return List.copyOf(prelude);
+    }
 
+    /** Reserves the claim and starts the hand-over; runs off the server thread. */
+    private void reserveAndIssue(
+        UUID owner,
+        String code,
+        ItemData row,
+        ItemSnapshot snapshot,
+        String actorName,
+        java.util.function.Consumer<String> reply
+    ) {
         ReclaimClaimService claims = new ReclaimClaimService(
             plugin.getDB(),
             UUID::randomUUID,
@@ -211,8 +242,9 @@ public final class FindItemCommand implements CommandExecutor, TabCompleter {
         );
         Optional<ReclaimClaim> claim = claims.reserve(owner, code);
         if (claim.isEmpty()) {
-            return List.of("§e§l[ItemGuard] §cRefused: §f" + code
+            reply.accept("§e§l[ItemGuard] §cRefused: §f" + code
                 + " §cis already being returned or has been returned (claim lock).");
+            return;
         }
         new ReclaimIssuanceFlow(plugin).issue(
             owner,
@@ -223,11 +255,10 @@ public final class FindItemCommand implements CommandExecutor, TabCompleter {
                 row.getLastSeenAt()
             ),
             claim.orElseThrow(),
-            snapshot.orElseThrow(),
+            snapshot,
             claims,
             reply
         );
-        return List.copyOf(prelude);
     }
 
     /** The version of a soft-depended plugin, or empty when it is absent or disabled. */

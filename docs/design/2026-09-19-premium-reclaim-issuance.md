@@ -71,7 +71,7 @@ two, because they are not installed" is visible to whoever judges the claim. An 
 setting resolves to `STRICT` (`ExternalAbsenceMode.parse`), and the three-argument probe methods still
 default to `STRICT`, so no existing caller silently became permitted to issue.
 
-## The runtime gate, and the two defects it caught
+## The runtime gate, and the three defects it caught
 
 This gate now exists and passes: `tools/premium-runtime/premium_reclaim_smoke.py` (one real Mineflayer
 client, its own fixture staged on top of the gameplay fixture with `reclaim.issuance-enabled: true` and
@@ -99,7 +99,26 @@ after the restart. Every fixture child exited 0 without a forced stop and both p
    up, hidden by the success text. The message now follows the record (`settled.issued()`), and the
    delivered-but-unrecorded case has its own alarming text.
 
-Both fixes are in the artifact this gate ran against; the receipt is bound in `run/` like the others.
+3. **The admin path could never run at all.** Found on the run that first exercised
+   `/finditem giveoldid`. `FindItemCommand` runs its body on the async dispatch, and the absence check
+   reads player inventories, so `PlayerInventoryPresenceProbe` returned
+   `PLAYER_INVENTORY: Inventory presence probe must run on the server thread` on every call: the command
+   refused every identity it was ever given, and the refusal read like an ordinary "absence not proven"
+   verdict rather than a thread violation. The check now runs inside a hop back to the server thread and
+   the claim write stays off it, with `ReclaimIssuanceFlowContractTest` failing if the two ever swap
+   places again. This is also why the entry-point list above was wrong until the gate was run: it
+   promised `giveoldid` "does the same for the recorded owner" while the code could not do it at all.
+
+All three fixes are in the artifact the gate ran against, and the receipt is bound in `run/` like the
+others. **Coverage added after the first run**: a second identity exercises the full-inventory retry
+(the refusal is recorded as `DENIED / not delivered to PremiumStaff: inventory full`, and the same
+command issues once one slot is freed) and a third identity exercises `/finditem giveoldid` from the
+console, including the item arriving back with its recorded owner. Four generations in total, each with
+its own Paper server and its own MySQL postconditions.
+
+What the gate still does not cover, stated up front: it uses `INSTALLED_ONLY`, so it does not prove
+behaviour with PlayerVaults or zAuctionHouse actually installed (their APIs still deny, and a fixture
+with those plugins has not been built), and it does not cover a crash *between* delivery and commit.
 
 ## Boundaries — not implemented, and not claimed
 
