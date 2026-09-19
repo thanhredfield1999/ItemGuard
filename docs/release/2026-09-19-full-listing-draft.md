@@ -210,5 +210,10 @@ Owner's decisions, not written here. See the decision sheet below.
 5. **What is in the first paid release.** From the unimplemented list, mine would be: reclaim
    cooldown/quota (it is the one gap a buyer will hit in week one) and the player-facing reclaim screen;
    `givenewid` and quarantine are features, not gaps.
-6. **Market check.** LITE's Spigot page exists; no competitor price comparison has been done for FULL.
-   If you want one, say so and I will research the actual listings rather than guess a number.
+6. **Market check — done, see `docs/release/2026-09-19-full-pricing-research.md`.** The category's two
+   paid products on BuiltByBit: DupeWatch **$39.99** one-time (timelines, warnings, Discord, tracing)
+   and Protect **$14.97** one-time. Both are per-server; the network is ItemGuard FULL's differentiator,
+   and it is the only thing in this listing the other two cannot do. Recommended price: **$24.99
+   one-time**, $19.99 if shipped before the cooldown/quota gap closes. SpigotMC takes no cut; Polymart's
+   percentage and BuiltByBit's transaction fee were not read and are marked unverified there.
+   Purchase counts were not collected, so no volume claim is made — a listing existing is not demand.
